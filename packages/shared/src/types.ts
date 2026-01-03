@@ -89,6 +89,7 @@ export interface CreateUserRequest {
  * Request to update user details
  */
 export interface UpdateUserRequest {
+  voterId?: string;
   firstName?: string;
   lastName?: string;
   username?: string;
@@ -100,7 +101,7 @@ export interface UpdateUserRequest {
 export interface PasswordGenerationResult {
   username: string;
   password: string;
-  userId: string;
+  voterId: string;
 }
 
 /**

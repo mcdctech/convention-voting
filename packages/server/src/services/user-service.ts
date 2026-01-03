@@ -17,8 +17,8 @@ import type {
  */
 export async function usernameExists(username: string): Promise<boolean> {
   const result = await db.query<{ exists: boolean }>(
-    "SELECT EXISTS(SELECT 1 FROM users WHERE username = $1) as exists",
-    [username],
+    "SELECT EXISTS(SELECT 1 FROM users WHERE username = :username) as exists",
+    { username },
   );
   return result.rows[0].exists;
 }
@@ -28,8 +28,8 @@ export async function usernameExists(username: string): Promise<boolean> {
  */
 export async function voterIdExists(voterId: string): Promise<boolean> {
   const result = await db.query<{ exists: boolean }>(
-    "SELECT EXISTS(SELECT 1 FROM users WHERE voter_id = $1) as exists",
-    [voterId],
+    "SELECT EXISTS(SELECT 1 FROM users WHERE voter_id = :voterId) as exists",
+    { voterId },
   );
   return result.rows[0].exists;
 }
@@ -67,9 +67,9 @@ export async function createUser(request: CreateUserRequest): Promise<User> {
     updated_at: Date;
   }>(
     `INSERT INTO users (username, voter_id, first_name, last_name, password_hash)
-     VALUES ($1, $2, $3, $4, NULL)
+     VALUES (:username, :voterId, :firstName, :lastName, NULL)
      RETURNING id, username, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at`,
-    [finalUsername, voterId, firstName, lastName],
+    { username: finalUsername, voterId, firstName, lastName },
   );
 
   const row = result.rows[0];
@@ -101,8 +101,8 @@ export async function getUserById(userId: string): Promise<User | null> {
     created_at: Date;
     updated_at: Date;
   }>(
-    "SELECT id, username, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at FROM users WHERE id = $1",
-    [userId],
+    "SELECT id, username, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at FROM users WHERE id = :userId",
+    { userId },
   );
 
   if (result.rows.length === 0) {
@@ -153,8 +153,8 @@ export async function listUsers(
     `SELECT id, username, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at
      FROM users
      ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
+     LIMIT :limit OFFSET :offset`,
+    { limit, offset },
   );
 
   const users = result.rows.map((row) => ({
@@ -179,37 +179,52 @@ export async function updateUser(
   userId: string,
   updates: UpdateUserRequest,
 ): Promise<User> {
-  const { firstName, lastName, username } = updates;
+  const { voterId, firstName, lastName, username } = updates;
 
   // Build dynamic update query
   const setClauses: string[] = [];
-  const values: unknown[] = [];
-  let paramCounter = 1;
+  const values: Record<string, unknown> = { userId };
+
+  if (voterId !== undefined) {
+    // Check if new voter ID already exists
+    if (await voterIdExists(voterId)) {
+      const existingUser = await db.query<{ id: string }>(
+        "SELECT id FROM users WHERE voter_id = :voterId",
+        { voterId },
+      );
+      // Only throw error if it's a different user
+      if (existingUser.rows[0].id !== userId) {
+        throw new Error(`Voter ID ${voterId} already exists`);
+      }
+    }
+    setClauses.push(`voter_id = :voterId`);
+    values.voterId = voterId;
+  }
 
   if (firstName !== undefined) {
-    setClauses.push(`first_name = $${paramCounter++}`);
-    values.push(firstName);
+    setClauses.push(`first_name = :firstName`);
+    values.firstName = firstName;
   }
 
   if (lastName !== undefined) {
-    setClauses.push(`last_name = $${paramCounter++}`);
-    values.push(lastName);
+    setClauses.push(`last_name = :lastName`);
+    values.lastName = lastName;
   }
 
   if (username !== undefined) {
     // Check if new username already exists
     if (await usernameExists(username)) {
       const existingUser = await db.query<{ id: string }>(
-        "SELECT id FROM users WHERE username = $1",
-        [username],
+        "SELECT id FROM users WHERE username = :username",
+        { username },
       );
       // Only throw error if it's a different user
       if (existingUser.rows[0].id !== userId) {
         throw new Error(`Username ${username} already exists`);
       }
     }
-    setClauses.push(`username = $${paramCounter++}`);
-    values.push(username);
+    setClauses.push(`username = :username`);
+    values.username = username;
   }
 
   if (setClauses.length === 0) {
@@ -218,9 +233,6 @@ export async function updateUser(
 
   // Add updated_at
   setClauses.push(`updated_at = NOW()`);
-
-  // Add userId as last parameter
-  values.push(userId);
 
   const result = await db.query<{
     id: string;
@@ -235,7 +247,7 @@ export async function updateUser(
   }>(
     `UPDATE users
      SET ${setClauses.join(", ")}
-     WHERE id = $${paramCounter}
+     WHERE id = :userId
      RETURNING id, username, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at`,
     values,
   );
@@ -275,9 +287,9 @@ export async function disableUser(userId: string): Promise<User> {
   }>(
     `UPDATE users
      SET is_disabled = TRUE, updated_at = NOW()
-     WHERE id = $1
+     WHERE id = :userId
      RETURNING id, username, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at`,
-    [userId],
+    { userId },
   );
 
   if (result.rows.length === 0) {
@@ -315,9 +327,9 @@ export async function enableUser(userId: string): Promise<User> {
   }>(
     `UPDATE users
      SET is_disabled = FALSE, updated_at = NOW()
-     WHERE id = $1
+     WHERE id = :userId
      RETURNING id, username, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at`,
-    [userId],
+    { userId },
   );
 
   if (result.rows.length === 0) {
@@ -339,16 +351,17 @@ export async function enableUser(userId: string): Promise<User> {
 }
 
 /**
- * Generate passwords for all users without passwords
+ * Generate passwords for all users
  */
 export async function generatePasswordsForUsers(): Promise<
   PasswordGenerationResult[]
 > {
-  // Get all users without passwords
+  // Get all users
   const usersResult = await db.query<{
     id: string;
     username: string;
-  }>("SELECT id, username FROM users WHERE password_hash IS NULL");
+    voter_id: string | null;
+  }>("SELECT id, username, voter_id FROM users");
 
   const results: PasswordGenerationResult[] = [];
 
@@ -358,12 +371,12 @@ export async function generatePasswordsForUsers(): Promise<
     const hashedPassword = await hashPassword(password);
 
     await db.query(
-      "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2",
-      [hashedPassword, user.id],
+      "UPDATE users SET password_hash = :hashedPassword, updated_at = NOW() WHERE id = :userId",
+      { hashedPassword, userId: user.id },
     );
 
     results.push({
-      userId: user.id,
+      voterId: user.voter_id ?? "N/A",
       username: user.username,
       password,
     });
@@ -380,8 +393,8 @@ export async function resetUserPassword(userId: string): Promise<string> {
   const hashedPassword = await hashPassword(password);
 
   const result = await db.query<{ id: string }>(
-    "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2 RETURNING id",
-    [hashedPassword, userId],
+    "UPDATE users SET password_hash = :hashedPassword, updated_at = NOW() WHERE id = :userId RETURNING id",
+    { hashedPassword, userId },
   );
 
   if (result.rows.length === 0) {
@@ -396,8 +409,8 @@ export async function resetUserPassword(userId: string): Promise<string> {
  */
 export async function getSystemSettings(): Promise<SystemSettings> {
   const result = await db.query<{ setting_value: string }>(
-    "SELECT setting_value FROM system_settings WHERE setting_key = $1",
-    ["non_admin_login_enabled"],
+    "SELECT setting_value FROM system_settings WHERE setting_key = :settingKey",
+    { settingKey: "non_admin_login_enabled" },
   );
 
   return {
@@ -411,9 +424,9 @@ export async function getSystemSettings(): Promise<SystemSettings> {
 export async function setNonAdminLoginEnabled(enabled: boolean): Promise<void> {
   await db.query(
     `INSERT INTO system_settings (setting_key, setting_value, updated_at)
-     VALUES ($1, $2, NOW())
+     VALUES (:settingKey, :settingValue, NOW())
      ON CONFLICT (setting_key)
-     DO UPDATE SET setting_value = $2, updated_at = NOW()`,
-    ["non_admin_login_enabled", enabled.toString()],
+     DO UPDATE SET setting_value = :settingValue, updated_at = NOW()`,
+    { settingKey: "non_admin_login_enabled", settingValue: enabled.toString() },
   );
 }

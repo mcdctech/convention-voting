@@ -170,6 +170,21 @@ export default [
       "max-nested-callbacks": ["error", 5],
     },
   },
+  // Vite and Vitest config files require default exports
+  {
+    files: ["**/vite.config.ts", "**/vitest.config.ts"],
+    rules: {
+      "import/no-default-export": "off",
+    },
+  },
+  // Vite type definition files require triple slash references
+  {
+    files: ["**/vite-env.d.ts"],
+    rules: {
+      "@typescript-eslint/triple-slash-reference": "off",
+      "import/no-default-export": "off",
+    },
+  },
   {
     ignores: [
       "dist/**",
