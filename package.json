@@ -1,0 +1,52 @@
+{
+  "name": "mcdc-convention-voting",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCDC Convention Voting System - A monorepo for server and client applications",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev:server & npm run dev:client",
+    "dev:server": "npm run dev -w @mcdc-convention-voting/server",
+    "dev:client": "npm run dev -w @mcdc-convention-voting/client",
+    "build": "npm run build:shared && npm run build:server && npm run build:client",
+    "build:shared": "npm run build -w @mcdc-convention-voting/shared",
+    "build:server": "npm run build -w @mcdc-convention-voting/server",
+    "build:client": "npm run build -w @mcdc-convention-voting/client",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "npm run test:unit --workspaces --if-present",
+    "test:integration": "npm run test:integration --workspaces --if-present",
+    "test:ci": "npm run test:ci --workspaces --if-present",
+    "lint": "npm run lint:eslint && npm run format:check",
+    "lint:eslint": "eslint . --max-warnings=0",
+    "format": "npm run format:prettier && npm run format:eslint",
+    "format:eslint": "eslint . --fix || true",
+    "format:prettier": "prettier --write \"**/*.{ts,tsx,js,jsx,vue,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,vue,json,md,yml,yaml}\"",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "migrate": "npm run migrate -w @mcdc-convention-voting/server",
+    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist packages/*/build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "@typescript-eslint/parser": "^8.18.2",
+    "eslint": "^9.18.0",
+    "eslint-config-love": "^140.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-pino": "^1.0.3",
+    "eslint-plugin-sort-exports": "^0.9.1",
+    "eslint-plugin-vue": "^9.32.0",
+    "globals": "^17.0.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.51.0"
+  },
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10.0.0"
+  }
+}
