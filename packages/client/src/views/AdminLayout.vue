@@ -13,6 +13,13 @@
 				<router-link to="/admin/passwords" class="nav-link">
 					Generate Passwords
 				</router-link>
+				<router-link to="/admin/pools" class="nav-link"> Pools </router-link>
+				<router-link to="/admin/pools/upload" class="nav-link">
+					Upload Pools CSV
+				</router-link>
+				<router-link to="/admin/pools/create" class="nav-link">
+					Create Pool
+				</router-link>
 			</nav>
 		</header>
 

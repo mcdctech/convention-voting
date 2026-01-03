@@ -1,99 +1,237 @@
 /**
- * CSV parsing and user import service
+ * CSV parsing and user/pool import service
  */
 import { Readable } from "node:stream";
 import { parse } from "csv-parse";
 import pino from "pino";
 import { createUser } from "./user-service.js";
-import type { UserCSVRow } from "@mcdc-convention-voting/shared";
+import { createPool } from "./pool-service.js";
+import type { UserCSVRow, PoolCSVRow } from "@mcdc-convention-voting/shared";
 
 const logger = pino({ name: "csv-service" });
 
+// CSV parsing constants
+const CSV_ROW_OFFSET = 2; // CSV rows start at 1 and we have a header
+const FIRST_POOL_KEY_INDEX = 1;
+const MAX_POOL_KEYS = 10;
+const COUNTER_INCREMENT = 1;
+const EMPTY_ARRAY_LENGTH = 0;
+
 interface CSVImportResult {
-  success: number;
-  failed: number;
-  errors: Array<{ row: number; voterId: string; error: string }>;
+	success: number;
+	failed: number;
+	errors: Array<{ row: number; voterId: string; error: string }>;
 }
 
 /**
  * Parse and import users from CSV buffer
  */
 export async function importUsersFromCSV(
-  csvBuffer: Buffer,
+	csvBuffer: Buffer,
 ): Promise<CSVImportResult> {
-  const result: CSVImportResult = {
-    success: 0,
-    failed: 0,
-    errors: [],
-  };
+	const result: CSVImportResult = {
+		success: 0,
+		failed: 0,
+		errors: [],
+	};
 
-  return await new Promise((resolve, reject) => {
-    const stream = Readable.from(csvBuffer);
-    const parser = parse({
-      columns: true,
-      skip_empty_lines: true,
-      trim: true,
-    });
+	// Promise wrapper needed for streaming CSV parser
+	// eslint-disable-next-line promise/avoid-new -- Required for csv-parse stream handling
+	return await new Promise((resolve, reject) => {
+		const stream = Readable.from(csvBuffer);
+		const parser = parse({
+			columns: true,
+			skip_empty_lines: true,
+			trim: true,
+		});
 
-    const records: UserCSVRow[] = [];
+		const records: UserCSVRow[] = [];
 
-    parser.on("readable", () => {
-      let record;
-      while ((record = parser.read()) !== null) {
-        records.push(record);
-      }
-    });
+		parser.on("readable", () => {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- csv-parse read() returns any
+			let record: UserCSVRow | null = parser.read();
+			while (record !== null) {
+				records.push(record);
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- csv-parse read() returns any
+				record = parser.read();
+			}
+		});
 
-    parser.on("error", (error) => {
-      logger.error({ error }, "CSV parsing error");
-      reject(new Error(`CSV parsing error: ${error.message}`));
-    });
+		parser.on("error", (error) => {
+			logger.error({ error }, "CSV parsing error");
+			reject(new Error(`CSV parsing error: ${error.message}`));
+		});
 
-    parser.on("end", async () => {
-      // Process records sequentially
-      for (let i = 0; i < records.length; i++) {
-        const record = records[i];
-        const rowNumber = i + 2; // +2 because CSV rows start at 1 and we have a header
+		// eslint-disable-next-line @typescript-eslint/no-misused-promises, complexity -- Event handler requires async. CSV processing has high complexity due to validation and error handling branches
+		parser.on("end", async () => {
+			// Process records sequentially
+			for (let i = 0; i < records.length; i += COUNTER_INCREMENT) {
+				const { [i]: record } = records;
+				const rowNumber = i + CSV_ROW_OFFSET;
 
-        try {
-          // Validate required fields
-          if (!record.voter_id || !record.first_name || !record.last_name) {
-            throw new Error(
-              "Missing required fields (voter_id, first_name, last_name)",
-            );
-          }
+				// Validate required fields
+				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- csv-parse types don't reflect runtime nullability
+				const voterIdValue = record.voter_id ?? "";
+				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- csv-parse types don't reflect runtime nullability
+				const firstNameValue = record.first_name ?? "";
+				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- csv-parse types don't reflect runtime nullability
+				const lastNameValue = record.last_name ?? "";
 
-          // Create user
-          await createUser({
-            voterId: record.voter_id,
-            firstName: record.first_name,
-            lastName: record.last_name,
-          });
+				try {
+					if (
+						voterIdValue === "" ||
+						firstNameValue === "" ||
+						lastNameValue === ""
+					) {
+						throw new Error(
+							"Missing required fields (voter_id, first_name, last_name)",
+						);
+					}
 
-          result.success++;
-          logger.info(
-            { voterId: record.voter_id },
-            "User created successfully",
-          );
-        } catch (error) {
-          result.failed++;
-          const errorMessage =
-            error instanceof Error ? error.message : "Unknown error";
-          result.errors.push({
-            row: rowNumber,
-            voterId: record.voter_id || "unknown",
-            error: errorMessage,
-          });
-          logger.error(
-            { voterId: record.voter_id, error },
-            "Failed to create user",
-          );
-        }
-      }
+					// Extract pool keys from CSV row (pool_key_1 through pool_key_10)
+					const poolKeys: string[] = [];
+					for (
+						let j = FIRST_POOL_KEY_INDEX;
+						j <= MAX_POOL_KEYS;
+						j += COUNTER_INCREMENT
+					) {
+						// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Dynamic key access requires runtime type assertion
+						const key = `pool_key_${j}` as keyof UserCSVRow;
+						const { [key]: poolKey } = record;
+						const trimmedPoolKey = poolKey?.trim() ?? "";
+						if (poolKey !== undefined && trimmedPoolKey !== "") {
+							poolKeys.push(poolKey.trim());
+						}
+					}
 
-      resolve(result);
-    });
+					// Create user
+					// eslint-disable-next-line no-await-in-loop -- Sequential user creation required for CSV import
+					await createUser({
+						voterId: voterIdValue,
+						firstName: firstNameValue,
+						lastName: lastNameValue,
+						poolKeys:
+							poolKeys.length > EMPTY_ARRAY_LENGTH ? poolKeys : undefined,
+					});
 
-    stream.pipe(parser);
-  });
+					result.success += COUNTER_INCREMENT;
+					logger.info({ voterId: voterIdValue }, "User created successfully");
+				} catch (unknownError: unknown) {
+					result.failed += COUNTER_INCREMENT;
+					const { message: errorMessage } =
+						unknownError instanceof Error
+							? unknownError
+							: new Error("Unknown error");
+					const errorVoterId = voterIdValue === "" ? "unknown" : voterIdValue;
+					result.errors.push({
+						row: rowNumber,
+						voterId: errorVoterId,
+						error: errorMessage,
+					});
+					logger.error(
+						{ voterId: voterIdValue, error: unknownError },
+						"Failed to create user",
+					);
+				}
+			}
+
+			resolve(result);
+		});
+
+		stream.pipe(parser);
+	});
+}
+
+/**
+ * Parse and import pools from CSV buffer
+ */
+export async function importPoolsFromCSV(
+	csvBuffer: Buffer,
+): Promise<CSVImportResult> {
+	const result: CSVImportResult = {
+		success: 0,
+		failed: 0,
+		errors: [],
+	};
+
+	// Promise wrapper needed for streaming CSV parser
+	// eslint-disable-next-line promise/avoid-new -- Required for csv-parse stream handling
+	return await new Promise((resolve, reject) => {
+		const stream = Readable.from(csvBuffer);
+		const parser = parse({
+			columns: true,
+			skip_empty_lines: true,
+			trim: true,
+		});
+
+		const records: PoolCSVRow[] = [];
+
+		parser.on("readable", () => {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- csv-parse read() returns any
+			let record: PoolCSVRow | null = parser.read();
+			while (record !== null) {
+				records.push(record);
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- csv-parse read() returns any
+				record = parser.read();
+			}
+		});
+
+		parser.on("error", (error) => {
+			logger.error({ error }, "CSV parsing error");
+			reject(new Error(`CSV parsing error: ${error.message}`));
+		});
+
+		// eslint-disable-next-line @typescript-eslint/no-misused-promises -- Event handler requires async for sequential processing
+		parser.on("end", async () => {
+			// Process records sequentially
+			for (let i = 0; i < records.length; i += COUNTER_INCREMENT) {
+				const { [i]: record } = records;
+				const rowNumber = i + CSV_ROW_OFFSET;
+
+				// Validate required fields
+				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- csv-parse types don't reflect runtime nullability
+				const poolKeyValue = record.pool_key ?? "";
+				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- csv-parse types don't reflect runtime nullability
+				const poolNameValue = record.pool_name ?? "";
+
+				try {
+					// Validate required fields
+					if (poolKeyValue === "" || poolNameValue === "") {
+						throw new Error("Missing required fields (pool_key, pool_name)");
+					}
+
+					// Create pool
+					// eslint-disable-next-line no-await-in-loop -- Sequential pool creation required for CSV import
+					await createPool({
+						poolKey: poolKeyValue,
+						poolName: poolNameValue,
+						description: record.description,
+					});
+
+					result.success += COUNTER_INCREMENT;
+					logger.info({ poolKey: poolKeyValue }, "Pool created successfully");
+				} catch (unknownError: unknown) {
+					result.failed += COUNTER_INCREMENT;
+					const { message: errorMessage } =
+						unknownError instanceof Error
+							? unknownError
+							: new Error("Unknown error");
+					const errorPoolKey = poolKeyValue === "" ? "unknown" : poolKeyValue;
+					result.errors.push({
+						row: rowNumber,
+						voterId: errorPoolKey,
+						error: errorMessage,
+					});
+					logger.error(
+						{ poolKey: poolKeyValue, error: unknownError },
+						"Failed to create pool",
+					);
+				}
+			}
+
+			resolve(result);
+		});
+
+		stream.pipe(parser);
+	});
 }

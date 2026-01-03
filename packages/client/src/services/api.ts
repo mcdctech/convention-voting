@@ -6,6 +6,9 @@ import type {
 	CreateUserRequest,
 	BulkPasswordResponse,
 	PasswordGenerationResult,
+	Pool,
+	CreatePoolRequest,
+	UpdatePoolRequest,
 } from "@mcdc-convention-voting/shared";
 
 // Constants
@@ -15,9 +18,10 @@ const DEFAULT_API_URL = "http://localhost:3000";
 
 // Type guard for import.meta.env
 function getApiBaseUrl(): string {
-	const { VITE_API_URL } = import.meta.env;
-	if (typeof VITE_API_URL === "string") {
-		return VITE_API_URL;
+	// eslint-disable-next-line @typescript-eslint/prefer-destructuring, @typescript-eslint/no-unsafe-assignment -- import.meta.env is typed as any in Vite
+	const viteApiUrl = import.meta.env.VITE_API_URL;
+	if (typeof viteApiUrl === "string") {
+		return viteApiUrl;
 	}
 	return DEFAULT_API_URL;
 }
@@ -73,9 +77,8 @@ function isErrorResponse(value: unknown): value is ErrorResponse {
  * Note: This trusts the API to return the correct shape
  */
 async function parseJsonResponse<T>(response: Response): Promise<T> {
-	// We trust the API response matches type T
-	// TypeScript's any from response.json() is unavoidable without runtime validation
-	return await response.json();
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion, @typescript-eslint/no-unnecessary-type-assertion -- API client intentionally trusts backend to return correct type
+	return (await response.json()) as unknown as T;
 }
 
 /**
@@ -254,5 +257,158 @@ export async function updateLoginEnabled(
 			method: "PUT",
 			body: JSON.stringify({ enabled }),
 		},
+	);
+}
+
+/**
+ * Pool Management API Functions
+ */
+
+/**
+ * Upload pools from CSV file
+ */
+export async function uploadPoolsCSV(
+	file: File,
+): Promise<ApiResponse<CSVImportResult>> {
+	const formData = new FormData();
+	formData.append("file", file);
+
+	const requestHeaders = new Headers();
+	// Don't set Content-Type for FormData - browser will set it with boundary
+
+	const response = await fetch(`${API_BASE_URL}/api/admin/pools/upload`, {
+		method: "POST",
+		headers: requestHeaders,
+		body: formData,
+	});
+
+	if (!response.ok) {
+		const errorJson: unknown = await response.json().catch(() => ({
+			message: response.statusText,
+		}));
+		const errorData: ErrorResponse = isErrorResponse(errorJson)
+			? errorJson
+			: { message: response.statusText };
+		const errorMessage =
+			errorData.error ?? errorData.message ?? `HTTP ${response.status}`;
+		throw new Error(errorMessage);
+	}
+
+	return await parseJsonResponse<ApiResponse<CSVImportResult>>(response);
+}
+
+/**
+ * Get paginated list of pools
+ */
+export async function getPools(
+	page = DEFAULT_PAGE,
+	limit = DEFAULT_PAGE_LIMIT,
+): Promise<PaginatedResponse<Pool>> {
+	return await apiRequest<PaginatedResponse<Pool>>(
+		`/api/admin/pools?page=${page}&limit=${limit}`,
+	);
+}
+
+/**
+ * Get a single pool by ID
+ */
+export async function getPool(id: number): Promise<ApiResponse<Pool>> {
+	return await apiRequest<ApiResponse<Pool>>(`/api/admin/pools/${id}`);
+}
+
+/**
+ * Create a new pool
+ */
+export async function createPool(
+	pool: CreatePoolRequest,
+): Promise<ApiResponse<Pool>> {
+	return await apiRequest<ApiResponse<Pool>>("/api/admin/pools", {
+		method: "POST",
+		body: JSON.stringify(pool),
+	});
+}
+
+/**
+ * Update a pool
+ */
+export async function updatePool(
+	id: number,
+	updates: UpdatePoolRequest,
+): Promise<ApiResponse<Pool>> {
+	return await apiRequest<ApiResponse<Pool>>(`/api/admin/pools/${id}`, {
+		method: "PUT",
+		body: JSON.stringify(updates),
+	});
+}
+
+/**
+ * Disable a pool
+ */
+export async function disablePool(id: number): Promise<ApiResponse<Pool>> {
+	return await apiRequest<ApiResponse<Pool>>(`/api/admin/pools/${id}/disable`, {
+		method: "POST",
+	});
+}
+
+/**
+ * Enable a pool
+ */
+export async function enablePool(id: number): Promise<ApiResponse<Pool>> {
+	return await apiRequest<ApiResponse<Pool>>(`/api/admin/pools/${id}/enable`, {
+		method: "POST",
+	});
+}
+
+/**
+ * Get users in a pool
+ */
+export async function getPoolUsers(
+	id: number,
+	page = DEFAULT_PAGE,
+	limit = DEFAULT_PAGE_LIMIT,
+): Promise<PaginatedResponse<User>> {
+	return await apiRequest<PaginatedResponse<User>>(
+		`/api/admin/pools/${id}/users?page=${page}&limit=${limit}`,
+	);
+}
+
+/**
+ * Add user to pool
+ */
+export async function addUserToPool(
+	poolId: number,
+	userId: string,
+): Promise<ApiResponse<void>> {
+	return await apiRequest<ApiResponse<void>>(
+		`/api/admin/pools/${poolId}/users/${userId}`,
+		{
+			method: "POST",
+		},
+	);
+}
+
+/**
+ * Remove user from pool
+ */
+export async function removeUserFromPool(
+	poolId: number,
+	userId: string,
+): Promise<ApiResponse<void>> {
+	return await apiRequest<ApiResponse<void>>(
+		`/api/admin/pools/${poolId}/users/${userId}`,
+		{
+			method: "DELETE",
+		},
+	);
+}
+
+/**
+ * Get pools for a user
+ */
+export async function getUserPools(
+	userId: string,
+): Promise<ApiResponse<Pool[]>> {
+	return await apiRequest<ApiResponse<Pool[]>>(
+		`/api/admin/users/${userId}/pools`,
 	);
 }

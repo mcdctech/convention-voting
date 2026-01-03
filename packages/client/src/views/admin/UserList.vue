@@ -32,6 +32,7 @@ const userToDisable = ref<string | null>(null);
 const showResetPasswordModal = ref(false);
 const userToResetPassword = ref<string | null>(null);
 
+// eslint-disable-next-line no-useless-assignment -- Used in template for pagination
 const totalPages = computed(() => Math.ceil(totalUsers.value / USERS_PER_PAGE));
 
 async function loadUsers(): Promise<void> {
@@ -66,7 +67,7 @@ async function handleDisable(): Promise<void> {
 	}
 
 	showDisableModal.value = false;
-	const userId = userToDisable.value;
+	const { value: userId } = userToDisable;
 	userToDisable.value = null;
 
 	try {
@@ -102,7 +103,7 @@ async function handleResetPassword(): Promise<void> {
 	}
 
 	showResetPasswordModal.value = false;
-	const userId = userToResetPassword.value;
+	const { value: userId } = userToResetPassword;
 	userToResetPassword.value = null;
 
 	try {
@@ -146,7 +147,9 @@ onMounted(() => {
 
 		<div v-if="loading" class="loading">Loading users...</div>
 
-		<div v-if="error" class="error">{{ error }}</div>
+		<div v-if="error" class="error">
+			{{ error }}
+		</div>
 
 		<div v-if="!loading && !error" class="users-container">
 			<div class="users-header">
@@ -159,6 +162,7 @@ onMounted(() => {
 						<th>Username</th>
 						<th>Name</th>
 						<th>Voter ID</th>
+						<th>Pools</th>
 						<th>Status</th>
 						<th>Admin</th>
 						<th>Actions</th>
@@ -169,6 +173,13 @@ onMounted(() => {
 						<td>{{ user.username }}</td>
 						<td>{{ user.firstName }} {{ user.lastName }}</td>
 						<td>{{ user.voterId ?? "N/A" }}</td>
+						<td class="pools-cell">
+							{{
+								user.poolNames && user.poolNames.length > 0
+									? user.poolNames.join(", ")
+									: "—"
+							}}
+						</td>
 						<td>
 							<span
 								:class="user.isDisabled ? 'status-disabled' : 'status-active'"

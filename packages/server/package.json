@@ -1,43 +1,44 @@
 {
-  "name": "@mcdc-convention-voting/server",
-  "version": "0.1.0",
-  "description": "Express server with PostgreSQL for MCDC Convention Voting System",
-  "type": "module",
-  "main": "./dist/server.js",
-  "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "build": "npm run build:node && npm run build:assets",
-    "build:node": "tsc -p tsconfig.json",
-    "build:assets": "cp -r src/database/migrations dist/database/ && cp -r src/database/initialization dist/database/ && cp -r src/database/queries dist/database/",
-    "start": "node dist/server.js",
-    "test": "npm run test:unit && npm run test:integration",
-    "test:unit": "vitest run --config vitest.config.ts",
-    "test:integration": "vitest run --config vitest.config.integration.ts",
-    "test:ci": "vitest run --config vitest.config.ts && vitest run --config vitest.config.integration.ts --run",
-    "migrate": "tsx src/scripts/migrate.ts | pino-pretty",
-    "lint": "eslint src --ext .ts --max-warnings 0",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@mcdc-convention-voting/shared": "^0.1.0",
-    "bcrypt": "^6.0.0",
-    "csv-parse": "^6.1.0",
-    "express": "^4.21.2",
-    "multer": "^2.0.2",
-    "pino": "^9.6.0",
-    "pino-http": "^10.3.0",
-    "pino-pretty": "^13.0.0",
-    "postgres-schema-migrations": "^6.1.0",
-    "tinypg": "^7.0.0"
-  },
-  "devDependencies": {
-    "@types/bcrypt": "^6.0.0",
-    "@types/express": "^5.0.0",
-    "@types/multer": "^2.0.0",
-    "@types/node": "^22.10.5",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
-  }
+	"name": "@mcdc-convention-voting/server",
+	"version": "0.1.0",
+	"description": "Express server with PostgreSQL for MCDC Convention Voting System",
+	"type": "module",
+	"main": "./dist/server.js",
+	"scripts": {
+		"dev": "tsx watch src/server.ts",
+		"build": "npm run build:node && npm run build:assets",
+		"build:node": "tsc -p tsconfig.json",
+		"build:assets": "cp -r src/database/migrations dist/database/ && cp -r src/database/initialization dist/database/ && cp -r src/database/queries dist/database/",
+		"start": "node dist/server.js",
+		"test": "npm run test:unit && npm run test:integration",
+		"test:unit": "vitest run --config vitest.config.ts",
+		"test:integration": "vitest run --config vitest.config.integration.ts",
+		"test:ci": "vitest run --config vitest.config.ts && vitest run --config vitest.config.integration.ts --run",
+		"migrate": "tsx src/scripts/migrate.ts | pino-pretty",
+		"lint": "eslint src --ext .ts --max-warnings 0",
+		"format": "prettier --write \"src/**/*.ts\"",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@mcdc-convention-voting/shared": "^0.1.0",
+		"@pdc/http-status-codes": "^1.0.1",
+		"bcrypt": "^6.0.0",
+		"csv-parse": "^6.1.0",
+		"express": "^4.21.2",
+		"multer": "^2.0.2",
+		"pino": "^9.6.0",
+		"pino-http": "^10.3.0",
+		"pino-pretty": "^13.0.0",
+		"postgres-schema-migrations": "^6.1.0",
+		"tinypg": "^7.0.0"
+	},
+	"devDependencies": {
+		"@types/bcrypt": "^6.0.0",
+		"@types/express": "^5.0.0",
+		"@types/multer": "^2.0.0",
+		"@types/node": "^22.10.5",
+		"tsx": "^4.19.2",
+		"typescript": "^5.7.2",
+		"vitest": "^2.1.8"
+	}
 }

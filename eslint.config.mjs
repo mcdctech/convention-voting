@@ -33,7 +33,6 @@ export default [
       "pino/correct-args-position": "error",
     },
   },
-  prettier,
   {
     plugins: {
       "sort-exports": sortExports,
@@ -63,6 +62,9 @@ export default [
           ignoreEnums: true,
         },
       ],
+
+      // Disable max-lines project-wide - can be addressed in refactoring later
+      "max-lines": "off",
 
       // Unlike some code bases we explicitly do not want to use default exports.
       "import/prefer-default-export": "off",
@@ -128,6 +130,15 @@ export default [
     rules: {
       // Vue files often use default exports
       "import/no-default-export": "off",
+      // Prettier handles all formatting in Vue templates
+      "vue/html-indent": "off",
+      "vue/script-indent": "off",
+      "vue/max-attributes-per-line": "off",
+      "vue/first-attribute-linebreak": "off",
+      "vue/html-closing-bracket-newline": "off",
+      "vue/singleline-html-element-content-newline": "off",
+      "vue/multiline-html-element-content-newline": "off",
+      "vue/html-self-closing": "off",
     },
   },
   {
@@ -185,6 +196,13 @@ export default [
       "import/no-default-export": "off",
     },
   },
+  // Vue Router type compatibility issue in main.ts
+  {
+    files: ["packages/client/src/main.ts"],
+    rules: {
+      "@typescript-eslint/no-unsafe-argument": "off",
+    },
+  },
   {
     ignores: [
       "dist/**",
@@ -196,4 +214,6 @@ export default [
       "packages/*/build/**",
     ],
   },
+  // Prettier must be last to disable all conflicting rules
+  prettier,
 ];

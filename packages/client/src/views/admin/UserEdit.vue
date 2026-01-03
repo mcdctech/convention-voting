@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { getUser, updateUser } from "../../services/api";
-import type { User } from "@mcdc-convention-voting/shared";
+import {
+	getUser,
+	updateUser,
+	getUserPools,
+	getPools,
+} from "../../services/api";
+import type { User, Pool } from "@mcdc-convention-voting/shared";
 
 const props = defineProps<{
 	id: string;
@@ -12,6 +17,8 @@ const router = useRouter();
 
 // Constants
 const EMPTY_STRING = "";
+const MAX_POOLS_TO_LOAD = 1000;
+const FIRST_PAGE = 1;
 
 const user = ref<User | null>(null);
 const loading = ref(false);
@@ -24,6 +31,11 @@ const formData = ref({
 	lastName: EMPTY_STRING,
 	username: EMPTY_STRING,
 });
+
+// Pool management
+const userPools = ref<Pool[]>([]);
+const allPools = ref<Pool[]>([]);
+const selectedPoolIds = ref<Set<number>>(new Set());
 
 async function loadUser(): Promise<void> {
 	loading.value = true;
@@ -49,6 +61,38 @@ async function loadUser(): Promise<void> {
 	}
 }
 
+async function loadUserPools(): Promise<void> {
+	try {
+		const response = await getUserPools(props.id);
+		if (response.data !== undefined) {
+			const { data } = response;
+			userPools.value = data;
+			selectedPoolIds.value = new Set(userPools.value.map((p) => p.id));
+		}
+	} catch (err) {
+		error.value =
+			err instanceof Error ? err.message : "Failed to load user pools";
+	}
+}
+
+async function loadAllPools(): Promise<void> {
+	try {
+		const response = await getPools(FIRST_PAGE, MAX_POOLS_TO_LOAD);
+		const { data } = response;
+		allPools.value = data;
+	} catch (err) {
+		error.value = err instanceof Error ? err.message : "Failed to load pools";
+	}
+}
+
+function togglePool(poolId: number): void {
+	if (selectedPoolIds.value.has(poolId)) {
+		selectedPoolIds.value.delete(poolId);
+	} else {
+		selectedPoolIds.value.add(poolId);
+	}
+}
+
 async function handleSubmit(): Promise<void> {
 	error.value = null;
 
@@ -64,11 +108,18 @@ async function handleSubmit(): Promise<void> {
 	saving.value = true;
 
 	try {
+		// Get pool keys from selected pool IDs
+		const selectedPools = allPools.value.filter((p) =>
+			selectedPoolIds.value.has(p.id),
+		);
+		const poolKeys = selectedPools.map((p) => p.poolKey);
+
 		const userData = {
 			voterId: formData.value.voterId.trim(),
 			firstName: formData.value.firstName.trim(),
 			lastName: formData.value.lastName.trim(),
 			username: formData.value.username.trim(),
+			poolKeys,
 		};
 
 		await updateUser(props.id, userData);
@@ -86,6 +137,8 @@ function cancel(): void {
 
 onMounted(() => {
 	void loadUser();
+	void loadUserPools();
+	void loadAllPools();
 });
 </script>
 
@@ -142,6 +195,33 @@ onMounted(() => {
 					<strong>Created:</strong>
 					{{ new Date(user.createdAt).toLocaleString() }}
 				</p>
+			</div>
+
+			<div class="form-section">
+				<h3>Pool Assignments</h3>
+				<p class="section-description">
+					Select which pools this user belongs to:
+				</p>
+				<div v-if="allPools.length === 0" class="no-pools">
+					No pools available. Create pools first.
+				</div>
+				<div v-else class="pool-checkboxes">
+					<label
+						v-for="pool in allPools"
+						:key="pool.id"
+						class="pool-checkbox-label"
+					>
+						<input
+							type="checkbox"
+							:checked="selectedPoolIds.has(pool.id)"
+							@change="togglePool(pool.id)"
+						/>
+						<span class="pool-checkbox-text">
+							<strong>{{ pool.poolName }}</strong>
+							<span class="pool-key">({{ pool.poolKey }})</span>
+						</span>
+					</label>
+				</div>
 			</div>
 
 			<div class="form-actions">
@@ -228,6 +308,72 @@ h2 {
 .user-info p {
 	margin: 0.5rem 0;
 	color: #616161;
+}
+
+.form-section {
+	margin: 2rem 0;
+	padding-top: 1.5rem;
+	border-top: 1px solid #e0e0e0;
+}
+
+.form-section h3 {
+	margin: 0 0 0.5rem 0;
+	color: #2c3e50;
+	font-size: 1.125rem;
+}
+
+.section-description {
+	margin: 0 0 1rem 0;
+	color: #757575;
+	font-size: 0.875rem;
+}
+
+.no-pools {
+	padding: 1rem;
+	background-color: #f5f5f5;
+	border-radius: 4px;
+	color: #757575;
+	text-align: center;
+}
+
+.pool-checkboxes {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+	gap: 0.75rem;
+}
+
+.pool-checkbox-label {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.75rem;
+	border: 1px solid #e0e0e0;
+	border-radius: 4px;
+	cursor: pointer;
+	transition: all 0.2s;
+}
+
+.pool-checkbox-label:hover {
+	background-color: #f8f9fa;
+	border-color: #1976d2;
+}
+
+.pool-checkbox-label input[type="checkbox"] {
+	width: auto;
+	cursor: pointer;
+}
+
+.pool-checkbox-text {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+
+.pool-key {
+	font-size: 0.875rem;
+	color: #757575;
+	font-family: monospace;
 }
 
 .form-actions {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { uploadUsersCSV } from "../../services/api";
+import { uploadPoolsCSV } from "../../services/api";
 
 const router = useRouter();
 
@@ -42,7 +42,7 @@ async function handleUpload(): Promise<void> {
 	error.value = null;
 
 	try {
-		const response = await uploadUsersCSV(selectedFile.value);
+		const response = await uploadPoolsCSV(selectedFile.value);
 		if (response.data !== undefined) {
 			const { data } = response;
 			uploadResult.value = data;
@@ -54,38 +54,36 @@ async function handleUpload(): Promise<void> {
 	}
 }
 
-function goToUsers(): void {
-	void router.push("/admin/users");
+function goToPools(): void {
+	void router.push("/admin/pools");
 }
 </script>
 
 <template>
-	<div class="user-upload">
-		<h2>Upload Users from CSV</h2>
+	<div class="pool-upload">
+		<h2>Upload Pools from CSV</h2>
 
 		<div class="upload-info">
 			<h3>CSV Format Requirements</h3>
 			<p>The CSV file must contain the following columns:</p>
 			<ul>
-				<li><strong>voter_id</strong> - Unique identifier for the voter</li>
-				<li><strong>first_name</strong> - Voter's first name</li>
-				<li><strong>last_name</strong> - Voter's last name</li>
 				<li>
-					<strong>pool_key_1</strong> through <strong>pool_key_10</strong>
-					(optional) - Pool keys to assign the user to (up to 10 pools)
+					<strong>pool_key</strong> - Unique identifier for the pool (e.g.,
+					"congressional-district-1")
+				</li>
+				<li>
+					<strong>pool_name</strong> - Display name for the pool (e.g.,
+					"Congressional District 1")
+				</li>
+				<li>
+					<strong>description</strong> - Optional description or notes about the
+					pool
 				</li>
 			</ul>
 			<p>
 				<em>
-					Note: Usernames will be auto-generated from names. Passwords will be
-					NULL initially and can be generated in bulk later.
-				</em>
-			</p>
-			<p>
-				<em>
-					Pool assignments: Use pool_key_1, pool_key_2, etc. columns to assign
-					users to pools. Pool keys must match existing pools (create pools
-					first). Empty pool_key columns are ignored.
+					Note: Pool key must be unique. If a pool with the same key already
+					exists, the upload will fail for that row.
 				</em>
 			</p>
 		</div>
@@ -123,10 +121,10 @@ function goToUsers(): void {
 			<div class="result-summary">
 				<div class="result-success">
 					<strong>Successfully Created:</strong> {{ uploadResult.success }}
-					users
+					pools
 				</div>
 				<div v-if="uploadResult.failed > NO_ERRORS" class="result-failed">
-					<strong>Failed:</strong> {{ uploadResult.failed }} users
+					<strong>Failed:</strong> {{ uploadResult.failed }} pools
 				</div>
 			</div>
 
@@ -136,7 +134,7 @@ function goToUsers(): void {
 					<thead>
 						<tr>
 							<th>Row</th>
-							<th>Voter ID</th>
+							<th>Pool Key</th>
 							<th>Error</th>
 						</tr>
 					</thead>
@@ -153,15 +151,15 @@ function goToUsers(): void {
 				</table>
 			</div>
 
-			<button class="btn btn-secondary" @click="goToUsers">
-				Go to User List
+			<button class="btn btn-secondary" @click="goToPools">
+				Go to Pool List
 			</button>
 		</div>
 	</div>
 </template>
 
 <style scoped>
-.user-upload {
+.pool-upload {
 	max-width: 800px;
 }
 

@@ -6,16 +6,19 @@ import { runMigrations } from "../database/migrate.js";
 
 const logger = pino({ name: "migrate-script" });
 
-async function main() {
-  try {
-    logger.info("Starting migration script");
-    await runMigrations();
-    logger.info("Migration script completed successfully");
-    process.exit(0);
-  } catch (error) {
-    logger.error({ error }, "Migration script failed");
-    process.exit(1);
-  }
+const EXIT_CODE_SUCCESS = 0;
+const EXIT_CODE_ERROR = 1;
+
+async function main(): Promise<void> {
+	try {
+		logger.info("Starting migration script");
+		await runMigrations();
+		logger.info("Migration script completed successfully");
+		process.exit(EXIT_CODE_SUCCESS);
+	} catch (error) {
+		logger.error({ error }, "Migration script failed");
+		process.exit(EXIT_CODE_ERROR);
+	}
 }
 
-main();
+void main();

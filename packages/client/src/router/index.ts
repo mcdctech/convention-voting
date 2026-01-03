@@ -1,15 +1,20 @@
 /**
  * Vue Router configuration
  */
-import { createRouter, createWebHistory, type Router } from "vue-router";
+import { createRouter, createWebHistory } from "vue-router";
 import AdminLayout from "../views/AdminLayout.vue";
 import UserList from "../views/admin/UserList.vue";
 import UserUpload from "../views/admin/UserUpload.vue";
 import UserCreate from "../views/admin/UserCreate.vue";
 import UserEdit from "../views/admin/UserEdit.vue";
 import PasswordGeneration from "../views/admin/PasswordGeneration.vue";
+import PoolList from "../views/admin/PoolList.vue";
+import PoolUpload from "../views/admin/PoolUpload.vue";
+import PoolCreate from "../views/admin/PoolCreate.vue";
+import PoolEdit from "../views/admin/PoolEdit.vue";
+import PoolUsers from "../views/admin/PoolUsers.vue";
 
-export const router: Router = createRouter({
+export const router = createRouter({
 	history: createWebHistory(),
 	routes: [
 		{
@@ -45,6 +50,33 @@ export const router: Router = createRouter({
 					path: "passwords",
 					name: "PasswordGeneration",
 					component: PasswordGeneration,
+				},
+				{
+					path: "pools",
+					name: "PoolList",
+					component: PoolList,
+				},
+				{
+					path: "pools/upload",
+					name: "PoolUpload",
+					component: PoolUpload,
+				},
+				{
+					path: "pools/create",
+					name: "PoolCreate",
+					component: PoolCreate,
+				},
+				{
+					path: "pools/:id/edit",
+					name: "PoolEdit",
+					component: PoolEdit,
+					props: true,
+				},
+				{
+					path: "pools/:id/users",
+					name: "PoolUsers",
+					component: PoolUsers,
+					props: true,
 				},
 			],
 		},

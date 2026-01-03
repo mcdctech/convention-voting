@@ -2,6 +2,10 @@
  * Username generation utilities
  */
 
+const FIRST_CHARACTER_INDEX = 0;
+const INITIAL_COUNTER = 2;
+const COUNTER_INCREMENT = 1;
+
 /**
  * Generate a username from first and last name
  * Format: first initial + last name (lowercase)
@@ -12,13 +16,13 @@
  * @returns Generated base username (without conflict resolution)
  */
 export function generateBaseUsername(
-  firstName: string,
-  lastName: string,
+	firstName: string,
+	lastName: string,
 ): string {
-  const firstInitial = firstName.charAt(0).toLowerCase();
-  const lastNameClean = lastName.toLowerCase().replace(/[^a-z]/g, "");
+	const firstInitial = firstName.charAt(FIRST_CHARACTER_INDEX).toLowerCase();
+	const lastNameClean = lastName.toLowerCase().replace(/[^a-z]/g, "");
 
-  return `${firstInitial}${lastNameClean}`;
+	return `${firstInitial}${lastNameClean}`;
 }
 
 /**
@@ -31,19 +35,20 @@ export function generateBaseUsername(
  * @returns Unique username
  */
 export async function generateUniqueUsername(
-  firstName: string,
-  lastName: string,
-  checkExists: (username: string) => Promise<boolean>,
+	firstName: string,
+	lastName: string,
+	checkExists: (username: string) => Promise<boolean>,
 ): Promise<string> {
-  const baseUsername = generateBaseUsername(firstName, lastName);
-  let username = baseUsername;
-  let counter = 2;
+	const baseUsername = generateBaseUsername(firstName, lastName);
+	let username = baseUsername;
+	let counter = INITIAL_COUNTER;
 
-  // Keep incrementing counter until we find a unique username
-  while (await checkExists(username)) {
-    username = `${baseUsername}${counter}`;
-    counter++;
-  }
+	// Keep incrementing counter until we find a unique username
+	// eslint-disable-next-line no-await-in-loop -- Sequential checks required to find unique username
+	while (await checkExists(username)) {
+		username = `${baseUsername}${counter}`;
+		counter += COUNTER_INCREMENT;
+	}
 
-  return username;
+	return username;
 }

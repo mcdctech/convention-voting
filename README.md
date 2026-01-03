@@ -230,9 +230,9 @@ Example:
 import { describe, it, expect } from "vitest";
 
 describe("MyFunction", () => {
-  it("should do something", () => {
-    expect(true).toBe(true);
-  });
+	it("should do something", () => {
+		expect(true).toBe(true);
+	});
 });
 ```
 

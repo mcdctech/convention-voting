@@ -7,34 +7,47 @@ import { testConnection, initializeDatabase } from "./database/index.js";
 
 const logger = pino({ name: "server" });
 
-const PORT = parseInt(process.env.PORT || "3000", 10);
-const HOST = process.env.HOST || "0.0.0.0";
+const DEFAULT_PORT = "3000";
+const DEFAULT_HOST = "0.0.0.0";
+const DECIMAL_RADIX = 10;
+const EXIT_CODE_ERROR = 1;
 
-async function start() {
-  try {
-    // Test database connection
-    logger.info("Testing database connection...");
-    const connected = await testConnection();
+const PORT = Number.parseInt(
+	process.env.PORT !== undefined && process.env.PORT !== ""
+		? process.env.PORT
+		: DEFAULT_PORT,
+	DECIMAL_RADIX,
+);
+const HOST =
+	process.env.HOST !== undefined && process.env.HOST !== ""
+		? process.env.HOST
+		: DEFAULT_HOST;
 
-    if (!connected) {
-      throw new Error("Failed to connect to database");
-    }
+async function start(): Promise<void> {
+	try {
+		// Test database connection
+		logger.info("Testing database connection...");
+		const connected = await testConnection();
 
-    // Initialize database
-    logger.info("Initializing database...");
-    await initializeDatabase();
+		if (!connected) {
+			throw new Error("Failed to connect to database");
+		}
 
-    // Create Express app
-    const app = createApp();
+		// Initialize database
+		logger.info("Initializing database...");
+		await initializeDatabase();
 
-    // Start server
-    app.listen(PORT, HOST, () => {
-      logger.info({ port: PORT, host: HOST }, "Server is running");
-    });
-  } catch (error) {
-    logger.error({ error }, "Failed to start server");
-    process.exit(1);
-  }
+		// Create Express app
+		const app = createApp();
+
+		// Start server
+		app.listen(PORT, HOST, () => {
+			logger.info({ port: PORT, host: HOST }, "Server is running");
+		});
+	} catch (error) {
+		logger.error({ error }, "Failed to start server");
+		process.exit(EXIT_CODE_ERROR);
+	}
 }
 
-start();
+void start();
