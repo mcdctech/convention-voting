@@ -36,6 +36,7 @@ import {
 	deleteMeeting,
 	createMotion,
 	getMotionById,
+	getMotionVoteStats,
 	listMotionsForMeeting,
 	updateMotion,
 	updateMotionStatus,
@@ -938,6 +939,26 @@ adminRouter.get("/motions/:id", async (req: Request, res: Response) => {
 			.json({ error: `Failed to get motion: ${message}` });
 	}
 });
+
+/**
+ * GET /api/admin/motions/:id/vote-stats
+ * Get vote statistics for a motion
+ */
+adminRouter.get(
+	"/motions/:id/vote-stats",
+	async (req: Request, res: Response) => {
+		try {
+			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
+			const stats = await getMotionVoteStats(motionId);
+			res.json({ success: true, data: stats });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get vote stats: ${message}` });
+		}
+	},
+);
 
 /**
  * PUT /api/admin/motions/:id

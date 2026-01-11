@@ -10,6 +10,7 @@ import {
 	type Meeting,
 	type MeetingWithPool,
 	type Motion,
+	type MotionVoteStats,
 	type MotionWithPool,
 	type UpdateChoiceRequest,
 	type UpdateMeetingRequest,
@@ -34,6 +35,10 @@ const DECIMAL_RADIX = 10;
 const DEFAULT_SEAT_COUNT = 1;
 const INITIAL_SORT_ORDER = 0;
 const SORT_ORDER_INCREMENT = 1;
+
+// Vote statistics constants
+const ZERO_VOTES = 0;
+const PERCENTAGE_MULTIPLIER = 100;
 
 // Status transitions (forward-only)
 const VALID_STATUS_TRANSITIONS: Record<MotionStatus, MotionStatus[]> = {
@@ -1030,4 +1035,66 @@ export async function deleteChoice(choiceId: number): Promise<void> {
 	await validateMotionNotStarted(motionId);
 
 	await db.query("DELETE FROM choices WHERE id = :choiceId", { choiceId });
+}
+
+// ============================================================================
+// Vote Statistics Functions
+// ============================================================================
+
+/**
+ * Get vote statistics for a motion
+ * Returns aggregate vote counts and participation rate
+ */
+export async function getMotionVoteStats(
+	motionId: number,
+): Promise<MotionVoteStats> {
+	// Query combining vote counts and eligible voter counts
+	const result = await db.query<{
+		total_votes: string;
+		eligible_voters: string;
+	}>(
+		`WITH vote_counts AS (
+			SELECT COUNT(*) as total_votes
+			FROM votes
+			WHERE motion_id = :motionId
+		),
+		eligible_count AS (
+			SELECT COUNT(DISTINCT up.user_id) as eligible_voters
+			FROM motions m
+			INNER JOIN meetings mt ON m.meeting_id = mt.id
+			INNER JOIN user_pools up ON up.pool_id = COALESCE(m.voting_pool_id, mt.quorum_voting_pool_id)
+			WHERE m.id = :motionId
+		)
+		SELECT
+			COALESCE(vc.total_votes, 0) as total_votes,
+			ec.eligible_voters
+		FROM vote_counts vc
+		CROSS JOIN eligible_count ec`,
+		{ motionId },
+	);
+
+	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
+		throw new Error(`Motion with ID ${String(motionId)} not found`);
+	}
+
+	const {
+		rows: [row],
+	} = result;
+
+	const totalVotes = parseInt(row.total_votes, DECIMAL_RADIX);
+	const eligibleVoters = parseInt(row.eligible_voters, DECIMAL_RADIX);
+
+	// Calculate participation rate, handling division by zero
+	const participationRate =
+		eligibleVoters > ZERO_VOTES
+			? (totalVotes / eligibleVoters) * PERCENTAGE_MULTIPLIER
+			: ZERO_VOTES;
+
+	return {
+		motionId,
+		totalVotes,
+		eligibleVoters,
+		participationRate,
+		lastUpdated: new Date(),
+	};
 }

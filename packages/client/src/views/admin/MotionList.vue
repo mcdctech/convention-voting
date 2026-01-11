@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, onUnmounted, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { MotionStatus } from "@mcdc-convention-voting/shared";
 import {
 	getMotions,
 	getMeeting,
+	getMotionVoteStats,
 	deleteMotion,
 	updateMotionStatus,
 } from "../../services/api";
 import type {
+	MotionVoteStats,
 	MotionWithPool,
 	MeetingWithPool,
 } from "@mcdc-convention-voting/shared";
@@ -24,6 +26,7 @@ const INITIAL_PAGE = 1;
 const INITIAL_TOTAL = 0;
 const MIN_PAGE = 1;
 const DECIMAL_RADIX = 10;
+const STATS_POLL_INTERVAL_MS = 30000; // 30 seconds
 
 const meeting = ref<MeetingWithPool | null>(null);
 const motions = ref<MotionWithPool[]>([]);
@@ -31,6 +34,10 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const currentPage = ref(INITIAL_PAGE);
 const totalMotions = ref(INITIAL_TOTAL);
+
+// Vote statistics
+const voteStatsMap = ref<Map<number, MotionVoteStats>>(new Map());
+let statsIntervalId: ReturnType<typeof setInterval> | null = null;
 
 const totalPages = computed(() =>
 	Math.ceil(totalMotions.value / MOTIONS_PER_PAGE),
@@ -205,9 +212,68 @@ function goBack(): void {
 	void router.push("/admin/meetings");
 }
 
+/**
+ * Load vote statistics for all voting_active motions
+ */
+async function loadVoteStats(): Promise<void> {
+	const votingActiveMotions = motions.value.filter(
+		(m) => m.status === MotionStatus.VotingActive,
+	);
+
+	// Load all vote stats in parallel
+	await Promise.all(
+		votingActiveMotions.map(async (motion) => {
+			try {
+				const response = await getMotionVoteStats(motion.id);
+				if (response.data !== undefined) {
+					voteStatsMap.value.set(motion.id, response.data);
+				}
+			} catch (err) {
+				// Silently fail for individual stats - don't break the whole page
+				// eslint-disable-next-line no-console -- Error logging for debugging
+				console.error(`Failed to load stats for motion ${motion.id}:`, err);
+			}
+		}),
+	);
+}
+
+/**
+ * Start polling for vote stats
+ */
+function startStatsPolling(): void {
+	void loadVoteStats(); // Initial load
+	statsIntervalId = setInterval(() => {
+		void loadVoteStats();
+	}, STATS_POLL_INTERVAL_MS);
+}
+
+/**
+ * Stop polling for vote stats
+ */
+function stopStatsPolling(): void {
+	if (statsIntervalId !== null) {
+		clearInterval(statsIntervalId);
+		statsIntervalId = null;
+	}
+}
+
 onMounted(() => {
 	void loadMeeting();
-	void loadMotions();
+	void loadMotions().then(() => {
+		startStatsPolling();
+	});
+});
+
+onUnmounted(() => {
+	stopStatsPolling();
+});
+
+// Restart polling when page changes
+watch(currentPage, () => {
+	stopStatsPolling();
+	void loadMotions().then(() => {
+		startStatsPolling();
+	});
 });
 </script>
 
@@ -248,13 +314,20 @@ onMounted(() => {
 						<th>Seats</th>
 						<th>Pool</th>
 						<th>Status</th>
+						<th>Votes</th>
 						<th>Actions</th>
 					</tr>
 				</thead>
 				<tbody>
 					<tr v-for="motion in motions" :key="motion.id">
 						<td class="motion-name">
-							{{ motion.name }}
+							<a
+								href="#"
+								class="motion-link"
+								@click.prevent="editMotion(motion.id)"
+							>
+								{{ motion.name }}
+							</a>
 						</td>
 						<td class="description">
 							{{ motion.description || "—" }}
@@ -266,6 +339,25 @@ onMounted(() => {
 							<span class="status-badge" :class="getStatusClass(motion.status)">
 								{{ getStatusLabel(motion.status) }}
 							</span>
+						</td>
+						<td class="votes-cell">
+							<div
+								v-if="
+									motion.status === MotionStatus.VotingActive &&
+									voteStatsMap.has(motion.id)
+								"
+							>
+								<span class="vote-count">
+									{{ voteStatsMap.get(motion.id)!.totalVotes }} /
+									{{ voteStatsMap.get(motion.id)!.eligibleVoters }}
+								</span>
+								<span class="participation-rate">
+									({{
+										voteStatsMap.get(motion.id)!.participationRate.toFixed(1)
+									}}%)
+								</span>
+							</div>
+							<span v-else class="vote-count-placeholder">—</span>
 						</td>
 						<td class="actions-cell">
 							<button
@@ -615,5 +707,39 @@ onMounted(() => {
 	display: flex;
 	gap: 1rem;
 	justify-content: flex-end;
+}
+
+/* Vote statistics styles */
+.votes-cell {
+	white-space: nowrap;
+}
+
+.vote-count {
+	font-weight: 600;
+	color: #2c3e50;
+}
+
+.participation-rate {
+	font-size: 0.875rem;
+	color: #666;
+	margin-left: 0.25rem;
+}
+
+.vote-count-placeholder {
+	color: #999;
+}
+
+/* Motion name link */
+.motion-link {
+	color: #2c3e50;
+	text-decoration: none;
+	font-weight: 500;
+	transition: color 0.2s;
+}
+
+.motion-link:hover {
+	color: #007bff;
+	text-decoration: underline;
+	cursor: pointer;
 }
 </style>

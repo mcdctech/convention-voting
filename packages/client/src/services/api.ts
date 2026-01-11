@@ -12,6 +12,7 @@ import type {
 	MeetingWithPool,
 	CreateMeetingRequest,
 	UpdateMeetingRequest,
+	MotionVoteStats,
 	MotionWithPool,
 	CreateMotionRequest,
 	UpdateMotionRequest,
@@ -609,6 +610,17 @@ export async function deleteMotion(id: number): Promise<ApiResponse<void>> {
 	return await apiRequest<ApiResponse<void>>(`/api/admin/motions/${id}`, {
 		method: "DELETE",
 	});
+}
+
+/**
+ * Get vote statistics for a motion
+ */
+export async function getMotionVoteStats(
+	motionId: number,
+): Promise<ApiResponse<MotionVoteStats>> {
+	return await apiRequest<ApiResponse<MotionVoteStats>>(
+		`/api/admin/motions/${motionId}/vote-stats`,
+	);
 }
 
 /**
