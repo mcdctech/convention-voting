@@ -24,6 +24,7 @@ import MotionCreate from "../views/admin/MotionCreate.vue";
 import MotionEdit from "../views/admin/MotionEdit.vue";
 import VoterDashboard from "../views/voter/VoterDashboard.vue";
 import MotionDetail from "../views/voter/MotionDetail.vue";
+import MyPools from "../views/voter/MyPools.vue";
 
 declare module "vue-router" {
 	interface RouteMeta {
@@ -57,6 +58,11 @@ export const router = createRouter({
 					name: "MotionDetail",
 					component: MotionDetail,
 					props: true,
+				},
+				{
+					path: "pools",
+					name: "MyPools",
+					component: MyPools,
 				},
 			],
 		},

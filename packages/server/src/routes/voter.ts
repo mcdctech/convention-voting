@@ -4,6 +4,7 @@
 import { Router } from "express";
 import { HTTP_STATUS } from "@pdc/http-status-codes";
 import { getOpenMotionsForUser } from "../services/motion-service.js";
+import { getPoolsForUser } from "../services/pool-service.js";
 import { castVote, getMotionForVoting } from "../services/vote-service.js";
 import type { Request, Response } from "express";
 import type {
@@ -12,6 +13,7 @@ import type {
 	CastVoteResponse,
 	MotionForVoting,
 	OpenMotionsResponse,
+	Pool,
 } from "@mcdc-convention-voting/shared";
 
 // Number parsing
@@ -87,6 +89,41 @@ voterRouter.get(
 			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
 				success: false,
 				error: `Failed to get open motions: ${message}`,
+			});
+		}
+	},
+);
+
+/**
+ * GET /api/voter/pools
+ * Get pools for the current authenticated user
+ */
+voterRouter.get(
+	"/pools",
+	async (
+		req: Request<object, ApiResponse<Pool[]>>,
+		res: Response<ApiResponse<Pool[]>>,
+	): Promise<void> => {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		try {
+			const pools = await getPoolsForUser(req.user.id);
+
+			res.json({
+				success: true,
+				data: pools,
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+				success: false,
+				error: `Failed to get pools: ${message}`,
 			});
 		}
 	},
