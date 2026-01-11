@@ -488,3 +488,61 @@ export async function setNonAdminLoginEnabled(enabled: boolean): Promise<void> {
 		{ settingKey: "non_admin_login_enabled", settingValue: enabled.toString() },
 	);
 }
+
+/**
+ * Ensure admin user from environment variables exists
+ * Called on server startup to sync environment-based admin credentials
+ *
+ * If ADMIN_USERNAME and ADMIN_PASSWORD are set:
+ * - Creates user if it doesn't exist
+ * - Updates password if user exists (to sync with environment)
+ * - Ensures user has admin privileges
+ */
+export async function ensureAdminUserFromEnvironment(): Promise<void> {
+	const {
+		env: { ADMIN_USERNAME, ADMIN_PASSWORD },
+	} = process;
+
+	// Skip if environment variables are not set
+	if (
+		ADMIN_USERNAME === undefined ||
+		ADMIN_USERNAME === "" ||
+		ADMIN_PASSWORD === undefined ||
+		ADMIN_PASSWORD === ""
+	) {
+		return;
+	}
+
+	// Check if user exists
+	const exists = await usernameExists(ADMIN_USERNAME);
+
+	if (exists) {
+		// Update existing user to sync password and ensure admin status
+		const passwordHash = await hashPassword(ADMIN_PASSWORD);
+		await db.query(
+			`UPDATE users
+       SET password_hash = :passwordHash,
+           is_admin = TRUE,
+           is_disabled = FALSE,
+           updated_at = NOW()
+       WHERE username = :username`,
+			{
+				username: ADMIN_USERNAME,
+				passwordHash,
+			},
+		);
+	} else {
+		// Create new admin user
+		const passwordHash = await hashPassword(ADMIN_PASSWORD);
+		await db.query(
+			`INSERT INTO users (id, username, password_hash, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at)
+       VALUES (gen_random_uuid(), :username, :passwordHash, NULL, :firstName, :lastName, TRUE, FALSE, NOW(), NOW())`,
+			{
+				username: ADMIN_USERNAME,
+				passwordHash,
+				firstName: "Admin",
+				lastName: "User",
+			},
+		);
+	}
+}
