@@ -14,6 +14,8 @@ const { currentUser, isAdmin, logout } = useAuth();
 					<span v-if="currentUser" class="user-name">
 						{{ currentUser.firstName }} {{ currentUser.lastName }}
 					</span>
+					<RouterLink to="/" class="btn btn-nav">Dashboard</RouterLink>
+					<RouterLink to="/pools" class="btn btn-nav">My Pools</RouterLink>
 					<RouterLink v-if="isAdmin" to="/admin" class="btn btn-admin">
 						Admin Panel
 					</RouterLink>
@@ -64,6 +66,7 @@ const { currentUser, isAdmin, logout } = useAuth();
 	font-size: 0.875rem;
 }
 
+.btn-nav,
 .btn-admin,
 .btn-logout {
 	padding: 0.5rem 1rem;
@@ -77,6 +80,7 @@ const { currentUser, isAdmin, logout } = useAuth();
 	text-decoration: none;
 }
 
+.btn-nav:hover,
 .btn-admin:hover,
 .btn-logout:hover {
 	background-color: white;

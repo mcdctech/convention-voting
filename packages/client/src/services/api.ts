@@ -743,3 +743,10 @@ export async function castVote(
 		},
 	);
 }
+
+/**
+ * Get pools for the current authenticated voter
+ */
+export async function getMyPools(): Promise<ApiResponse<Pool[]>> {
+	return await apiRequest<ApiResponse<Pool[]>>("/api/voter/pools");
+}
