@@ -1,7 +1,60 @@
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted } from "vue";
+import { useRouter } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
+import { getOpenMotions } from "../../services/api";
+import MotionCard from "../../components/MotionCard.vue";
+import type { OpenMotionForVoter } from "@mcdc-convention-voting/shared";
 
 const { currentUser } = useAuth();
+const router = useRouter();
+
+// Polling interval: 30 seconds
+const POLL_INTERVAL_MS = 30000;
+
+const motions = ref<OpenMotionForVoter[]>([]);
+const loading = ref(true);
+const error = ref<string | null>(null);
+let pollIntervalId: ReturnType<typeof setInterval> | null = null;
+
+async function loadOpenMotions(): Promise<void> {
+	try {
+		const response = await getOpenMotions();
+		if (response.success && response.data !== undefined) {
+			motions.value = response.data.data;
+		} else {
+			error.value = response.error ?? "Failed to load motions";
+		}
+	} catch (err) {
+		error.value = err instanceof Error ? err.message : "Failed to load motions";
+	} finally {
+		loading.value = false;
+	}
+}
+
+function navigateToMotion(motionId: number): void {
+	void router.push(`/motion/${String(motionId)}`);
+}
+
+function retryLoad(): void {
+	loading.value = true;
+	error.value = null;
+	void loadOpenMotions();
+}
+
+onMounted((): void => {
+	void loadOpenMotions();
+	// Set up polling for updates
+	pollIntervalId = setInterval((): void => {
+		void loadOpenMotions();
+	}, POLL_INTERVAL_MS);
+});
+
+onUnmounted((): void => {
+	if (pollIntervalId !== null) {
+		clearInterval(pollIntervalId);
+	}
+});
 </script>
 
 <template>
@@ -14,20 +67,31 @@ const { currentUser } = useAuth();
 		</div>
 
 		<section class="dashboard-section">
-			<h3>Active Meetings</h3>
-			<div class="empty-state">
-				<p>No active meetings at this time.</p>
-				<p class="hint">Check back later for upcoming voting sessions.</p>
-			</div>
-		</section>
-
-		<section class="dashboard-section">
 			<h3>Active Motions</h3>
-			<div class="empty-state">
+
+			<div v-if="loading" class="loading-state">
+				<p>Loading open motions...</p>
+			</div>
+
+			<div v-else-if="error !== null" class="error-state">
+				<p>{{ error }}</p>
+				<button class="btn btn-primary" @click="retryLoad">Retry</button>
+			</div>
+
+			<div v-else-if="motions.length === 0" class="empty-state">
 				<p>No active motions requiring your vote.</p>
 				<p class="hint">
 					When a motion is open for voting, it will appear here.
 				</p>
+			</div>
+
+			<div v-else class="motions-grid">
+				<MotionCard
+					v-for="motion in motions"
+					:key="motion.id"
+					:motion="motion"
+					@click="navigateToMotion"
+				/>
 			</div>
 		</section>
 	</div>
@@ -68,6 +132,40 @@ const { currentUser } = useAuth();
 	padding-bottom: 0.5rem;
 }
 
+.loading-state {
+	text-align: center;
+	padding: 2rem;
+	color: #666;
+}
+
+.error-state {
+	text-align: center;
+	padding: 2rem;
+	color: #dc3545;
+}
+
+.error-state p {
+	margin: 0 0 1rem 0;
+}
+
+.btn {
+	padding: 0.5rem 1rem;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 0.9rem;
+	font-weight: 500;
+}
+
+.btn-primary {
+	background-color: #007bff;
+	color: white;
+}
+
+.btn-primary:hover {
+	background-color: #0056b3;
+}
+
 .empty-state {
 	text-align: center;
 	padding: 2rem;
@@ -81,5 +179,17 @@ const { currentUser } = useAuth();
 .empty-state .hint {
 	font-size: 0.875rem;
 	color: #999;
+}
+
+.motions-grid {
+	display: grid;
+	gap: 1rem;
+	grid-template-columns: 1fr;
+}
+
+@media (min-width: 600px) {
+	.motions-grid {
+		grid-template-columns: repeat(2, 1fr);
+	}
 }
 </style>

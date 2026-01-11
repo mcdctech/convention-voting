@@ -22,6 +22,7 @@ import type {
 	LoginRequest,
 	LoginResponse,
 	AuthUser,
+	OpenMotionsResponse,
 } from "@mcdc-convention-voting/shared";
 
 // Constants
@@ -696,4 +697,19 @@ export async function login(
  */
 export async function getCurrentUser(): Promise<ApiResponse<AuthUser>> {
 	return await apiRequest<ApiResponse<AuthUser>>("/api/auth/me");
+}
+
+/**
+ * Voter API Functions
+ */
+
+/**
+ * Get open motions for the current authenticated voter
+ */
+export async function getOpenMotions(): Promise<
+	ApiResponse<OpenMotionsResponse>
+> {
+	return await apiRequest<ApiResponse<OpenMotionsResponse>>(
+		"/api/voter/motions/open",
+	);
 }
