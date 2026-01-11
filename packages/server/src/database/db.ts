@@ -48,6 +48,11 @@ const dbConfig = {
 			: DEFAULT_DB_NAME,
 };
 
+logger.info(
+	{ user: dbConfig.user, host: dbConfig.host, database: dbConfig.database },
+	"Database configuration",
+);
+
 /**
  * TinyPg database instance
  */

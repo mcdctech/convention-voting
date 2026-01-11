@@ -418,3 +418,55 @@ export type MotionListResponse = PaginatedResponse<MotionWithPool>;
 export interface ChoiceListResponse {
 	data: Choice[];
 }
+
+/**
+ * Authentication Types
+ */
+
+/**
+ * Login request payload
+ */
+export interface LoginRequest {
+	username: string;
+	password: string;
+}
+
+/**
+ * Authenticated user (subset of User for auth purposes)
+ */
+export interface AuthUser {
+	id: string;
+	username: string;
+	firstName: string;
+	lastName: string;
+	isAdmin: boolean;
+}
+
+/**
+ * Login response with JWT token
+ */
+export interface LoginResponse {
+	token: string;
+	user: AuthUser;
+}
+
+/**
+ * JWT payload structure
+ */
+export interface JwtPayload {
+	sub: string; // User ID
+	username: string;
+	isAdmin: boolean;
+	iat: number;
+	exp: number;
+}
+
+/**
+ * Login error codes for specific failure states
+ */
+export enum LoginErrorCode {
+	InvalidCredentials = "INVALID_CREDENTIALS",
+	AccountDisabled = "ACCOUNT_DISABLED",
+	NoPasswordSet = "NO_PASSWORD_SET",
+	LoginDisabled = "LOGIN_DISABLED",
+}
