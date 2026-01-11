@@ -4,6 +4,7 @@
 import pino from "pino";
 import { createApp } from "./app.js";
 import { testConnection, initializeDatabase } from "./database/index.js";
+import { ensureAdminUserFromEnvironment } from "./services/user-service.js";
 
 const logger = pino({ name: "server" });
 
@@ -36,6 +37,10 @@ async function start(): Promise<void> {
 		// Initialize database
 		logger.info("Initializing database...");
 		await initializeDatabase();
+
+		// Ensure admin user from environment exists
+		logger.info("Syncing admin user from environment...");
+		await ensureAdminUserFromEnvironment();
 
 		// Create Express app
 		const app = createApp();
