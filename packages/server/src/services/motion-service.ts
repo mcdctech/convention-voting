@@ -33,6 +33,7 @@ interface OpenMotionRow {
  * 1. Motion status must be 'voting_active'
  * 2. User must belong to the motion's voting pool (via user_pools)
  * 3. If motion has no voting_pool_id, fall back to meeting's quorum_voting_pool_id
+ * 4. User must not have already voted on the motion
  *
  * Returns motions sorted by when voting started (oldest first)
  */
@@ -58,6 +59,11 @@ export async function getOpenMotionsForUser(
 		 INNER JOIN user_pools up ON up.pool_id = COALESCE(m.voting_pool_id, mt.quorum_voting_pool_id)
 		 WHERE m.status = :status
 		   AND up.user_id = :userId
+		   AND NOT EXISTS (
+		       SELECT 1 FROM votes v
+		       WHERE v.motion_id = m.id
+		         AND v.user_id = :userId
+		   )
 		 ORDER BY m.updated_at ASC`,
 		{ status: MotionStatus.VotingActive, userId },
 	);
