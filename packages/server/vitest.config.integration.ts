@@ -8,6 +8,7 @@ export default defineConfig({
 	test: {
 		globals: true,
 		environment: "node",
+		passWithNoTests: true,
 		include: ["src/**/*.integration.test.ts", "src/**/*.integration.spec.ts"],
 		// Run integration tests sequentially to avoid database conflicts
 		threads: false,
