@@ -1,7 +1,7 @@
 /**
  * Authentication service for user login and JWT management
  */
-import jwt from "jsonwebtoken";
+import jwt, { type SignOptions } from "jsonwebtoken";
 import { LoginErrorCode } from "@mcdc-convention-voting/shared";
 import { db } from "../database/db.js";
 import { comparePassword } from "../utils/password-generator.js";
@@ -152,7 +152,12 @@ export function generateToken(user: AuthUser): string {
 		isAdmin: user.isAdmin,
 	};
 
-	return jwt.sign(payload, JWT_SECRET, { expiresIn });
+	const signOptions: SignOptions = {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- jsonwebtoken accepts duration strings like "24h"
+		expiresIn: expiresIn as jwt.SignOptions["expiresIn"],
+	};
+
+	return jwt.sign(payload, JWT_SECRET, signOptions);
 }
 
 /**
