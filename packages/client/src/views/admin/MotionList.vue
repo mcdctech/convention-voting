@@ -28,6 +28,14 @@ const MIN_PAGE = 1;
 const DECIMAL_RADIX = 10;
 const STATS_POLL_INTERVAL_MS = 30000; // 30 seconds
 
+// Time constants
+const MS_PER_SECOND = 1000;
+const SECONDS_PER_MINUTE = 60;
+const MINUTES_PER_HOUR = 60;
+const TIMER_UPDATE_INTERVAL_MS = 1000;
+const ZERO = 0;
+const URGENT_THRESHOLD_MINUTES = 5;
+
 const meeting = ref<MeetingWithPool | null>(null);
 const motions = ref<MotionWithPool[]>([]);
 const loading = ref(false);
@@ -38,6 +46,10 @@ const totalMotions = ref(INITIAL_TOTAL);
 // Vote statistics
 const voteStatsMap = ref<Map<number, MotionVoteStats>>(new Map());
 let statsIntervalId: ReturnType<typeof setInterval> | null = null;
+
+// Countdown timer
+const now = ref(new Date());
+let timerIntervalId: ReturnType<typeof setInterval> | null = null;
 
 const totalPages = computed(() =>
 	Math.ceil(totalMotions.value / MOTIONS_PER_PAGE),
@@ -213,6 +225,71 @@ function goBack(): void {
 }
 
 /**
+ * Calculate when voting ends for a motion
+ */
+function getVotingEndsAt(motion: MotionWithPool): Date | null {
+	if (motion.status !== MotionStatus.VotingActive) {
+		return null;
+	}
+
+	if (motion.endOverride !== null) {
+		return new Date(motion.endOverride);
+	}
+
+	// Calculate from updatedAt + plannedDuration
+	const startTime = new Date(motion.updatedAt);
+	const durationMs =
+		motion.plannedDuration * SECONDS_PER_MINUTE * MS_PER_SECOND;
+	return new Date(startTime.getTime() + durationMs);
+}
+
+/**
+ * Get remaining time for a motion in milliseconds
+ */
+function getRemainingMs(motion: MotionWithPool): number {
+	const endsAt = getVotingEndsAt(motion);
+	if (endsAt === null) {
+		return ZERO;
+	}
+
+	const remaining = endsAt.getTime() - now.value.getTime();
+	return remaining > ZERO ? remaining : ZERO;
+}
+
+/**
+ * Format remaining time as human-readable string
+ */
+function formatRemainingTime(motion: MotionWithPool): string {
+	const remainingMs = getRemainingMs(motion);
+
+	if (remainingMs === ZERO) {
+		return "Ended";
+	}
+
+	const totalSeconds = Math.floor(remainingMs / MS_PER_SECOND);
+	const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
+	const seconds = totalSeconds % SECONDS_PER_MINUTE;
+
+	if (minutes >= MINUTES_PER_HOUR) {
+		const hours = Math.floor(minutes / MINUTES_PER_HOUR);
+		const remainingMinutes = minutes % MINUTES_PER_HOUR;
+		return `${String(hours)}h ${String(remainingMinutes)}m`;
+	}
+
+	return `${String(minutes)}m ${String(seconds)}s`;
+}
+
+/**
+ * Check if time is running out (less than 5 minutes)
+ */
+function isTimeUrgent(motion: MotionWithPool): boolean {
+	const remainingMs = getRemainingMs(motion);
+	const urgentThresholdMs =
+		URGENT_THRESHOLD_MINUTES * SECONDS_PER_MINUTE * MS_PER_SECOND;
+	return remainingMs > ZERO && remainingMs < urgentThresholdMs;
+}
+
+/**
  * Load vote statistics for all voting_active motions
  */
 async function loadVoteStats(): Promise<void> {
@@ -262,10 +339,21 @@ onMounted(() => {
 	void loadMotions().then(() => {
 		startStatsPolling();
 	});
+
+	// Start countdown timer
+	timerIntervalId = setInterval(() => {
+		now.value = new Date();
+	}, TIMER_UPDATE_INTERVAL_MS);
 });
 
 onUnmounted(() => {
 	stopStatsPolling();
+
+	// Stop countdown timer
+	if (timerIntervalId !== null) {
+		clearInterval(timerIntervalId);
+		timerIntervalId = null;
+	}
 });
 
 // Restart polling when page changes
@@ -342,20 +430,28 @@ watch(currentPage, () => {
 						</td>
 						<td class="votes-cell">
 							<div
-								v-if="
-									motion.status === MotionStatus.VotingActive &&
-									voteStatsMap.has(motion.id)
-								"
+								v-if="motion.status === MotionStatus.VotingActive"
+								class="voting-active-info"
 							>
-								<span class="vote-count">
-									{{ voteStatsMap.get(motion.id)!.totalVotes }} /
-									{{ voteStatsMap.get(motion.id)!.eligibleVoters }}
-								</span>
-								<span class="participation-rate">
-									({{
-										voteStatsMap.get(motion.id)!.participationRate.toFixed(1)
-									}}%)
-								</span>
+								<div v-if="voteStatsMap.has(motion.id)" class="vote-count-row">
+									<span class="vote-count">
+										{{ voteStatsMap.get(motion.id)!.totalVotes }} /
+										{{ voteStatsMap.get(motion.id)!.eligibleVoters }}
+									</span>
+									<span class="participation-rate">
+										({{
+											voteStatsMap.get(motion.id)!.participationRate.toFixed(1)
+										}}%)
+									</span>
+								</div>
+								<div class="time-remaining-row">
+									<span
+										class="time-remaining"
+										:class="{ urgent: isTimeUrgent(motion) }"
+									>
+										{{ formatRemainingTime(motion) }}
+									</span>
+								</div>
 							</div>
 							<span v-else class="vote-count-placeholder">—</span>
 						</td>
@@ -714,6 +810,17 @@ watch(currentPage, () => {
 	white-space: nowrap;
 }
 
+.voting-active-info {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+
+.vote-count-row {
+	display: flex;
+	align-items: center;
+}
+
 .vote-count {
 	font-weight: 600;
 	color: #2c3e50;
@@ -723,6 +830,22 @@ watch(currentPage, () => {
 	font-size: 0.875rem;
 	color: #666;
 	margin-left: 0.25rem;
+}
+
+.time-remaining-row {
+	display: flex;
+	align-items: center;
+}
+
+.time-remaining {
+	font-size: 0.875rem;
+	color: #2196f3;
+	font-weight: 500;
+}
+
+.time-remaining.urgent {
+	color: #f44336;
+	font-weight: 600;
 }
 
 .vote-count-placeholder {

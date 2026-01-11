@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { MotionStatus } from "@mcdc-convention-voting/shared";
+import { useCountdownTimer } from "../../composables/useCountdownTimer";
 import {
 	getMotion,
 	getMotionVoteStats,
@@ -37,6 +38,8 @@ const MIN_SEAT_COUNT = 1;
 const DEFAULT_DURATION = 5;
 const DEFAULT_SEAT_COUNT = 1;
 const STATS_POLL_INTERVAL_MS = 30000; // 30 seconds
+const MS_PER_SECOND = 1000;
+const SECONDS_PER_MINUTE = 60;
 
 const motion = ref<MotionWithPool | null>(null);
 const pools = ref<Pool[]>([]);
@@ -70,6 +73,24 @@ const canEdit = computed(() => {
 		return false;
 	}
 	return motion.value.status === MotionStatus.NotYetStarted;
+});
+
+// Use countdown timer composable
+const { remainingTimeString, isTimeUrgent } = useCountdownTimer({
+	getVotingEndsAt: () => {
+		if (motion.value?.status !== MotionStatus.VotingActive) {
+			return null;
+		}
+
+		if (motion.value.endOverride !== null) {
+			return new Date(motion.value.endOverride);
+		}
+
+		const startTime = new Date(motion.value.updatedAt);
+		const durationMs =
+			motion.value.plannedDuration * SECONDS_PER_MINUTE * MS_PER_SECOND;
+		return new Date(startTime.getTime() + durationMs);
+	},
 });
 
 async function loadPools(): Promise<void> {
@@ -464,7 +485,12 @@ watch(
 				v-if="motion?.status === MotionStatus.VotingActive"
 				class="vote-stats-section"
 			>
-				<h3>Live Vote Count</h3>
+				<div class="stats-header">
+					<h3>Live Vote Count</h3>
+					<span class="time-remaining-badge" :class="{ urgent: isTimeUrgent }">
+						{{ remainingTimeString }}
+					</span>
+				</div>
 
 				<div v-if="loadingStats && !voteStats" class="loading-small">
 					Loading vote statistics...
@@ -815,12 +841,41 @@ watch(
 	border-left: 4px solid #ffc107;
 }
 
-.vote-stats-section h3 {
-	margin: 0 0 1.5rem 0;
-	color: #2c3e50;
+.stats-header {
 	display: flex;
+	justify-content: space-between;
 	align-items: center;
-	gap: 0.5rem;
+	margin-bottom: 1.5rem;
+}
+
+.vote-stats-section h3 {
+	margin: 0;
+	color: #2c3e50;
+}
+
+.time-remaining-badge {
+	background: #2196f3;
+	color: white;
+	padding: 0.5rem 1rem;
+	border-radius: 20px;
+	font-size: 1rem;
+	font-weight: 600;
+	display: inline-block;
+}
+
+.time-remaining-badge.urgent {
+	background: #f44336;
+	animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.7;
+	}
 }
 
 .stats-content {
