@@ -1,5 +1,5 @@
 /**
- * Admin API routes for user and pool management
+ * Admin API routes for user, pool, meeting, motion, and choice management
  */
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
@@ -29,6 +29,26 @@ import {
 	getPoolsForUser,
 } from "../services/pool-service.js";
 import {
+	createMeeting,
+	getMeetingById,
+	listMeetings,
+	updateMeeting,
+	deleteMeeting,
+	createMotion,
+	getMotionById,
+	listMotionsForMeeting,
+	updateMotion,
+	updateMotionStatus,
+	setMotionEndOverride,
+	deleteMotion,
+	createChoice,
+	getChoiceById,
+	listChoicesForMotion,
+	updateChoice,
+	reorderChoices,
+	deleteChoice,
+} from "../services/meeting-service.js";
+import {
 	importUsersFromCSV,
 	importPoolsFromCSV,
 } from "../services/csv-service.js";
@@ -41,6 +61,17 @@ import type {
 	CreatePoolRequest,
 	UpdatePoolRequest,
 	PoolListResponse,
+	CreateMeetingRequest,
+	UpdateMeetingRequest,
+	MeetingListResponse,
+	CreateMotionRequest,
+	UpdateMotionRequest,
+	UpdateMotionStatusRequest,
+	MotionListResponse,
+	CreateChoiceRequest,
+	UpdateChoiceRequest,
+	ReorderChoicesRequest,
+	ChoiceListResponse,
 } from "@mcdc-convention-voting/shared";
 
 export const adminRouter = Router();
@@ -634,5 +665,525 @@ adminRouter.get("/users/:id/pools", async (req: Request, res: Response) => {
 		res
 			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
 			.json({ error: `Failed to get user pools: ${message}` });
+	}
+});
+
+/**
+ * Meeting Management Routes
+ */
+
+/**
+ * POST /api/admin/meetings
+ * Create a new meeting
+ */
+adminRouter.post("/meetings", async (req: Request, res: Response) => {
+	try {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+		const request: Partial<CreateMeetingRequest> = req.body;
+
+		// Validate required fields
+		if (
+			request.name === undefined ||
+			request.name === "" ||
+			request.startDate === undefined ||
+			request.startDate === "" ||
+			request.endDate === undefined ||
+			request.endDate === "" ||
+			request.quorumVotingPoolId === undefined
+		) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+				error:
+					"Missing required fields: name, startDate, endDate, quorumVotingPoolId",
+			});
+			return;
+		}
+
+		// After validation, we know all required fields exist
+		const validatedRequest: CreateMeetingRequest = {
+			name: request.name,
+			startDate: request.startDate,
+			endDate: request.endDate,
+			quorumVotingPoolId: request.quorumVotingPoolId,
+			description: request.description,
+		};
+
+		const meeting = await createMeeting(validatedRequest);
+		res
+			.status(HTTP_STATUS.SUCCESSFUL.CREATED)
+			.json({ success: true, data: meeting });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+			.json({ error: `Failed to create meeting: ${message}` });
+	}
+});
+
+/**
+ * GET /api/admin/meetings
+ * List all meetings with pagination
+ */
+adminRouter.get("/meetings", async (req: Request, res: Response) => {
+	try {
+		const pageParam =
+			typeof req.query.page === "string"
+				? req.query.page
+				: String(DEFAULT_PAGE);
+		const limitParam =
+			typeof req.query.limit === "string"
+				? req.query.limit
+				: String(DEFAULT_LIMIT);
+		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
+		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
+
+		const { meetings, total } = await listMeetings(page, limit);
+
+		const response: MeetingListResponse = {
+			data: meetings,
+			pagination: {
+				page,
+				limit,
+				total,
+				totalPages: Math.ceil(total / limit),
+			},
+		};
+
+		res.json(response);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+			.json({ error: `Failed to list meetings: ${message}` });
+	}
+});
+
+/**
+ * GET /api/admin/meetings/:id
+ * Get a single meeting by ID
+ */
+adminRouter.get("/meetings/:id", async (req: Request, res: Response) => {
+	try {
+		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+		const meeting = await getMeetingById(meetingId);
+
+		if (meeting === null) {
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
+				.json({ error: "Meeting not found" });
+			return;
+		}
+
+		res.json({ success: true, data: meeting });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+			.json({ error: `Failed to get meeting: ${message}` });
+	}
+});
+
+/**
+ * PUT /api/admin/meetings/:id
+ * Update meeting details
+ */
+adminRouter.put("/meetings/:id", async (req: Request, res: Response) => {
+	try {
+		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+		const updates: UpdateMeetingRequest = req.body;
+		const meeting = await updateMeeting(meetingId, updates);
+		res.json({ success: true, data: meeting });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+			.json({ error: `Failed to update meeting: ${message}` });
+	}
+});
+
+/**
+ * DELETE /api/admin/meetings/:id
+ * Delete a meeting (cascades to motions and choices)
+ */
+adminRouter.delete("/meetings/:id", async (req: Request, res: Response) => {
+	try {
+		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+		await deleteMeeting(meetingId);
+		res.json({ success: true, message: "Meeting deleted successfully" });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+			.json({ error: `Failed to delete meeting: ${message}` });
+	}
+});
+
+/**
+ * Motion Management Routes
+ */
+
+/**
+ * POST /api/admin/meetings/:meetingId/motions
+ * Create a new motion for a meeting
+ */
+adminRouter.post(
+	"/meetings/:meetingId/motions",
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.meetingId, DECIMAL_RADIX);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const body: Partial<Omit<CreateMotionRequest, "meetingId">> = req.body;
+
+			// Validate required fields
+			if (
+				body.name === undefined ||
+				body.name === "" ||
+				body.plannedDuration === undefined
+			) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "Missing required fields: name, plannedDuration",
+				});
+				return;
+			}
+
+			const request: CreateMotionRequest = {
+				meetingId,
+				name: body.name,
+				plannedDuration: body.plannedDuration,
+				description: body.description,
+				seatCount: body.seatCount,
+				votingPoolId: body.votingPoolId,
+			};
+
+			const motion = await createMotion(request);
+			res
+				.status(HTTP_STATUS.SUCCESSFUL.CREATED)
+				.json({ success: true, data: motion });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to create motion: ${message}` });
+		}
+	},
+);
+
+/**
+ * GET /api/admin/meetings/:meetingId/motions
+ * List all motions for a meeting with pagination
+ */
+adminRouter.get(
+	"/meetings/:meetingId/motions",
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.meetingId, DECIMAL_RADIX);
+			const pageParam =
+				typeof req.query.page === "string"
+					? req.query.page
+					: String(DEFAULT_PAGE);
+			const limitParam =
+				typeof req.query.limit === "string"
+					? req.query.limit
+					: String(DEFAULT_LIMIT);
+			const page = Number.parseInt(pageParam, DECIMAL_RADIX);
+			const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
+
+			const { motions, total } = await listMotionsForMeeting(
+				meetingId,
+				page,
+				limit,
+			);
+
+			const response: MotionListResponse = {
+				data: motions,
+				pagination: {
+					page,
+					limit,
+					total,
+					totalPages: Math.ceil(total / limit),
+				},
+			};
+
+			res.json(response);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to list motions: ${message}` });
+		}
+	},
+);
+
+/**
+ * GET /api/admin/motions/:id
+ * Get a single motion by ID
+ */
+adminRouter.get("/motions/:id", async (req: Request, res: Response) => {
+	try {
+		const motionId = parseInt(req.params.id, DECIMAL_RADIX);
+		const motion = await getMotionById(motionId);
+
+		if (motion === null) {
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
+				.json({ error: "Motion not found" });
+			return;
+		}
+
+		res.json({ success: true, data: motion });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+			.json({ error: `Failed to get motion: ${message}` });
+	}
+});
+
+/**
+ * PUT /api/admin/motions/:id
+ * Update motion details (non-status fields)
+ */
+adminRouter.put("/motions/:id", async (req: Request, res: Response) => {
+	try {
+		const motionId = parseInt(req.params.id, DECIMAL_RADIX);
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+		const updates: UpdateMotionRequest = req.body;
+		const motion = await updateMotion(motionId, updates);
+		res.json({ success: true, data: motion });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+			.json({ error: `Failed to update motion: ${message}` });
+	}
+});
+
+/**
+ * PUT /api/admin/motions/:id/status
+ * Update motion status (forward-only transitions)
+ */
+adminRouter.put("/motions/:id/status", async (req: Request, res: Response) => {
+	try {
+		const motionId = parseInt(req.params.id, DECIMAL_RADIX);
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+		const body: Partial<UpdateMotionStatusRequest> = req.body;
+
+		if (body.status === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+				error: "Missing required field: status",
+			});
+			return;
+		}
+
+		const request: UpdateMotionStatusRequest = {
+			status: body.status,
+			endOverride: body.endOverride,
+		};
+
+		const motion = await updateMotionStatus(motionId, request);
+		res.json({ success: true, data: motion });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+			.json({ error: `Failed to update motion status: ${message}` });
+	}
+});
+
+/**
+ * PUT /api/admin/motions/:id/end-override
+ * Set or clear end_override for an active motion
+ */
+adminRouter.put(
+	"/motions/:id/end-override",
+	async (req: Request, res: Response) => {
+		try {
+			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- Express req.body is any
+			const endOverride: string | null = req.body.endOverride ?? null;
+
+			const motion = await setMotionEndOverride(motionId, endOverride);
+			res.json({ success: true, data: motion });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to set end override: ${message}` });
+		}
+	},
+);
+
+/**
+ * DELETE /api/admin/motions/:id
+ * Delete a motion (cascades to choices)
+ */
+adminRouter.delete("/motions/:id", async (req: Request, res: Response) => {
+	try {
+		const motionId = parseInt(req.params.id, DECIMAL_RADIX);
+		await deleteMotion(motionId);
+		res.json({ success: true, message: "Motion deleted successfully" });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+			.json({ error: `Failed to delete motion: ${message}` });
+	}
+});
+
+/**
+ * Choice Management Routes
+ */
+
+/**
+ * POST /api/admin/motions/:motionId/choices
+ * Create a new choice for a motion (only if motion not started)
+ */
+adminRouter.post(
+	"/motions/:motionId/choices",
+	async (req: Request, res: Response) => {
+		try {
+			const motionId = parseInt(req.params.motionId, DECIMAL_RADIX);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const body: Omit<CreateChoiceRequest, "motionId"> = req.body;
+
+			// Validate required fields
+			if (body.name === "") {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "Missing required field: name",
+				});
+				return;
+			}
+
+			const request: CreateChoiceRequest = {
+				...body,
+				motionId,
+			};
+
+			const choice = await createChoice(request);
+			res
+				.status(HTTP_STATUS.SUCCESSFUL.CREATED)
+				.json({ success: true, data: choice });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to create choice: ${message}` });
+		}
+	},
+);
+
+/**
+ * GET /api/admin/motions/:motionId/choices
+ * List all choices for a motion (ordered by sort_order)
+ */
+adminRouter.get(
+	"/motions/:motionId/choices",
+	async (req: Request, res: Response) => {
+		try {
+			const motionId = parseInt(req.params.motionId, DECIMAL_RADIX);
+			const choices = await listChoicesForMotion(motionId);
+
+			const response: ChoiceListResponse = {
+				data: choices,
+			};
+
+			res.json(response);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to list choices: ${message}` });
+		}
+	},
+);
+
+/**
+ * GET /api/admin/choices/:id
+ * Get a single choice by ID
+ */
+adminRouter.get("/choices/:id", async (req: Request, res: Response) => {
+	try {
+		const choiceId = parseInt(req.params.id, DECIMAL_RADIX);
+		const choice = await getChoiceById(choiceId);
+
+		if (choice === null) {
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
+				.json({ error: "Choice not found" });
+			return;
+		}
+
+		res.json({ success: true, data: choice });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+			.json({ error: `Failed to get choice: ${message}` });
+	}
+});
+
+/**
+ * PUT /api/admin/choices/:id
+ * Update a choice (only if motion not started)
+ */
+adminRouter.put("/choices/:id", async (req: Request, res: Response) => {
+	try {
+		const choiceId = parseInt(req.params.id, DECIMAL_RADIX);
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+		const updates: UpdateChoiceRequest = req.body;
+		const choice = await updateChoice(choiceId, updates);
+		res.json({ success: true, data: choice });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+			.json({ error: `Failed to update choice: ${message}` });
+	}
+});
+
+/**
+ * PUT /api/admin/motions/:motionId/choices/reorder
+ * Reorder choices for a motion (only if motion not started)
+ */
+adminRouter.put(
+	"/motions/:motionId/choices/reorder",
+	async (req: Request, res: Response) => {
+		try {
+			const motionId = parseInt(req.params.motionId, DECIMAL_RADIX);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const body: Partial<ReorderChoicesRequest> = req.body;
+
+			if (body.choiceIds === undefined || !Array.isArray(body.choiceIds)) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "Missing required field: choiceIds (array)",
+				});
+				return;
+			}
+
+			const choices = await reorderChoices(motionId, body.choiceIds);
+			res.json({ success: true, data: choices });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to reorder choices: ${message}` });
+		}
+	},
+);
+
+/**
+ * DELETE /api/admin/choices/:id
+ * Delete a choice (only if motion not started)
+ */
+adminRouter.delete("/choices/:id", async (req: Request, res: Response) => {
+	try {
+		const choiceId = parseInt(req.params.id, DECIMAL_RADIX);
+		await deleteChoice(choiceId);
+		res.json({ success: true, message: "Choice deleted successfully" });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+			.json({ error: `Failed to delete choice: ${message}` });
 	}
 });

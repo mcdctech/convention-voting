@@ -175,7 +175,7 @@ export interface Pool {
 	isDisabled: boolean;
 	createdAt: Date;
 	updatedAt: Date;
-	userCount: number;
+	userCount?: number; // Optional: computed from user_pools join
 }
 
 /**
@@ -209,3 +209,212 @@ export interface UpdatePoolRequest {
  * Pool list response with pagination
  */
 export type PoolListResponse = PaginatedResponse<Pool>;
+
+/**
+ * Meeting Management Types
+ */
+
+/**
+ * Motion status enum
+ * Status can only advance forward: not_yet_started -> voting_active -> voting_complete
+ *
+ * Database enum (motion_status):
+ * - 'not_yet_started': Voting has not begun (default)
+ * - 'voting_active': Voting is currently in progress
+ * - 'voting_complete': Voting has ended
+ *
+ * IMPORTANT: Keep this enum in sync with database migrations
+ */
+export enum MotionStatus {
+	NotYetStarted = "not_yet_started",
+	VotingActive = "voting_active",
+	VotingComplete = "voting_complete",
+}
+
+/**
+ * Meeting interface
+ *
+ * Database schema (meetings table):
+ * - id: SERIAL PRIMARY KEY
+ * - name: VARCHAR(255) NOT NULL
+ * - description: TEXT (nullable)
+ * - start_date: TIMESTAMP WITH TIME ZONE NOT NULL
+ * - end_date: TIMESTAMP WITH TIME ZONE NOT NULL
+ * - quorum_voting_pool_id: INTEGER NOT NULL REFERENCES pools(id) ON DELETE RESTRICT
+ * - created_at: TIMESTAMP WITH TIME ZONE
+ * - updated_at: TIMESTAMP WITH TIME ZONE
+ *
+ * IMPORTANT: Keep this type in sync with database migrations
+ */
+export interface Meeting {
+	id: number;
+	name: string;
+	description: string | null;
+	startDate: Date;
+	endDate: Date;
+	quorumVotingPoolId: number;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+/**
+ * Meeting with related pool data for display
+ */
+export interface MeetingWithPool extends Meeting {
+	quorumVotingPoolName: string;
+}
+
+/**
+ * Motion interface
+ *
+ * Database schema (motions table):
+ * - id: SERIAL PRIMARY KEY
+ * - meeting_id: INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE
+ * - name: VARCHAR(255) NOT NULL
+ * - description: TEXT (nullable)
+ * - planned_duration: INTEGER NOT NULL (minutes)
+ * - seat_count: INTEGER NOT NULL DEFAULT 1
+ * - voting_pool_id: INTEGER REFERENCES pools(id) ON DELETE RESTRICT (nullable)
+ * - status: motion_status NOT NULL DEFAULT 'not_yet_started'
+ * - end_override: TIMESTAMP WITH TIME ZONE (nullable, only when status='voting_active')
+ * - created_at: TIMESTAMP WITH TIME ZONE
+ * - updated_at: TIMESTAMP WITH TIME ZONE
+ *
+ * IMPORTANT: Keep this type in sync with database migrations
+ */
+export interface Motion {
+	id: number;
+	meetingId: number;
+	name: string;
+	description: string | null;
+	plannedDuration: number;
+	seatCount: number;
+	votingPoolId: number | null;
+	status: MotionStatus;
+	endOverride: Date | null;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+/**
+ * Motion with related pool data for display
+ */
+export interface MotionWithPool extends Motion {
+	votingPoolName: string | null;
+}
+
+/**
+ * Choice interface
+ *
+ * Database schema (choices table):
+ * - id: SERIAL PRIMARY KEY
+ * - motion_id: INTEGER NOT NULL REFERENCES motions(id) ON DELETE CASCADE
+ * - name: VARCHAR(255) NOT NULL
+ * - sort_order: INTEGER NOT NULL DEFAULT 0
+ * - created_at: TIMESTAMP WITH TIME ZONE
+ * - updated_at: TIMESTAMP WITH TIME ZONE
+ *
+ * IMPORTANT: Keep this type in sync with database migrations
+ */
+export interface Choice {
+	id: number;
+	motionId: number;
+	name: string;
+	sortOrder: number;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+/**
+ * Request to create a meeting
+ */
+export interface CreateMeetingRequest {
+	name: string;
+	description?: string;
+	startDate: string; // ISO 8601 string
+	endDate: string; // ISO 8601 string
+	quorumVotingPoolId: number;
+}
+
+/**
+ * Request to update a meeting
+ */
+export interface UpdateMeetingRequest {
+	name?: string;
+	description?: string;
+	startDate?: string; // ISO 8601 string
+	endDate?: string; // ISO 8601 string
+	quorumVotingPoolId?: number;
+}
+
+/**
+ * Request to create a motion
+ */
+export interface CreateMotionRequest {
+	meetingId: number;
+	name: string;
+	description?: string;
+	plannedDuration: number;
+	seatCount?: number; // Defaults to 1
+	votingPoolId?: number;
+}
+
+/**
+ * Request to update a motion (non-status fields)
+ */
+export interface UpdateMotionRequest {
+	name?: string;
+	description?: string;
+	plannedDuration?: number;
+	seatCount?: number;
+	votingPoolId?: number;
+}
+
+/**
+ * Request to update motion status (forward only)
+ */
+export interface UpdateMotionStatusRequest {
+	status: MotionStatus;
+	endOverride?: string; // ISO 8601 string, only valid when status='voting_active'
+}
+
+/**
+ * Request to create a choice
+ */
+export interface CreateChoiceRequest {
+	motionId: number;
+	name: string;
+	sortOrder?: number;
+}
+
+/**
+ * Request to update a choice
+ */
+export interface UpdateChoiceRequest {
+	name?: string;
+	sortOrder?: number;
+}
+
+/**
+ * Request to reorder choices (batch operation)
+ */
+export interface ReorderChoicesRequest {
+	choiceIds: number[]; // Ordered array of choice IDs
+}
+
+/**
+ * Meeting list response with pagination
+ */
+export type MeetingListResponse = PaginatedResponse<MeetingWithPool>;
+
+/**
+ * Motion list response with pagination
+ */
+export type MotionListResponse = PaginatedResponse<MotionWithPool>;
+
+/**
+ * Choice list response (non-paginated, always return all for a motion)
+ */
+export interface ChoiceListResponse {
+	data: Choice[];
+}

@@ -77,8 +77,8 @@ function isErrorResponse(value: unknown): value is ErrorResponse {
  * Note: This trusts the API to return the correct shape
  */
 async function parseJsonResponse<T>(response: Response): Promise<T> {
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion, @typescript-eslint/no-unnecessary-type-assertion -- API client intentionally trusts backend to return correct type
-	return (await response.json()) as unknown as T;
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- API client intentionally trusts backend to return correct type
+	return (await response.json()) as T;
 }
 
 /**
