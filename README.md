@@ -20,12 +20,11 @@ cd convention-voting
 # Install all dependencies
 npm install
 
-# Create environment files
-cp packages/server/.env.example packages/server/.env
-# Edit packages/server/.env with your database credentials
+# Create environment file
+cp .env.example .env
+# Edit .env with your database credentials
 
-# Set up the database
-createdb convention_voting  # Create PostgreSQL database
+# Set up the database (see Database Setup section below)
 npm run migrate             # Run migrations
 ```
 
@@ -133,7 +132,7 @@ npm run migrate          # Run database migrations
 
 ## Environment Variables
 
-### Server (`packages/server/.env`)
+All environment variables are configured in a single `.env` file at the project root.
 
 ```bash
 # Server configuration
@@ -143,31 +142,45 @@ HOST=0.0.0.0
 # PostgreSQL database
 PGHOST=localhost
 PGPORT=5432
-PGUSER=postgres
-PGPASSWORD=postgres
+PGUSER=convention_voting_user
+PGPASSWORD=your_password_here
 PGDATABASE=convention_voting
 
 # CORS
 CORS_ORIGIN=http://localhost:5173
-```
 
-### Client (`packages/client/.env`)
+# JWT configuration
+JWT_SECRET=your-secret-key-change-in-production
+JWT_EXPIRES_IN=24h
 
-```bash
-# API endpoint
+# API endpoint (for client)
 VITE_API_URL=http://localhost:3000
 ```
 
 ## Database Setup
 
-### Creating the Database
+### Creating the Database and User
 
 ```bash
-# Using createdb command
-createdb convention_voting
+# Connect to PostgreSQL as superuser
+psql -U postgres
 
-# Or using psql
-psql -U postgres -c "CREATE DATABASE convention_voting;"
+# Create the application user
+CREATE USER convention_voting_user WITH PASSWORD 'your_password_here';
+
+# Create the database
+CREATE DATABASE convention_voting OWNER convention_voting_user;
+
+# Connect to the new database
+\c convention_voting
+
+# Grant schema privileges to the application user
+GRANT ALL PRIVILEGES ON SCHEMA public TO convention_voting_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO convention_voting_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO convention_voting_user;
+
+# Exit psql
+\q
 ```
 
 ### Running Migrations

@@ -19,12 +19,16 @@ import type {
 	Choice,
 	CreateChoiceRequest,
 	UpdateChoiceRequest,
+	LoginRequest,
+	LoginResponse,
+	AuthUser,
 } from "@mcdc-convention-voting/shared";
 
 // Constants
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_LIMIT = 50;
 const DEFAULT_API_URL = "http://localhost:3000";
+const AUTH_TOKEN_KEY = "auth_token";
 
 // Type guard for import.meta.env
 function getApiBaseUrl(): string {
@@ -38,6 +42,31 @@ function getApiBaseUrl(): string {
 
 const API_BASE_URL = getApiBaseUrl();
 
+/**
+ * Authentication Token Management
+ */
+
+/**
+ * Get stored auth token
+ */
+export function getAuthToken(): string | null {
+	return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+/**
+ * Store auth token
+ */
+export function setAuthToken(token: string): void {
+	localStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+/**
+ * Clear stored auth token
+ */
+export function clearAuthToken(): void {
+	localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
 interface PaginatedResponse<T> {
 	data: T[];
 	total: number;
@@ -45,9 +74,10 @@ interface PaginatedResponse<T> {
 	limit: number;
 }
 
-interface ApiResponse<T> {
+export interface ApiResponse<T> {
 	success: boolean;
 	message?: string;
+	error?: string;
 	data?: T;
 }
 
@@ -104,6 +134,12 @@ async function apiRequest<T>(
 	const requestHeaders = new Headers(options.headers);
 	if (!requestHeaders.has("Content-Type")) {
 		requestHeaders.set("Content-Type", "application/json");
+	}
+
+	// Add auth header if token exists
+	const token = getAuthToken();
+	if (token !== null && !requestHeaders.has("Authorization")) {
+		requestHeaders.set("Authorization", `Bearer ${token}`);
 	}
 
 	const response = await fetch(url, {
@@ -637,4 +673,27 @@ export async function deleteChoice(id: number): Promise<ApiResponse<void>> {
 	return await apiRequest<ApiResponse<void>>(`/api/admin/choices/${id}`, {
 		method: "DELETE",
 	});
+}
+
+/**
+ * Authentication API Functions
+ */
+
+/**
+ * Login with username and password
+ */
+export async function login(
+	credentials: LoginRequest,
+): Promise<ApiResponse<LoginResponse>> {
+	return await apiRequest<ApiResponse<LoginResponse>>("/api/auth/login", {
+		method: "POST",
+		body: JSON.stringify(credentials),
+	});
+}
+
+/**
+ * Get current authenticated user
+ */
+export async function getCurrentUser(): Promise<ApiResponse<AuthUser>> {
+	return await apiRequest<ApiResponse<AuthUser>>("/api/auth/me");
 }

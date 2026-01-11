@@ -2,7 +2,10 @@
  * Vue Router configuration
  */
 import { createRouter, createWebHistory } from "vue-router";
+import { useAuth } from "../composables/useAuth";
 import AdminLayout from "../views/AdminLayout.vue";
+import LoginPage from "../views/LoginPage.vue";
+import VoterLayout from "../views/VoterLayout.vue";
 import UserList from "../views/admin/UserList.vue";
 import UserUpload from "../views/admin/UserUpload.vue";
 import UserCreate from "../views/admin/UserCreate.vue";
@@ -19,18 +22,46 @@ import MeetingEdit from "../views/admin/MeetingEdit.vue";
 import MotionList from "../views/admin/MotionList.vue";
 import MotionCreate from "../views/admin/MotionCreate.vue";
 import MotionEdit from "../views/admin/MotionEdit.vue";
+import VoterDashboard from "../views/voter/VoterDashboard.vue";
+
+declare module "vue-router" {
+	interface RouteMeta {
+		requiresAuth?: boolean;
+		requiresAdmin?: boolean;
+		guestOnly?: boolean;
+	}
+}
 
 export const router = createRouter({
 	history: createWebHistory(),
 	routes: [
 		{
+			path: "/login",
+			name: "Login",
+			component: LoginPage,
+			meta: { guestOnly: true },
+		},
+		{
 			path: "/",
-			redirect: "/admin/users",
+			component: VoterLayout,
+			meta: { requiresAuth: true },
+			children: [
+				{
+					path: "",
+					name: "VoterDashboard",
+					component: VoterDashboard,
+				},
+			],
 		},
 		{
 			path: "/admin",
 			component: AdminLayout,
+			meta: { requiresAuth: true, requiresAdmin: true },
 			children: [
+				{
+					path: "",
+					redirect: "/admin/users",
+				},
 				{
 					path: "users",
 					name: "UserList",
@@ -121,4 +152,38 @@ export const router = createRouter({
 			],
 		},
 	],
+});
+
+/**
+ * Navigation guard for authentication and authorization
+ */
+router.beforeEach(async (to) => {
+	const { isAuthenticated, isAdmin, isInitialized, checkAuth } = useAuth();
+
+	// Wait for auth initialization if not done yet
+	if (!isInitialized.value) {
+		await checkAuth();
+	}
+
+	// Guest-only routes (like login) - redirect authenticated users
+	if (to.meta.guestOnly === true && isAuthenticated.value) {
+		// Redirect admins to admin panel, others to voter dashboard
+		if (isAdmin.value) {
+			return { path: "/admin" };
+		}
+		return { path: "/" };
+	}
+
+	// Protected routes - redirect unauthenticated users to login
+	if (to.meta.requiresAuth === true && !isAuthenticated.value) {
+		return { path: "/login" };
+	}
+
+	// Admin-only routes - redirect non-admins to voter dashboard
+	if (to.meta.requiresAdmin === true && !isAdmin.value) {
+		return { path: "/" };
+	}
+
+	// Allow navigation
+	return true;
 });

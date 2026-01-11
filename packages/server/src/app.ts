@@ -7,6 +7,8 @@ import pino from "pino";
 import { HTTP_STATUS } from "@pdc/http-status-codes";
 import { router } from "./routes/index.js";
 import { adminRouter } from "./routes/admin.js";
+import { authRouter } from "./routes/auth.js";
+import { requireAuth, requireAdmin } from "./middleware/auth-middleware.js";
 
 const logger = pino({ name: "app" });
 
@@ -53,7 +55,8 @@ export function createApp(): Express {
 
 	// API routes
 	app.use("/api", router);
-	app.use("/api/admin", adminRouter);
+	app.use("/api/auth", authRouter);
+	app.use("/api/admin", requireAuth, requireAdmin, adminRouter);
 
 	// 404 handler
 	app.use((req: Request, res: Response) => {
