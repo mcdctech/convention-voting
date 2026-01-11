@@ -60,7 +60,7 @@ async function handleSubmit(): Promise<void> {
 	}
 
 	if (formData.value.seatCount < MIN_SEAT_COUNT) {
-		error.value = "Seat count must be at least 1.";
+		error.value = "Selection count must be at least 1.";
 		return;
 	}
 
@@ -146,7 +146,7 @@ onMounted(() => {
 
 			<div class="form-group">
 				<label for="seatCount">
-					Seat Count
+					Selection Count
 					<span class="optional">(default: 1)</span>
 				</label>
 				<input
