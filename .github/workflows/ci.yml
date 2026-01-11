@@ -23,6 +23,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build shared package
+        run: npm run build -w @mcdc-convention-voting/shared
+
       - name: Run linter
         run: npm run lint
 
@@ -45,6 +48,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build shared package
+        run: npm run build -w @mcdc-convention-voting/shared
+
       - name: Run type checking
         run: npm run typecheck
 
@@ -63,6 +69,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Build shared package
+        run: npm run build -w @mcdc-convention-voting/shared
 
       - name: Run unit tests
         run: npm run test:unit
@@ -104,6 +113,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Build shared package
+        run: npm run build -w @mcdc-convention-voting/shared
 
       - name: Run migrations
         run: npm run migrate
