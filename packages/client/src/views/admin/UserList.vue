@@ -32,7 +32,6 @@ const userToDisable = ref<string | null>(null);
 const showResetPasswordModal = ref(false);
 const userToResetPassword = ref<string | null>(null);
 
-// eslint-disable-next-line no-useless-assignment -- Used in template for pagination
 const totalPages = computed(() => Math.ceil(totalUsers.value / USERS_PER_PAGE));
 
 async function loadUsers(): Promise<void> {

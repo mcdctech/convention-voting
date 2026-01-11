@@ -13,6 +13,12 @@ import PoolUpload from "../views/admin/PoolUpload.vue";
 import PoolCreate from "../views/admin/PoolCreate.vue";
 import PoolEdit from "../views/admin/PoolEdit.vue";
 import PoolUsers from "../views/admin/PoolUsers.vue";
+import MeetingList from "../views/admin/MeetingList.vue";
+import MeetingCreate from "../views/admin/MeetingCreate.vue";
+import MeetingEdit from "../views/admin/MeetingEdit.vue";
+import MotionList from "../views/admin/MotionList.vue";
+import MotionCreate from "../views/admin/MotionCreate.vue";
+import MotionEdit from "../views/admin/MotionEdit.vue";
 
 export const router = createRouter({
 	history: createWebHistory(),
@@ -76,6 +82,40 @@ export const router = createRouter({
 					path: "pools/:id/users",
 					name: "PoolUsers",
 					component: PoolUsers,
+					props: true,
+				},
+				{
+					path: "meetings",
+					name: "MeetingList",
+					component: MeetingList,
+				},
+				{
+					path: "meetings/create",
+					name: "MeetingCreate",
+					component: MeetingCreate,
+				},
+				{
+					path: "meetings/:id/edit",
+					name: "MeetingEdit",
+					component: MeetingEdit,
+					props: true,
+				},
+				{
+					path: "meetings/:meetingId/motions",
+					name: "MotionList",
+					component: MotionList,
+					props: true,
+				},
+				{
+					path: "meetings/:meetingId/motions/create",
+					name: "MotionCreate",
+					component: MotionCreate,
+					props: true,
+				},
+				{
+					path: "motions/:id/edit",
+					name: "MotionEdit",
+					component: MotionEdit,
 					props: true,
 				},
 			],

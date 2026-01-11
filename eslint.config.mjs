@@ -130,6 +130,11 @@ export default [
     rules: {
       // Vue files often use default exports
       "import/no-default-export": "off",
+      // Vue's reactive pattern (ref, computed) assigns values used in templates
+      // which ESLint incorrectly flags as unused assignments
+      "no-useless-assignment": "off",
+      // Vue ref assignments (e.g., status.value = X) are direct assignments, not destructuring candidates
+      "@typescript-eslint/prefer-destructuring": "off",
       // Prettier handles all formatting in Vue templates
       "vue/html-indent": "off",
       "vue/script-indent": "off",

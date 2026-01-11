@@ -7,7 +7,7 @@ const router = useRouter();
 
 // Constants
 const NO_FILES = 0;
-// eslint-disable-next-line no-useless-assignment -- Used in template for readability
+
 const NO_ERRORS = 0;
 
 const selectedFile = ref<File | null>(null);
