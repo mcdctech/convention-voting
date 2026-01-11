@@ -20,6 +20,9 @@
 				<router-link to="/admin/pools/create" class="nav-link">
 					Create Pool
 				</router-link>
+				<router-link to="/admin/meetings" class="nav-link">
+					Meetings
+				</router-link>
 			</nav>
 		</header>
 

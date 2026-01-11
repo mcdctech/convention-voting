@@ -9,6 +9,16 @@ import type {
 	Pool,
 	CreatePoolRequest,
 	UpdatePoolRequest,
+	MeetingWithPool,
+	CreateMeetingRequest,
+	UpdateMeetingRequest,
+	MotionWithPool,
+	CreateMotionRequest,
+	UpdateMotionRequest,
+	UpdateMotionStatusRequest,
+	Choice,
+	CreateChoiceRequest,
+	UpdateChoiceRequest,
 } from "@mcdc-convention-voting/shared";
 
 // Constants
@@ -411,4 +421,220 @@ export async function getUserPools(
 	return await apiRequest<ApiResponse<Pool[]>>(
 		`/api/admin/users/${userId}/pools`,
 	);
+}
+
+/**
+ * Meeting Management API Functions
+ */
+
+/**
+ * Get paginated list of meetings
+ */
+export async function getMeetings(
+	page = DEFAULT_PAGE,
+	limit = DEFAULT_PAGE_LIMIT,
+): Promise<PaginatedResponse<MeetingWithPool>> {
+	return await apiRequest<PaginatedResponse<MeetingWithPool>>(
+		`/api/admin/meetings?page=${page}&limit=${limit}`,
+	);
+}
+
+/**
+ * Get a single meeting by ID
+ */
+export async function getMeeting(
+	id: number,
+): Promise<ApiResponse<MeetingWithPool>> {
+	return await apiRequest<ApiResponse<MeetingWithPool>>(
+		`/api/admin/meetings/${id}`,
+	);
+}
+
+/**
+ * Create a new meeting
+ */
+export async function createMeeting(
+	meeting: CreateMeetingRequest,
+): Promise<ApiResponse<MeetingWithPool>> {
+	return await apiRequest<ApiResponse<MeetingWithPool>>("/api/admin/meetings", {
+		method: "POST",
+		body: JSON.stringify(meeting),
+	});
+}
+
+/**
+ * Update a meeting
+ */
+export async function updateMeeting(
+	id: number,
+	updates: UpdateMeetingRequest,
+): Promise<ApiResponse<MeetingWithPool>> {
+	return await apiRequest<ApiResponse<MeetingWithPool>>(
+		`/api/admin/meetings/${id}`,
+		{
+			method: "PUT",
+			body: JSON.stringify(updates),
+		},
+	);
+}
+
+/**
+ * Delete a meeting
+ */
+export async function deleteMeeting(id: number): Promise<ApiResponse<void>> {
+	return await apiRequest<ApiResponse<void>>(`/api/admin/meetings/${id}`, {
+		method: "DELETE",
+	});
+}
+
+/**
+ * Motion Management API Functions
+ */
+
+/**
+ * Get paginated list of motions for a meeting
+ */
+export async function getMotions(
+	meetingId: number,
+	page = DEFAULT_PAGE,
+	limit = DEFAULT_PAGE_LIMIT,
+): Promise<PaginatedResponse<MotionWithPool>> {
+	return await apiRequest<PaginatedResponse<MotionWithPool>>(
+		`/api/admin/meetings/${meetingId}/motions?page=${page}&limit=${limit}`,
+	);
+}
+
+/**
+ * Get a single motion by ID
+ */
+export async function getMotion(
+	id: number,
+): Promise<ApiResponse<MotionWithPool>> {
+	return await apiRequest<ApiResponse<MotionWithPool>>(
+		`/api/admin/motions/${id}`,
+	);
+}
+
+/**
+ * Create a new motion
+ */
+export async function createMotion(
+	motion: CreateMotionRequest,
+): Promise<ApiResponse<MotionWithPool>> {
+	return await apiRequest<ApiResponse<MotionWithPool>>(
+		`/api/admin/meetings/${motion.meetingId}/motions`,
+		{
+			method: "POST",
+			body: JSON.stringify(motion),
+		},
+	);
+}
+
+/**
+ * Update a motion
+ */
+export async function updateMotion(
+	id: number,
+	updates: UpdateMotionRequest,
+): Promise<ApiResponse<MotionWithPool>> {
+	return await apiRequest<ApiResponse<MotionWithPool>>(
+		`/api/admin/motions/${id}`,
+		{
+			method: "PUT",
+			body: JSON.stringify(updates),
+		},
+	);
+}
+
+/**
+ * Update motion status (forward-only transitions)
+ */
+export async function updateMotionStatus(
+	id: number,
+	statusUpdate: UpdateMotionStatusRequest,
+): Promise<ApiResponse<MotionWithPool>> {
+	return await apiRequest<ApiResponse<MotionWithPool>>(
+		`/api/admin/motions/${id}/status`,
+		{
+			method: "PUT",
+			body: JSON.stringify(statusUpdate),
+		},
+	);
+}
+
+/**
+ * Delete a motion
+ */
+export async function deleteMotion(id: number): Promise<ApiResponse<void>> {
+	return await apiRequest<ApiResponse<void>>(`/api/admin/motions/${id}`, {
+		method: "DELETE",
+	});
+}
+
+/**
+ * Choice Management API Functions
+ */
+
+/**
+ * Get choices for a motion
+ */
+export async function getChoices(
+	motionId: number,
+): Promise<ApiResponse<Choice[]>> {
+	return await apiRequest<ApiResponse<Choice[]>>(
+		`/api/admin/motions/${motionId}/choices`,
+	);
+}
+
+/**
+ * Create a new choice
+ */
+export async function createChoice(
+	choice: CreateChoiceRequest,
+): Promise<ApiResponse<Choice>> {
+	return await apiRequest<ApiResponse<Choice>>(
+		`/api/admin/motions/${choice.motionId}/choices`,
+		{
+			method: "POST",
+			body: JSON.stringify(choice),
+		},
+	);
+}
+
+/**
+ * Update a choice
+ */
+export async function updateChoice(
+	id: number,
+	updates: UpdateChoiceRequest,
+): Promise<ApiResponse<Choice>> {
+	return await apiRequest<ApiResponse<Choice>>(`/api/admin/choices/${id}`, {
+		method: "PUT",
+		body: JSON.stringify(updates),
+	});
+}
+
+/**
+ * Reorder choices for a motion
+ */
+export async function reorderChoices(
+	motionId: number,
+	choiceIds: number[],
+): Promise<ApiResponse<Choice[]>> {
+	return await apiRequest<ApiResponse<Choice[]>>(
+		`/api/admin/motions/${motionId}/choices/reorder`,
+		{
+			method: "PUT",
+			body: JSON.stringify({ choiceIds }),
+		},
+	);
+}
+
+/**
+ * Delete a choice
+ */
+export async function deleteChoice(id: number): Promise<ApiResponse<void>> {
+	return await apiRequest<ApiResponse<void>>(`/api/admin/choices/${id}`, {
+		method: "DELETE",
+	});
 }
