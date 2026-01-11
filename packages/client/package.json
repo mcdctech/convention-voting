@@ -1,0 +1,33 @@
+{
+	"name": "@mcdc-convention-voting/client",
+	"version": "0.1.0",
+	"description": "Vue client for MCDC Convention Voting System",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vue-tsc --noEmit && vite build",
+		"preview": "vite preview",
+		"test": "npm run test:unit",
+		"test:unit": "vitest run",
+		"test:watch": "vitest",
+		"lint": "npm run lint:eslint && npm run lint:prettier && npm run lint:typecheck",
+		"lint:eslint": "eslint . --ext .ts,.tsx,.vue --max-warnings 0",
+		"lint:prettier": "prettier --check \"src/**/*.{ts,vue}\"",
+		"lint:typecheck": "vue-tsc --noEmit",
+		"format": "prettier --write \"src/**/*.{ts,vue}\""
+	},
+	"dependencies": {
+		"@mcdc-convention-voting/shared": "^0.1.0",
+		"vue": "^3.5.13",
+		"vue-router": "^4.6.4"
+	},
+	"devDependencies": {
+		"@vitejs/plugin-vue": "^5.2.1",
+		"@vue/test-utils": "^2.4.6",
+		"jsdom": "^25.0.1",
+		"typescript": "^5.7.2",
+		"vite": "^6.0.5",
+		"vitest": "^2.1.8",
+		"vue-tsc": "^2.2.0"
+	}
+}
