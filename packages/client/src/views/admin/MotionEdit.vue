@@ -5,6 +5,7 @@ import { MotionStatus } from "@mcdc-convention-voting/shared";
 import { useCountdownTimer } from "../../composables/useCountdownTimer";
 import {
 	getMotion,
+	getMotionDetailedResults,
 	getMotionVoteStats,
 	updateMotion,
 	getPools,
@@ -14,6 +15,7 @@ import {
 	reorderChoices,
 } from "../../services/api";
 import type {
+	MotionDetailedResults,
 	MotionVoteStats,
 	Pool,
 	Choice,
@@ -51,6 +53,11 @@ const loadingChoices = ref(false);
 const voteStats = ref<MotionVoteStats | null>(null);
 const loadingStats = ref(false);
 let statsIntervalId: ReturnType<typeof setInterval> | null = null;
+
+// Detailed results for completed motions
+const detailedResults = ref<MotionDetailedResults | null>(null);
+const loadingResults = ref(false);
+const resultsError = ref<string | null>(null);
 
 const formData = ref({
 	name: EMPTY_STRING,
@@ -357,10 +364,36 @@ function formatTime(date: Date): string {
 	});
 }
 
+/**
+ * Load detailed results if motion is voting_complete
+ */
+async function loadDetailedResults(): Promise<void> {
+	if (motion.value?.status !== MotionStatus.VotingComplete) {
+		detailedResults.value = null;
+		return;
+	}
+
+	loadingResults.value = true;
+	resultsError.value = null;
+	try {
+		const motionId = Number.parseInt(props.id, DECIMAL_RADIX);
+		const response = await getMotionDetailedResults(motionId);
+		if (response.data !== undefined) {
+			detailedResults.value = response.data;
+		}
+	} catch (err) {
+		resultsError.value =
+			err instanceof Error ? err.message : "Failed to load results";
+	} finally {
+		loadingResults.value = false;
+	}
+}
+
 onMounted(() => {
 	void loadPools();
 	void loadMotion().then(() => {
-		startStatsPolling();
+		startStatsPolling(); // For voting_active
+		void loadDetailedResults(); // For voting_complete
 	});
 	void loadChoices();
 });
@@ -375,8 +408,13 @@ watch(
 		stopStatsPolling();
 		if (newStatus === MotionStatus.VotingActive) {
 			startStatsPolling();
+			detailedResults.value = null;
+		} else if (newStatus === MotionStatus.VotingComplete) {
+			voteStats.value = null;
+			void loadDetailedResults();
 		} else {
 			voteStats.value = null;
+			detailedResults.value = null;
 		}
 	},
 );
@@ -532,6 +570,102 @@ watch(
 				<div class="privacy-notice">
 					<strong>Privacy:</strong> Only total ballot count is visible. No
 					information about vote content, choices, or abstentions is shown.
+				</div>
+			</div>
+
+			<!-- Detailed Results Section (voting_complete only) -->
+			<div
+				v-if="motion?.status === MotionStatus.VotingComplete"
+				class="detailed-results-section"
+			>
+				<h3>Final Results</h3>
+
+				<div v-if="resultsError" class="error">{{ resultsError }}</div>
+
+				<div v-if="loadingResults && !detailedResults" class="loading-small">
+					Loading results...
+				</div>
+
+				<div v-else-if="detailedResults" class="results-content">
+					<!-- Summary Statistics -->
+					<div class="results-summary">
+						<div class="summary-stat">
+							<span class="stat-label">Total Ballots Cast:</span>
+							<span class="stat-value">{{
+								detailedResults.totalVotesIncludingAbstentions
+							}}</span>
+						</div>
+
+						<div class="summary-stat">
+							<span class="stat-label">Votes for Choices:</span>
+							<span class="stat-value">{{
+								detailedResults.totalVotesForChoices
+							}}</span>
+						</div>
+
+						<div class="summary-stat">
+							<span class="stat-label">Abstentions:</span>
+							<span class="stat-value">
+								{{ detailedResults.abstentionCount }}
+								({{ detailedResults.abstentionPercentage.toFixed(1) }}%)
+							</span>
+						</div>
+
+						<div class="summary-stat">
+							<span class="stat-label">Eligible Voters:</span>
+							<span class="stat-value">{{
+								detailedResults.eligibleVoters
+							}}</span>
+						</div>
+
+						<div class="summary-stat highlight">
+							<span class="stat-label">Participation Rate:</span>
+							<span class="stat-value-large">
+								{{ detailedResults.participationRate.toFixed(1) }}%
+							</span>
+						</div>
+					</div>
+
+					<!-- Choice Results -->
+					<div class="choice-results">
+						<h4>
+							Vote Distribution
+							<span v-if="detailedResults.seatCount > 1" class="seats-info">
+								(Top {{ detailedResults.seatCount }} win)
+							</span>
+						</h4>
+
+						<div class="results-table">
+							<div
+								v-for="result in detailedResults.choiceResults"
+								:key="result.choiceId"
+								class="result-row"
+								:class="{ winner: result.isWinner }"
+							>
+								<div class="result-header">
+									<span class="choice-name">
+										{{ result.choiceName }}
+										<span v-if="result.isWinner" class="winner-badge"
+											>Winner</span
+										>
+									</span>
+									<span class="vote-count">
+										{{ result.voteCount }} votes ({{
+											result.percentage.toFixed(1)
+										}}%)
+									</span>
+								</div>
+
+								<div class="result-bar-container">
+									<div
+										class="result-bar-fill"
+										:class="{ winner: result.isWinner }"
+										:style="{ width: `${result.percentage}%` }"
+									/>
+								</div>
+							</div>
+						</div>
+					</div>
 				</div>
 			</div>
 
@@ -969,5 +1103,131 @@ watch(
 	font-size: 0.875rem;
 	color: #666;
 	padding: 0.5rem 0;
+}
+
+/* Detailed results styles */
+.detailed-results-section {
+	background: white;
+	border-radius: 8px;
+	padding: 2rem;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	margin-bottom: 2rem;
+	border-left: 4px solid #4caf50;
+}
+
+.detailed-results-section h3 {
+	margin: 0 0 1.5rem 0;
+	color: #2c3e50;
+}
+
+.results-content {
+	display: flex;
+	flex-direction: column;
+	gap: 2rem;
+}
+
+.results-summary {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
+.summary-stat {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 0.75rem;
+	background: #f8f9fa;
+	border-radius: 4px;
+}
+
+.summary-stat.highlight {
+	padding: 1rem;
+	background: #e8f5e9;
+	border: 2px solid #4caf50;
+}
+
+.choice-results h4 {
+	margin: 0 0 1rem 0;
+	color: #2c3e50;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.seats-info {
+	font-size: 0.875rem;
+	font-weight: 400;
+	color: #666;
+}
+
+.results-table {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.result-row {
+	padding: 1rem;
+	border: 1px solid #e0e0e0;
+	border-radius: 4px;
+	background: #fafafa;
+}
+
+.result-row.winner {
+	background: #e8f5e9;
+	border-color: #4caf50;
+	border-width: 2px;
+}
+
+.result-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 0.5rem;
+}
+
+.result-row .choice-name {
+	font-weight: 600;
+	font-size: 1rem;
+	color: #2c3e50;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.winner-badge {
+	background: #4caf50;
+	color: white;
+	padding: 0.25rem 0.75rem;
+	border-radius: 12px;
+	font-size: 0.75rem;
+	font-weight: 600;
+	text-transform: uppercase;
+}
+
+.result-row .vote-count {
+	font-size: 1rem;
+	font-weight: 500;
+	color: #666;
+}
+
+.result-bar-container {
+	width: 100%;
+	height: 32px;
+	background: #e0e0e0;
+	border-radius: 4px;
+	overflow: hidden;
+}
+
+.result-bar-fill {
+	height: 100%;
+	background: linear-gradient(90deg, #2196f3 0%, #64b5f6 100%);
+	transition: width 0.5s ease;
+	border-radius: 4px;
+}
+
+.result-bar-fill.winner {
+	background: linear-gradient(90deg, #4caf50 0%, #81c784 100%);
 }
 </style>

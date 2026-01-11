@@ -12,6 +12,7 @@ import type {
 	MeetingWithPool,
 	CreateMeetingRequest,
 	UpdateMeetingRequest,
+	MotionDetailedResults,
 	MotionVoteStats,
 	MotionWithPool,
 	CreateMotionRequest,
@@ -620,6 +621,17 @@ export async function getMotionVoteStats(
 ): Promise<ApiResponse<MotionVoteStats>> {
 	return await apiRequest<ApiResponse<MotionVoteStats>>(
 		`/api/admin/motions/${motionId}/vote-stats`,
+	);
+}
+
+/**
+ * Get detailed results for a completed motion
+ */
+export async function getMotionDetailedResults(
+	motionId: number,
+): Promise<ApiResponse<MotionDetailedResults>> {
+	return await apiRequest<ApiResponse<MotionDetailedResults>>(
+		`/api/admin/motions/${motionId}/results`,
 	);
 }
 

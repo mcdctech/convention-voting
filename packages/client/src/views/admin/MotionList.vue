@@ -290,16 +290,18 @@ function isTimeUrgent(motion: MotionWithPool): boolean {
 }
 
 /**
- * Load vote statistics for all voting_active motions
+ * Load vote statistics for all voting_active and voting_complete motions
  */
 async function loadVoteStats(): Promise<void> {
-	const votingActiveMotions = motions.value.filter(
-		(m) => m.status === MotionStatus.VotingActive,
+	const motionsWithStats = motions.value.filter(
+		(m) =>
+			m.status === MotionStatus.VotingActive ||
+			m.status === MotionStatus.VotingComplete,
 	);
 
 	// Load all vote stats in parallel
 	await Promise.all(
-		votingActiveMotions.map(async (motion) => {
+		motionsWithStats.map(async (motion) => {
 			try {
 				const response = await getMotionVoteStats(motion.id);
 				if (response.data !== undefined) {
@@ -452,6 +454,23 @@ watch(currentPage, () => {
 										{{ formatRemainingTime(motion) }}
 									</span>
 								</div>
+							</div>
+							<div
+								v-else-if="
+									motion.status === MotionStatus.VotingComplete &&
+									voteStatsMap.has(motion.id)
+								"
+								class="vote-count-row"
+							>
+								<span class="vote-count">
+									{{ voteStatsMap.get(motion.id)!.totalVotes }} /
+									{{ voteStatsMap.get(motion.id)!.eligibleVoters }}
+								</span>
+								<span class="participation-rate">
+									({{
+										voteStatsMap.get(motion.id)!.participationRate.toFixed(1)
+									}}%)
+								</span>
 							</div>
 							<span v-else class="vote-count-placeholder">—</span>
 						</td>

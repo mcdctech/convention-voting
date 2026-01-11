@@ -36,6 +36,7 @@ import {
 	deleteMeeting,
 	createMotion,
 	getMotionById,
+	getMotionDetailedResults,
 	getMotionVoteStats,
 	listMotionsForMeeting,
 	updateMotion,
@@ -959,6 +960,29 @@ adminRouter.get(
 		}
 	},
 );
+
+/**
+ * GET /api/admin/motions/:id/results
+ * Get detailed voting results for a completed motion
+ */
+adminRouter.get("/motions/:id/results", async (req: Request, res: Response) => {
+	try {
+		const motionId = parseInt(req.params.id, DECIMAL_RADIX);
+		const results = await getMotionDetailedResults(motionId);
+		res.json({ success: true, data: results });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+
+		// Return 400 for "not voting_complete" errors
+		if (message.includes("voting_complete")) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({ error: message });
+		} else {
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get motion results: ${message}` });
+		}
+	}
+});
 
 /**
  * PUT /api/admin/motions/:id
