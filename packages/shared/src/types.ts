@@ -470,3 +470,41 @@ export enum LoginErrorCode {
 	NoPasswordSet = "NO_PASSWORD_SET",
 	LoginDisabled = "LOGIN_DISABLED",
 }
+
+/**
+ * Voter-Facing Types
+ */
+
+/**
+ * Open motion for voter view
+ * Includes meeting context and computed end time information
+ *
+ * This type is returned by the voter API, not directly mapped to a database table.
+ * It joins data from:
+ * - motions table (id, name, description, planned_duration, seat_count, updated_at, end_override)
+ * - meetings table (meeting_id, meeting_name)
+ * - pools table (voting_pool_name via motion's voting_pool_id or meeting's quorum_voting_pool_id)
+ *
+ * votingEndsAt is computed as:
+ * - endOverride if set
+ * - Otherwise: updatedAt + plannedDuration minutes
+ */
+export interface OpenMotionForVoter {
+	id: number;
+	name: string;
+	description: string | null;
+	plannedDuration: number;
+	seatCount: number;
+	votingPoolName: string;
+	meetingId: number;
+	meetingName: string;
+	votingEndsAt: Date;
+	votingStartedAt: Date;
+}
+
+/**
+ * Response for open motions list (non-paginated since active motions will be few)
+ */
+export interface OpenMotionsResponse {
+	data: OpenMotionForVoter[];
+}
