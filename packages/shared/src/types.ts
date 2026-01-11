@@ -508,3 +508,62 @@ export interface OpenMotionForVoter {
 export interface OpenMotionsResponse {
 	data: OpenMotionForVoter[];
 }
+
+/**
+ * Voting Types
+ */
+
+/**
+ * Vote interface
+ *
+ * Database schema (votes table):
+ * - id: SERIAL PRIMARY KEY
+ * - user_id: UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+ * - motion_id: INTEGER NOT NULL REFERENCES motions(id) ON DELETE CASCADE
+ * - is_abstain: BOOLEAN NOT NULL DEFAULT FALSE
+ * - created_at: TIMESTAMP WITH TIME ZONE
+ *
+ * IMPORTANT: Keep this type in sync with database migrations
+ */
+export interface Vote {
+	id: number;
+	userId: string;
+	motionId: number;
+	isAbstain: boolean;
+	createdAt: Date;
+}
+
+/**
+ * Request to cast a vote
+ */
+export interface CastVoteRequest {
+	choiceIds: number[];
+	abstain: boolean;
+}
+
+/**
+ * Reason why voting is not allowed
+ */
+export type VotingEndedReason =
+	| "already_voted"
+	| "not_in_pool"
+	| "voting_ended"
+	| "not_active";
+
+/**
+ * Motion details for voter view (includes choices and vote status)
+ * Extends OpenMotionForVoter with voting-specific information
+ */
+export interface MotionForVoting extends OpenMotionForVoter {
+	choices: Choice[];
+	hasVoted: boolean;
+	canVote: boolean;
+	votingEndedReason?: VotingEndedReason;
+}
+
+/**
+ * Response for casting a vote
+ */
+export interface CastVoteResponse {
+	vote: Vote;
+}

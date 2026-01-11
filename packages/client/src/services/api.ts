@@ -23,6 +23,9 @@ import type {
 	LoginResponse,
 	AuthUser,
 	OpenMotionsResponse,
+	MotionForVoting,
+	CastVoteRequest,
+	CastVoteResponse,
 } from "@mcdc-convention-voting/shared";
 
 // Constants
@@ -711,5 +714,32 @@ export async function getOpenMotions(): Promise<
 > {
 	return await apiRequest<ApiResponse<OpenMotionsResponse>>(
 		"/api/voter/motions/open",
+	);
+}
+
+/**
+ * Get motion details for voting (includes choices and vote status)
+ */
+export async function getMotionForVoting(
+	motionId: number,
+): Promise<ApiResponse<MotionForVoting>> {
+	return await apiRequest<ApiResponse<MotionForVoting>>(
+		`/api/voter/motions/${motionId}`,
+	);
+}
+
+/**
+ * Cast a vote on a motion
+ */
+export async function castVote(
+	motionId: number,
+	request: CastVoteRequest,
+): Promise<ApiResponse<CastVoteResponse>> {
+	return await apiRequest<ApiResponse<CastVoteResponse>>(
+		`/api/voter/motions/${motionId}/vote`,
+		{
+			method: "POST",
+			body: JSON.stringify(request),
+		},
 	);
 }
