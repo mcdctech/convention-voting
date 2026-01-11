@@ -10,7 +10,7 @@
 		"test": "npm run test:unit",
 		"test:unit": "vitest run",
 		"test:watch": "vitest",
-		"lint": "npm run lint:eslint && npm run lint:prettier && lint:typecheck",
+		"lint": "npm run lint:eslint && npm run lint:prettier && npm run lint:typecheck",
 		"lint:eslint": "eslint . --ext .ts,.tsx,.vue --max-warnings 0",
 		"lint:prettier": "prettier --check \"src/**/*.{ts,vue}\"",
 		"lint:typecheck": "vue-tsc --noEmit",

@@ -15,9 +15,10 @@
 		"test:integration": "vitest run --config vitest.config.integration.ts",
 		"test:ci": "vitest run --config vitest.config.ts && vitest run --config vitest.config.integration.ts --run",
 		"migrate": "tsx src/scripts/migrate.ts | pino-pretty",
-		"lint": "eslint src --ext .ts --max-warnings 0",
-		"format": "prettier --write \"src/**/*.ts\"",
-		"typecheck": "tsc --noEmit"
+		"lint": "npm run lint:eslint && npm run lint:typecheck",
+		"lint:eslint": "eslint src --ext .ts --max-warnings 0",
+		"lint:typecheck": "tsc --noEmit",
+		"format": "prettier --write \"src/**/*.ts\""
 	},
 	"dependencies": {
 		"@mcdc-convention-voting/shared": "^0.1.0",
