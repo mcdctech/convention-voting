@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { useCountdownTimer } from "../composables/useCountdownTimer";
 import type { OpenMotionForVoter } from "@mcdc-convention-voting/shared";
 
 const props = defineProps<{
@@ -8,68 +8,17 @@ const props = defineProps<{
 
 const emit = defineEmits<(e: "click", motionId: number) => void>();
 
-// Time constants
-const MS_PER_SECOND = 1000;
-const SECONDS_PER_MINUTE = 60;
-const MINUTES_PER_HOUR = 60;
-const UPDATE_INTERVAL_MS = 1000;
-const ZERO = 0;
-const URGENT_THRESHOLD_MINUTES = 5;
-
-const now = ref(new Date());
-let intervalId: ReturnType<typeof setInterval> | null = null;
-
-// Computed remaining time in milliseconds
-const remainingMs = computed((): number => {
-	const endTime = new Date(props.motion.votingEndsAt).getTime();
-	const remaining = endTime - now.value.getTime();
-	return remaining > ZERO ? remaining : ZERO;
+// Use countdown timer composable
+const { remainingTimeString, isTimeUrgent, isExpired } = useCountdownTimer({
+	getVotingEndsAt: () => new Date(props.motion.votingEndsAt),
 });
 
-// Format remaining time as human-readable string
-const remainingTimeString = computed((): string => {
-	if (remainingMs.value === ZERO) {
-		return "Voting ended";
-	}
-
-	const totalSeconds = Math.floor(remainingMs.value / MS_PER_SECOND);
-	const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
-	const seconds = totalSeconds % SECONDS_PER_MINUTE;
-
-	if (minutes >= MINUTES_PER_HOUR) {
-		const hours = Math.floor(minutes / MINUTES_PER_HOUR);
-		const remainingMinutes = minutes % MINUTES_PER_HOUR;
-		return `${String(hours)}h ${String(remainingMinutes)}m`;
-	}
-
-	return `${String(minutes)}m ${String(seconds)}s`;
-});
-
-// Check if time is running out (less than 5 minutes)
-const isUrgent = computed((): boolean => {
-	const urgentThresholdMs =
-		URGENT_THRESHOLD_MINUTES * SECONDS_PER_MINUTE * MS_PER_SECOND;
-	return remainingMs.value > ZERO && remainingMs.value < urgentThresholdMs;
-});
-
-// Check if voting has ended
-const isExpired = computed((): boolean => remainingMs.value === ZERO);
+// Alias for template
+const isUrgent = isTimeUrgent;
 
 function handleClick(): void {
 	emit("click", props.motion.id);
 }
-
-onMounted((): void => {
-	intervalId = setInterval((): void => {
-		now.value = new Date();
-	}, UPDATE_INTERVAL_MS);
-});
-
-onUnmounted((): void => {
-	if (intervalId !== null) {
-		clearInterval(intervalId);
-	}
-});
 </script>
 
 <template>

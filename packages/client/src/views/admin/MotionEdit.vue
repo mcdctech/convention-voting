@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, onUnmounted, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { MotionStatus } from "@mcdc-convention-voting/shared";
+import { useCountdownTimer } from "../../composables/useCountdownTimer";
 import {
 	getMotion,
+	getMotionVoteStats,
 	updateMotion,
 	getPools,
 	getChoices,
@@ -12,6 +14,7 @@ import {
 	reorderChoices,
 } from "../../services/api";
 import type {
+	MotionVoteStats,
 	Pool,
 	Choice,
 	MotionWithPool,
@@ -34,12 +37,20 @@ const MIN_DURATION = 1;
 const MIN_SEAT_COUNT = 1;
 const DEFAULT_DURATION = 5;
 const DEFAULT_SEAT_COUNT = 1;
+const STATS_POLL_INTERVAL_MS = 30000; // 30 seconds
+const MS_PER_SECOND = 1000;
+const SECONDS_PER_MINUTE = 60;
 
 const motion = ref<MotionWithPool | null>(null);
 const pools = ref<Pool[]>([]);
 const choices = ref<Choice[]>([]);
 const loadingPools = ref(false);
 const loadingChoices = ref(false);
+
+// Vote statistics
+const voteStats = ref<MotionVoteStats | null>(null);
+const loadingStats = ref(false);
+let statsIntervalId: ReturnType<typeof setInterval> | null = null;
 
 const formData = ref({
 	name: EMPTY_STRING,
@@ -62,6 +73,24 @@ const canEdit = computed(() => {
 		return false;
 	}
 	return motion.value.status === MotionStatus.NotYetStarted;
+});
+
+// Use countdown timer composable
+const { remainingTimeString, isTimeUrgent } = useCountdownTimer({
+	getVotingEndsAt: () => {
+		if (motion.value?.status !== MotionStatus.VotingActive) {
+			return null;
+		}
+
+		if (motion.value.endOverride !== null) {
+			return new Date(motion.value.endOverride);
+		}
+
+		const startTime = new Date(motion.value.updatedAt);
+		const durationMs =
+			motion.value.plannedDuration * SECONDS_PER_MINUTE * MS_PER_SECOND;
+		return new Date(startTime.getTime() + durationMs);
+	},
 });
 
 async function loadPools(): Promise<void> {
@@ -271,11 +300,86 @@ function goBack(): void {
 	void router.push(`/admin/meetings/${motion.value.meetingId}/motions`);
 }
 
+/**
+ * Load vote statistics if motion is voting_active
+ */
+async function loadVoteStats(): Promise<void> {
+	if (motion.value?.status !== MotionStatus.VotingActive) {
+		voteStats.value = null;
+		return;
+	}
+
+	loadingStats.value = true;
+	try {
+		const motionId = Number.parseInt(props.id, DECIMAL_RADIX);
+		const response = await getMotionVoteStats(motionId);
+		if (response.data !== undefined) {
+			voteStats.value = response.data;
+		}
+	} catch (err) {
+		// eslint-disable-next-line no-console -- Error logging for debugging
+		console.error("Failed to load vote stats:", err);
+	} finally {
+		loadingStats.value = false;
+	}
+}
+
+/**
+ * Start polling for vote stats
+ */
+function startStatsPolling(): void {
+	if (motion.value?.status === MotionStatus.VotingActive) {
+		void loadVoteStats();
+		statsIntervalId = setInterval(() => {
+			void loadVoteStats();
+		}, STATS_POLL_INTERVAL_MS);
+	}
+}
+
+/**
+ * Stop polling for vote stats
+ */
+function stopStatsPolling(): void {
+	if (statsIntervalId !== null) {
+		clearInterval(statsIntervalId);
+		statsIntervalId = null;
+	}
+}
+
+/**
+ * Format time for display
+ */
+function formatTime(date: Date): string {
+	return new Date(date).toLocaleTimeString("en-US", {
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+	});
+}
+
 onMounted(() => {
 	void loadPools();
-	void loadMotion();
+	void loadMotion().then(() => {
+		startStatsPolling();
+	});
 	void loadChoices();
 });
+
+onUnmounted(() => {
+	stopStatsPolling();
+});
+
+watch(
+	() => motion.value?.status,
+	(newStatus) => {
+		stopStatsPolling();
+		if (newStatus === MotionStatus.VotingActive) {
+			startStatsPolling();
+		} else {
+			voteStats.value = null;
+		}
+	},
+);
 </script>
 
 <template>
@@ -375,6 +479,61 @@ onMounted(() => {
 					</button>
 				</div>
 			</form>
+
+			<!-- Vote Statistics Section -->
+			<div
+				v-if="motion?.status === MotionStatus.VotingActive"
+				class="vote-stats-section"
+			>
+				<div class="stats-header">
+					<h3>Live Vote Count</h3>
+					<span class="time-remaining-badge" :class="{ urgent: isTimeUrgent }">
+						{{ remainingTimeString }}
+					</span>
+				</div>
+
+				<div v-if="loadingStats && !voteStats" class="loading-small">
+					Loading vote statistics...
+				</div>
+
+				<div v-else-if="voteStats" class="stats-content">
+					<div class="stat-item">
+						<span class="stat-label">Ballots Cast:</span>
+						<span class="stat-value">{{ voteStats.totalVotes }}</span>
+					</div>
+
+					<div class="stat-item">
+						<span class="stat-label">Eligible Voters:</span>
+						<span class="stat-value">{{ voteStats.eligibleVoters }}</span>
+					</div>
+
+					<div class="stat-item large">
+						<span class="stat-label">Participation Rate:</span>
+						<span class="stat-value-large">
+							{{ voteStats.participationRate.toFixed(1) }}%
+						</span>
+					</div>
+
+					<div class="progress-bar-container">
+						<div
+							class="progress-bar-fill"
+							:style="{ width: `${voteStats.participationRate}%` }"
+						/>
+					</div>
+
+					<div class="stats-footer">
+						<span class="update-time">
+							Last updated: {{ formatTime(voteStats.lastUpdated) }}
+						</span>
+						<span class="refresh-note">Updates every 30 seconds</span>
+					</div>
+				</div>
+
+				<div class="privacy-notice">
+					<strong>Privacy:</strong> Only total ballot count is visible. No
+					information about vote content, choices, or abstentions is shown.
+				</div>
+			</div>
 
 			<!-- Choices Section -->
 			<div class="choices-section">
@@ -670,5 +829,145 @@ onMounted(() => {
 
 .btn-danger:hover:not(:disabled) {
 	background-color: #c82333;
+}
+
+/* Vote statistics styles */
+.vote-stats-section {
+	background: white;
+	border-radius: 8px;
+	padding: 2rem;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	margin-bottom: 2rem;
+	border-left: 4px solid #ffc107;
+}
+
+.stats-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 1.5rem;
+}
+
+.vote-stats-section h3 {
+	margin: 0;
+	color: #2c3e50;
+}
+
+.time-remaining-badge {
+	background: #2196f3;
+	color: white;
+	padding: 0.5rem 1rem;
+	border-radius: 20px;
+	font-size: 1rem;
+	font-weight: 600;
+	display: inline-block;
+}
+
+.time-remaining-badge.urgent {
+	background: #f44336;
+	animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.7;
+	}
+}
+
+.stats-content {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.stat-item {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 0.75rem;
+	background: #f8f9fa;
+	border-radius: 4px;
+}
+
+.stat-item.large {
+	padding: 1rem;
+	background: #e3f2fd;
+	border: 2px solid #2196f3;
+}
+
+.stat-label {
+	font-weight: 500;
+	color: #666;
+}
+
+.stat-value {
+	font-size: 1.25rem;
+	font-weight: 600;
+	color: #2c3e50;
+}
+
+.stat-value-large {
+	font-size: 2rem;
+	font-weight: 700;
+	color: #1976d2;
+}
+
+.progress-bar-container {
+	width: 100%;
+	height: 24px;
+	background: #e0e0e0;
+	border-radius: 12px;
+	overflow: hidden;
+	margin-top: 1rem;
+}
+
+.progress-bar-fill {
+	height: 100%;
+	background: linear-gradient(90deg, #4caf50 0%, #8bc34a 100%);
+	transition: width 0.5s ease;
+	border-radius: 12px;
+}
+
+.stats-footer {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-top: 1rem;
+	padding-top: 1rem;
+	border-top: 1px solid #e0e0e0;
+}
+
+.update-time {
+	font-size: 0.875rem;
+	color: #666;
+}
+
+.refresh-note {
+	font-size: 0.875rem;
+	color: #999;
+	font-style: italic;
+}
+
+.privacy-notice {
+	margin-top: 1rem;
+	padding: 0.75rem;
+	background: #fff3e0;
+	border-radius: 4px;
+	font-size: 0.875rem;
+	color: #e65100;
+}
+
+.privacy-notice strong {
+	font-weight: 600;
+}
+
+.loading-small {
+	font-size: 0.875rem;
+	color: #666;
+	padding: 0.5rem 0;
 }
 </style>

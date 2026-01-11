@@ -420,6 +420,30 @@ export interface ChoiceListResponse {
 }
 
 /**
+ * Vote statistics for a motion (admin view)
+ *
+ * Provides aggregate vote counts without revealing individual vote content.
+ * Used for live vote tracking during active voting sessions.
+ *
+ * Privacy: Only shows total ballot count. No information about vote content,
+ * choices, abstentions, or undervotes is exposed.
+ */
+export interface MotionVoteStats {
+	motionId: number;
+	totalVotes: number; // Total voters who cast a ballot (any type)
+	eligibleVoters: number; // Total users in voting pool
+	participationRate: number; // (totalVotes / eligibleVoters) * 100
+	lastUpdated: Date; // Timestamp of calculation
+}
+
+/**
+ * Response for vote statistics endpoint
+ */
+export interface MotionVoteStatsResponse {
+	data: MotionVoteStats;
+}
+
+/**
  * Authentication Types
  */
 
