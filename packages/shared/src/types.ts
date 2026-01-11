@@ -444,6 +444,50 @@ export interface MotionVoteStatsResponse {
 }
 
 /**
+ * Detailed results for a single choice in a completed motion
+ *
+ * Represents aggregated vote counts for one choice option.
+ * Used for displaying final results after voting ends.
+ */
+export interface ChoiceResult {
+	choiceId: number;
+	choiceName: string;
+	voteCount: number; // Number of votes for this choice
+	percentage: number; // Percentage of total votes cast (excluding abstentions)
+	isWinner: boolean; // True if this choice won (top seat_count choices)
+}
+
+/**
+ * Detailed voting results for a completed motion
+ *
+ * Provides comprehensive results breakdown including vote counts per choice,
+ * abstentions, and participation rate. Only available after voting ends.
+ *
+ * Privacy: Only available when motion status is voting_complete.
+ * Results are aggregated by choice. No individual voter information exposed.
+ */
+export interface MotionDetailedResults {
+	motionId: number;
+	motionName: string;
+	seatCount: number; // Number of seats/winners
+	totalVotesIncludingAbstentions: number; // Total ballots cast
+	totalVotesForChoices: number; // Votes cast for choices (excluding abstentions)
+	abstentionCount: number; // Number of abstentions
+	abstentionPercentage: number; // Percentage of total votes that abstained
+	eligibleVoters: number; // Total users in voting pool
+	participationRate: number; // (totalVotes / eligibleVoters) * 100
+	choiceResults: ChoiceResult[]; // Results per choice, sorted by vote count descending
+	hasQuorum: boolean; // True if participation meets quorum (future enhancement)
+}
+
+/**
+ * Response for detailed results endpoint
+ */
+export interface MotionDetailedResultsResponse {
+	data: MotionDetailedResults;
+}
+
+/**
  * Authentication Types
  */
 

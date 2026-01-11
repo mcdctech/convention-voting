@@ -4,12 +4,14 @@
 import {
 	MotionStatus,
 	type Choice,
+	type ChoiceResult,
 	type CreateChoiceRequest,
 	type CreateMeetingRequest,
 	type CreateMotionRequest,
 	type Meeting,
 	type MeetingWithPool,
 	type Motion,
+	type MotionDetailedResults,
 	type MotionVoteStats,
 	type MotionWithPool,
 	type UpdateChoiceRequest,
@@ -1096,5 +1098,140 @@ export async function getMotionVoteStats(
 		eligibleVoters,
 		participationRate,
 		lastUpdated: new Date(),
+	};
+}
+
+/**
+ * Get detailed voting results for a completed motion
+ * Only returns results if motion status is voting_complete
+ *
+ * Privacy: Results are aggregated by choice. No individual voter information exposed.
+ */
+export async function getMotionDetailedResults(
+	motionId: number,
+): Promise<MotionDetailedResults> {
+	// Step 1: Verify motion exists and is voting_complete
+	const motion = await getMotionById(motionId);
+	if (motion === null) {
+		throw new Error(`Motion with ID ${String(motionId)} not found`);
+	}
+
+	if (motion.status !== MotionStatus.VotingComplete) {
+		throw new Error(
+			"Detailed results are only available for completed motions (status: voting_complete)",
+		);
+	}
+
+	// Step 2: Get eligible voter count (same query as getMotionVoteStats)
+	const eligibleVotersResult = await db.query<{ count: string }>(
+		`SELECT COUNT(DISTINCT up.user_id) as count
+		 FROM motions m
+		 INNER JOIN meetings mt ON m.meeting_id = mt.id
+		 INNER JOIN user_pools up ON up.pool_id = COALESCE(m.voting_pool_id, mt.quorum_voting_pool_id)
+		 WHERE m.id = :motionId`,
+		{ motionId },
+	);
+
+	if (eligibleVotersResult.rows.length === EMPTY_ARRAY_LENGTH) {
+		throw new Error(
+			`Failed to get eligible voters for motion ${String(motionId)}`,
+		);
+	}
+
+	const eligibleVoters = parseInt(
+		eligibleVotersResult.rows[FIRST_ROW].count,
+		DECIMAL_RADIX,
+	);
+
+	// Step 3: Get total votes and abstention count
+	const voteCountResult = await db.query<{
+		total_votes: string;
+		abstention_count: string;
+	}>(
+		`SELECT
+			COUNT(*) as total_votes,
+			COUNT(*) FILTER (WHERE is_abstain = true) as abstention_count
+		 FROM votes
+		 WHERE motion_id = :motionId`,
+		{ motionId },
+	);
+
+	const totalVotesIncludingAbstentions = parseInt(
+		voteCountResult.rows[FIRST_ROW].total_votes,
+		DECIMAL_RADIX,
+	);
+	const abstentionCount = parseInt(
+		voteCountResult.rows[FIRST_ROW].abstention_count,
+		DECIMAL_RADIX,
+	);
+
+	const totalVotesForChoices = totalVotesIncludingAbstentions - abstentionCount;
+
+	// Step 4: Get vote counts per choice
+	const choiceResultsQuery = await db.query<{
+		choice_id: number;
+		choice_name: string;
+		vote_count: string;
+	}>(
+		`SELECT
+			c.id as choice_id,
+			c.name as choice_name,
+			COUNT(vc.vote_id) as vote_count
+		 FROM choices c
+		 LEFT JOIN vote_choices vc ON c.id = vc.choice_id
+		 LEFT JOIN votes v ON vc.vote_id = v.id AND v.motion_id = :motionId
+		 WHERE c.motion_id = :motionId
+		 GROUP BY c.id, c.name
+		 ORDER BY vote_count DESC, c.name ASC`,
+		{ motionId },
+	);
+
+	// Step 5: Calculate percentages and determine winners
+	const choiceResults: ChoiceResult[] = choiceResultsQuery.rows.map(
+		(row, index) => {
+			const voteCount = parseInt(row.vote_count, DECIMAL_RADIX);
+			const percentage =
+				totalVotesForChoices > ZERO_VOTES
+					? (voteCount / totalVotesForChoices) * PERCENTAGE_MULTIPLIER
+					: ZERO_VOTES;
+
+			// Winner determination: top seat_count choices by vote count
+			const isWinner = index < motion.seatCount;
+
+			return {
+				choiceId: row.choice_id,
+				choiceName: row.choice_name,
+				voteCount,
+				percentage,
+				isWinner,
+			};
+		},
+	);
+
+	// Step 6: Calculate participation and abstention percentages
+	const participationRate =
+		eligibleVoters > ZERO_VOTES
+			? (totalVotesIncludingAbstentions / eligibleVoters) *
+				PERCENTAGE_MULTIPLIER
+			: ZERO_VOTES;
+
+	const abstentionPercentage =
+		totalVotesIncludingAbstentions > ZERO_VOTES
+			? (abstentionCount / totalVotesIncludingAbstentions) *
+				PERCENTAGE_MULTIPLIER
+			: ZERO_VOTES;
+
+	return {
+		motionId: motion.id,
+		motionName: motion.name,
+		seatCount: motion.seatCount,
+		totalVotesIncludingAbstentions,
+		totalVotesForChoices,
+		abstentionCount,
+		abstentionPercentage,
+		eligibleVoters,
+		participationRate,
+		choiceResults,
+		hasQuorum: true, // Future enhancement: implement actual quorum rules
 	};
 }
