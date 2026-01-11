@@ -21,9 +21,9 @@ import MeetingCreate from "../views/admin/MeetingCreate.vue";
 import MeetingEdit from "../views/admin/MeetingEdit.vue";
 import MotionList from "../views/admin/MotionList.vue";
 import MotionCreate from "../views/admin/MotionCreate.vue";
-import MotionEdit from "../views/admin/MotionEdit.vue";
+import AdminMotionDetail from "../views/admin/MotionDetail.vue";
 import VoterDashboard from "../views/voter/VoterDashboard.vue";
-import MotionDetail from "../views/voter/MotionDetail.vue";
+import VoterMotionDetail from "../views/voter/MotionDetail.vue";
 import MyPools from "../views/voter/MyPools.vue";
 
 declare module "vue-router" {
@@ -55,8 +55,8 @@ export const router = createRouter({
 				},
 				{
 					path: "motion/:id",
-					name: "MotionDetail",
-					component: MotionDetail,
+					name: "VoterMotionDetail",
+					component: VoterMotionDetail,
 					props: true,
 				},
 				{
@@ -157,9 +157,9 @@ export const router = createRouter({
 					props: true,
 				},
 				{
-					path: "motions/:id/edit",
-					name: "MotionEdit",
-					component: MotionEdit,
+					path: "motions/:id",
+					name: "AdminMotionDetail",
+					component: AdminMotionDetail,
 					props: true,
 				},
 			],

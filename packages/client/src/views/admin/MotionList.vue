@@ -110,7 +110,7 @@ async function loadMotions(): Promise<void> {
 }
 
 function editMotion(motionId: number): void {
-	void router.push(`/admin/motions/${motionId}/edit`);
+	void router.push(`/admin/motions/${motionId}`);
 }
 
 function createMotion(): void {
@@ -263,7 +263,7 @@ function formatRemainingTime(motion: MotionWithPool): string {
 	const remainingMs = getRemainingMs(motion);
 
 	if (remainingMs === ZERO) {
-		return "Ended";
+		return "Exceeded";
 	}
 
 	const totalSeconds = Math.floor(remainingMs / MS_PER_SECOND);
@@ -474,35 +474,37 @@ watch(currentPage, () => {
 							</div>
 							<span v-else class="vote-count-placeholder">—</span>
 						</td>
-						<td class="actions-cell">
-							<button
-								v-if="canStartVoting(motion.status)"
-								class="btn btn-small"
-								@click="editMotion(motion.id)"
-							>
-								Edit
-							</button>
-							<button
-								v-if="canStartVoting(motion.status)"
-								class="btn btn-small btn-success"
-								@click="requestStartVoting(motion.id)"
-							>
-								Start Voting
-							</button>
-							<button
-								v-if="canEndVoting(motion.status)"
-								class="btn btn-small btn-warning"
-								@click="requestEndVoting(motion.id)"
-							>
-								End Voting
-							</button>
-							<button
-								v-if="canStartVoting(motion.status)"
-								class="btn btn-small btn-danger"
-								@click="requestDelete(motion.id)"
-							>
-								Delete
-							</button>
+						<td>
+							<div class="actions-cell">
+								<button
+									v-if="canStartVoting(motion.status)"
+									class="btn btn-small"
+									@click="editMotion(motion.id)"
+								>
+									Edit
+								</button>
+								<button
+									v-if="canStartVoting(motion.status)"
+									class="btn btn-small btn-success"
+									@click="requestStartVoting(motion.id)"
+								>
+									Start Voting
+								</button>
+								<button
+									v-if="canEndVoting(motion.status)"
+									class="btn btn-small btn-warning"
+									@click="requestEndVoting(motion.id)"
+								>
+									End Voting
+								</button>
+								<button
+									v-if="canStartVoting(motion.status)"
+									class="btn btn-small btn-danger"
+									@click="requestDelete(motion.id)"
+								>
+									Delete
+								</button>
+							</div>
 						</td>
 					</tr>
 				</tbody>
@@ -659,6 +661,7 @@ watch(currentPage, () => {
 .motions-table td {
 	padding: 1rem;
 	border-bottom: 1px solid #dee2e6;
+	vertical-align: middle;
 }
 
 .motions-table tbody tr:hover {
@@ -704,6 +707,7 @@ watch(currentPage, () => {
 	display: flex;
 	gap: 0.5rem;
 	flex-wrap: wrap;
+	align-items: center;
 }
 
 .pagination {

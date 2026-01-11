@@ -66,7 +66,7 @@ export function useCountdownTimer(
 	// Format remaining time as human-readable string
 	const remainingTimeString = computed((): string => {
 		if (remainingMs.value === ZERO) {
-			return "Voting ended";
+			return "Duration exceeded";
 		}
 
 		const totalSeconds = Math.floor(remainingMs.value / MS_PER_SECOND);
@@ -76,7 +76,7 @@ export function useCountdownTimer(
 		if (minutes >= MINUTES_PER_HOUR) {
 			const hours = Math.floor(minutes / MINUTES_PER_HOUR);
 			const remainingMinutes = minutes % MINUTES_PER_HOUR;
-			return `${String(hours)}h ${String(remainingMinutes)}m`;
+			return `${String(hours)}h ${String(remainingMinutes)}m ${String(seconds)}s`;
 		}
 
 		return `${String(minutes)}m ${String(seconds)}s`;

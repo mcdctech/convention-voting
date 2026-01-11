@@ -277,6 +277,8 @@ export interface MeetingWithPool extends Meeting {
  * - voting_pool_id: INTEGER REFERENCES pools(id) ON DELETE RESTRICT (nullable)
  * - status: motion_status NOT NULL DEFAULT 'not_yet_started'
  * - end_override: TIMESTAMP WITH TIME ZONE (nullable, only when status='voting_active')
+ * - voting_started_at: TIMESTAMP WITH TIME ZONE (nullable, set when status changes to 'voting_active')
+ * - voting_ended_at: TIMESTAMP WITH TIME ZONE (nullable, set when status changes to 'voting_complete')
  * - created_at: TIMESTAMP WITH TIME ZONE
  * - updated_at: TIMESTAMP WITH TIME ZONE
  *
@@ -292,6 +294,8 @@ export interface Motion {
 	votingPoolId: number | null;
 	status: MotionStatus;
 	endOverride: Date | null;
+	votingStartedAt: Date | null;
+	votingEndedAt: Date | null;
 	createdAt: Date;
 	updatedAt: Date;
 }

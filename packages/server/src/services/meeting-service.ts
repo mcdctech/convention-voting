@@ -357,6 +357,8 @@ export async function createMotion(
 		voting_pool_id: number | null;
 		status: string;
 		end_override: Date | null;
+		voting_started_at: Date | null;
+		voting_ended_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
@@ -387,6 +389,8 @@ export async function createMotion(
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 		status: row.status as MotionStatus,
 		endOverride: row.end_override,
+		votingStartedAt: row.voting_started_at,
+		votingEndedAt: row.voting_ended_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -408,6 +412,8 @@ export async function getMotionById(
 		voting_pool_id: number | null;
 		status: string;
 		end_override: Date | null;
+		voting_started_at: Date | null;
+		voting_ended_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 		pool_name: string | null;
@@ -437,6 +443,8 @@ export async function getMotionById(
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 		status: row.status as MotionStatus,
 		endOverride: row.end_override,
+		votingStartedAt: row.voting_started_at,
+		votingEndedAt: row.voting_ended_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		votingPoolName: row.pool_name,
@@ -471,6 +479,8 @@ export async function listMotionsForMeeting(
 		voting_pool_id: number | null;
 		status: string;
 		end_override: Date | null;
+		voting_started_at: Date | null;
+		voting_ended_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 		pool_name: string | null;
@@ -495,6 +505,8 @@ export async function listMotionsForMeeting(
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 		status: row.status as MotionStatus,
 		endOverride: row.end_override,
+		votingStartedAt: row.voting_started_at,
+		votingEndedAt: row.voting_ended_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		votingPoolName: row.pool_name,
@@ -567,6 +579,8 @@ export async function updateMotion(
 		voting_pool_id: number | null;
 		status: string;
 		end_override: Date | null;
+		voting_started_at: Date | null;
+		voting_ended_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
@@ -595,6 +609,8 @@ export async function updateMotion(
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 		status: row.status as MotionStatus,
 		endOverride: row.end_override,
+		votingStartedAt: row.voting_started_at,
+		votingEndedAt: row.voting_ended_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -641,15 +657,7 @@ export async function updateMotionStatus(
 		);
 	}
 
-	// Build update query
-	const setClauses = ["status = :newStatus", "updated_at = NOW()"];
-	const values: Record<string, unknown> = { motionId, newStatus };
-
-	if (endOverride !== undefined) {
-		setClauses.push("end_override = :endOverride");
-		values.endOverride = endOverride;
-	}
-
+	// Build update query with conditional voting_started_at and voting_ended_at
 	const result = await db.query<{
 		id: number;
 		meeting_id: number;
@@ -660,14 +668,32 @@ export async function updateMotionStatus(
 		voting_pool_id: number | null;
 		status: string;
 		end_override: Date | null;
+		voting_started_at: Date | null;
+		voting_ended_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
 		`UPDATE motions
-		 SET ${setClauses.join(", ")}
+		 SET status = :newStatus::motion_status,
+		     voting_started_at = CASE
+		       WHEN :newStatus::motion_status = 'voting_active'::motion_status AND voting_started_at IS NULL
+		       THEN NOW()
+		       ELSE voting_started_at
+		     END,
+		     voting_ended_at = CASE
+		       WHEN :newStatus::motion_status = 'voting_complete'::motion_status AND voting_ended_at IS NULL
+		       THEN NOW()
+		       ELSE voting_ended_at
+		     END,
+		     end_override = COALESCE(:endOverride, end_override),
+		     updated_at = NOW()
 		 WHERE id = :motionId
 		 RETURNING *`,
-		values,
+		{
+			motionId,
+			newStatus,
+			endOverride: endOverride ?? null,
+		},
 	);
 
 	const {
@@ -684,6 +710,8 @@ export async function updateMotionStatus(
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 		status: row.status as MotionStatus,
 		endOverride: row.end_override,
+		votingStartedAt: row.voting_started_at,
+		votingEndedAt: row.voting_ended_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -729,6 +757,8 @@ export async function setMotionEndOverride(
 		voting_pool_id: number | null;
 		status: string;
 		end_override: Date | null;
+		voting_started_at: Date | null;
+		voting_ended_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
@@ -753,6 +783,8 @@ export async function setMotionEndOverride(
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 		status: row.status as MotionStatus,
 		endOverride: row.end_override,
+		votingStartedAt: row.voting_started_at,
+		votingEndedAt: row.voting_ended_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
