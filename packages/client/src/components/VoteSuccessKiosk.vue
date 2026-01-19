@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * Vote success screen for kiosk mode
- * Shows a countdown before auto-logout
+ * Shows a full-page countdown before auto-logout
+ * Used when there are no remaining open motions for the user
  */
 import { ref, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
@@ -63,11 +64,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-	<div class="modal-overlay">
-		<div class="modal success-modal">
+	<div class="logout-screen">
+		<div class="logout-content">
 			<div class="success-icon">&#10003;</div>
-			<h3>Vote Submitted!</h3>
-			<p>Your vote has been recorded successfully.</p>
+			<h1>Vote Submitted!</h1>
+			<p class="success-message">Your vote has been recorded successfully.</p>
 			<p class="countdown-text">
 				Logging out in <strong>{{ secondsLeft }}</strong
 				>...
@@ -77,62 +78,62 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.modal-overlay {
+.logout-screen {
 	position: fixed;
 	top: 0;
 	left: 0;
 	right: 0;
 	bottom: 0;
-	background: rgba(0, 0, 0, 0.5);
+	background: #f5f5f5;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	z-index: 1000;
 }
 
-.modal {
-	background: white;
-	border-radius: 12px;
-	padding: 2rem;
-	max-width: 400px;
-	width: 90%;
-	box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-}
-
-.success-modal {
+.logout-content {
 	text-align: center;
+	padding: 3rem;
+	background: white;
+	border-radius: 16px;
+	box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+	max-width: 500px;
+	width: 90%;
 }
 
 .success-icon {
-	width: 60px;
-	height: 60px;
+	width: 80px;
+	height: 80px;
 	background: #28a745;
 	border-radius: 50%;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	margin: 0 auto 1rem;
+	margin: 0 auto 1.5rem;
 	color: white;
-	font-size: 32px;
+	font-size: 40px;
 }
 
-.success-modal h3 {
+.logout-content h1 {
 	margin: 0 0 1rem 0;
 	color: #2c3e50;
+	font-size: 2rem;
 }
 
-.success-modal p {
-	margin: 0 0 1rem 0;
+.success-message {
+	margin: 0 0 2rem 0;
 	color: #666;
+	font-size: 1.1rem;
 }
 
 .countdown-text {
-	font-size: 1.1rem;
+	font-size: 1.25rem;
 	color: #666;
+	margin: 0;
 }
 
 .countdown-text strong {
 	color: #2c3e50;
-	font-size: 1.5rem;
+	font-size: 2rem;
 }
 </style>

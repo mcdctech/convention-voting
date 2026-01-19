@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
-import { getMotionForVoting, castVote } from "../../services/api";
+import {
+	getMotionForVoting,
+	castVote,
+	getOpenMotions,
+} from "../../services/api";
 import { useAuth } from "../../composables/useAuth";
 import { useKioskMode } from "../../composables/useKioskMode";
 import VoteSuccessKiosk from "../../components/VoteSuccessKiosk.vue";
@@ -24,6 +28,7 @@ const selectedChoiceIds = ref<number[]>([]);
 const isAbstaining = ref(false);
 const showConfirmModal = ref(false);
 const showSuccessModal = ref(false);
+const showKioskLogout = ref(false);
 const isSubmitting = ref(false);
 const submitError = ref<string | null>(null);
 
@@ -176,6 +181,35 @@ function cancelConfirm(): void {
 	showConfirmModal.value = false;
 }
 
+async function checkForRemainingOpenMotions(): Promise<boolean> {
+	const openMotionsResponse = await getOpenMotions();
+	const motionsList = openMotionsResponse.data?.data;
+	return (
+		openMotionsResponse.success &&
+		motionsList !== undefined &&
+		motionsList.length > ZERO
+	);
+}
+
+async function handlePostVoteSuccess(): Promise<void> {
+	showConfirmModal.value = false;
+
+	// In kiosk mode (non-admin), check if there are remaining open motions
+	if (!useKioskSuccessScreen.value) {
+		showSuccessModal.value = true;
+		return;
+	}
+
+	const hasOpenMotions = await checkForRemainingOpenMotions();
+	if (hasOpenMotions) {
+		// Still have open motions, show normal success modal
+		showSuccessModal.value = true;
+	} else {
+		// No more open motions, show kiosk logout screen
+		showKioskLogout.value = true;
+	}
+}
+
 async function submitVote(): Promise<void> {
 	if (motion.value === null) {
 		return;
@@ -195,8 +229,7 @@ async function submitVote(): Promise<void> {
 			return;
 		}
 
-		showConfirmModal.value = false;
-		showSuccessModal.value = true;
+		await handlePostVoteSuccess();
 	} catch (err) {
 		submitError.value =
 			err instanceof Error ? err.message : "Failed to cast vote";
@@ -389,10 +422,7 @@ onUnmounted((): void => {
 		</div>
 
 		<!-- Success Modal (normal mode) -->
-		<div
-			v-if="showSuccessModal && !useKioskSuccessScreen"
-			class="modal-overlay"
-		>
+		<div v-if="showSuccessModal" class="modal-overlay">
 			<div class="modal success-modal">
 				<div class="success-icon">&#10003;</div>
 				<h3>Vote Submitted!</h3>
@@ -403,8 +433,8 @@ onUnmounted((): void => {
 			</div>
 		</div>
 
-		<!-- Success Modal (kiosk mode) -->
-		<VoteSuccessKiosk v-if="showSuccessModal && useKioskSuccessScreen" />
+		<!-- Kiosk mode logout screen (no remaining open motions) -->
+		<VoteSuccessKiosk v-if="showKioskLogout" />
 	</div>
 </template>
 
