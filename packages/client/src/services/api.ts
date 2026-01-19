@@ -33,17 +33,17 @@ import type {
 // Constants
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_LIMIT = 50;
-const DEFAULT_API_URL = "http://localhost:3000";
 const AUTH_TOKEN_KEY = "auth_token";
 
 // Type guard for import.meta.env
 function getApiBaseUrl(): string {
 	// eslint-disable-next-line @typescript-eslint/prefer-destructuring, @typescript-eslint/no-unsafe-assignment -- import.meta.env is typed as any in Vite
 	const viteApiUrl = import.meta.env.VITE_API_URL;
-	if (typeof viteApiUrl === "string") {
+	if (typeof viteApiUrl === "string" && viteApiUrl !== "") {
 		return viteApiUrl;
 	}
-	return DEFAULT_API_URL;
+	// Empty string = relative URLs (same origin deployment)
+	return "";
 }
 
 const API_BASE_URL = getApiBaseUrl();
