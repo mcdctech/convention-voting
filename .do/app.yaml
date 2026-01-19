@@ -9,7 +9,7 @@ services:
       deploy_on_push: true
     environment_slug: node-js
     build_command: npm ci && npm run build
-    run_command: node packages/server/dist/server.js
+    run_command: npm run migrate && node packages/server/dist/server.js
     http_port: 3000
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-1gb
@@ -42,6 +42,9 @@ services:
       - key: PGDATABASE
         value: ${db.DATABASE}
         scope: RUN_TIME
+      - key: PGSSLMODE
+        value: "require"
+        scope: RUN_TIME
       # CORS - allows requests from the app's public URL
       - key: CORS_ORIGIN
         value: ${APP_URL}
@@ -73,8 +76,6 @@ static_sites:
         value: ""
         scope: BUILD_TIME
 
-databases:
-  - name: db
-    engine: PG
-    version: "18"
-    production: true
+# Database: Create a Managed PostgreSQL 18 cluster separately in DO Console,
+# then attach it to this app as a component named "db".
+# The ${db.HOSTNAME}, ${db.PASSWORD}, etc. bindings above will auto-resolve.
