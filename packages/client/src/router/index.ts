@@ -3,6 +3,7 @@
  */
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuth } from "../composables/useAuth";
+import { initKioskMode, useKioskMode } from "../composables/useKioskMode";
 import AdminLayout from "../views/AdminLayout.vue";
 import LoginPage from "../views/LoginPage.vue";
 import VoterLayout from "../views/VoterLayout.vue";
@@ -167,34 +168,49 @@ export const router = createRouter({
 	],
 });
 
+// Track if kiosk mode has been initialized
+let kioskModeInitialized = false;
+
 /**
  * Navigation guard for authentication and authorization
  */
 router.beforeEach(async (to) => {
 	const { isAuthenticated, isAdmin, isInitialized, checkAuth } = useAuth();
+	const { getKioskModeQueryParam } = useKioskMode();
+
+	// Initialize kiosk mode from URL on first navigation
+	if (!kioskModeInitialized) {
+		const searchString: string = window.location.search;
+		const searchParams = new URLSearchParams(searchString);
+		initKioskMode(searchParams);
+		kioskModeInitialized = true;
+	}
 
 	// Wait for auth initialization if not done yet
 	if (!isInitialized.value) {
 		await checkAuth();
 	}
 
+	// Get kiosk query param to preserve in redirects
+	const kioskQuery = getKioskModeQueryParam();
+
 	// Guest-only routes (like login) - redirect authenticated users
 	if (to.meta.guestOnly === true && isAuthenticated.value) {
 		// Redirect admins to admin panel, others to voter dashboard
 		if (isAdmin.value) {
-			return { path: "/admin" };
+			return { path: "/admin", query: kioskQuery };
 		}
-		return { path: "/" };
+		return { path: "/", query: kioskQuery };
 	}
 
 	// Protected routes - redirect unauthenticated users to login
 	if (to.meta.requiresAuth === true && !isAuthenticated.value) {
-		return { path: "/login" };
+		return { path: "/login", query: kioskQuery };
 	}
 
 	// Admin-only routes - redirect non-admins to voter dashboard
 	if (to.meta.requiresAdmin === true && !isAdmin.value) {
-		return { path: "/" };
+		return { path: "/", query: kioskQuery };
 	}
 
 	// Allow navigation

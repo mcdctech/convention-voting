@@ -2,6 +2,9 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { getMotionForVoting, castVote } from "../../services/api";
+import { useAuth } from "../../composables/useAuth";
+import { useKioskMode } from "../../composables/useKioskMode";
+import VoteSuccessKiosk from "../../components/VoteSuccessKiosk.vue";
 import type { MotionForVoting, Choice } from "@mcdc-convention-voting/shared";
 
 const props = defineProps<{
@@ -9,6 +12,9 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
+const { isAdmin } = useAuth();
+const { isKioskMode } = useKioskMode();
+
 const motion = ref<MotionForVoting | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -107,6 +113,12 @@ const cannotVoteMessage = computed((): string => {
 			return "You cannot vote on this motion.";
 	}
 });
+
+// Determine if we should use kiosk mode success screen
+// Only for non-admin users in kiosk mode
+const useKioskSuccessScreen = computed(
+	(): boolean => isKioskMode.value && !isAdmin.value,
+);
 
 async function loadMotion(): Promise<void> {
 	const motionId = Number.parseInt(props.id, DECIMAL_RADIX);
@@ -376,8 +388,11 @@ onUnmounted((): void => {
 			</div>
 		</div>
 
-		<!-- Success Modal -->
-		<div v-if="showSuccessModal" class="modal-overlay">
+		<!-- Success Modal (normal mode) -->
+		<div
+			v-if="showSuccessModal && !useKioskSuccessScreen"
+			class="modal-overlay"
+		>
 			<div class="modal success-modal">
 				<div class="success-icon">&#10003;</div>
 				<h3>Vote Submitted!</h3>
@@ -387,6 +402,9 @@ onUnmounted((): void => {
 				</button>
 			</div>
 		</div>
+
+		<!-- Success Modal (kiosk mode) -->
+		<VoteSuccessKiosk v-if="showSuccessModal && useKioskSuccessScreen" />
 	</div>
 </template>
 

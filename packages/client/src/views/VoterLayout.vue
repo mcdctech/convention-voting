@@ -1,8 +1,55 @@
 <script setup lang="ts">
-import { RouterLink } from "vue-router";
+import { onMounted, onUnmounted, watch } from "vue";
+import { RouterLink, useRouter } from "vue-router";
 import { useAuth } from "../composables/useAuth";
+import { useKioskMode } from "../composables/useKioskMode";
+import { useActivityTimeout } from "../composables/useActivityTimeout";
+import KioskModeIndicator from "../components/KioskModeIndicator.vue";
+import InactivityWarningModal from "../components/InactivityWarningModal.vue";
 
+const router = useRouter();
 const { currentUser, isAdmin, logout } = useAuth();
+const { isKioskMode, getKioskModeQueryParam } = useKioskMode();
+const {
+	showWarning,
+	warningSecondsLeft,
+	confirmActivity,
+	startTracking,
+	stopTracking,
+} = useActivityTimeout();
+
+/**
+ * Handle inactivity logout - called when countdown expires
+ */
+function handleInactivityLogout(): void {
+	logout();
+	// Redirect to login with kiosk param preserved
+	const kioskQuery = getKioskModeQueryParam();
+	void router.push({ path: "/login", query: kioskQuery });
+}
+
+/**
+ * Start or stop activity tracking based on kiosk mode and admin status
+ */
+function updateActivityTracking(): void {
+	// Only track activity for non-admin users in kiosk mode
+	if (isKioskMode.value && !isAdmin.value) {
+		startTracking(handleInactivityLogout);
+	} else {
+		stopTracking();
+	}
+}
+
+// Watch for changes in kiosk mode or admin status
+watch([isKioskMode, isAdmin], updateActivityTracking);
+
+onMounted(() => {
+	updateActivityTracking();
+});
+
+onUnmounted(() => {
+	stopTracking();
+});
 </script>
 
 <template>
@@ -27,6 +74,16 @@ const { currentUser, isAdmin, logout } = useAuth();
 		<main class="main-content">
 			<router-view />
 		</main>
+
+		<!-- Kiosk mode indicator -->
+		<KioskModeIndicator v-if="isKioskMode" />
+
+		<!-- Inactivity warning modal -->
+		<InactivityWarningModal
+			v-if="showWarning"
+			:seconds-left="warningSecondsLeft"
+			@confirm="confirmActivity"
+		/>
 	</div>
 </template>
 

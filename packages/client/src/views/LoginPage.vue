@@ -2,9 +2,12 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuth } from "../composables/useAuth";
+import { useKioskMode } from "../composables/useKioskMode";
+import KioskModeIndicator from "../components/KioskModeIndicator.vue";
 
 const router = useRouter();
 const { login, isLoading } = useAuth();
+const { isKioskMode } = useKioskMode();
 
 const username = ref("");
 const password = ref("");
@@ -68,6 +71,9 @@ async function handleSubmit(): Promise<void> {
 				</button>
 			</form>
 		</div>
+
+		<!-- Kiosk mode indicator -->
+		<KioskModeIndicator v-if="isKioskMode" />
 	</div>
 </template>
 
