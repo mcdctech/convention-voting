@@ -999,21 +999,6 @@ watch(
 							</div>
 
 							<div class="summary-stat">
-								<span class="stat-label">Votes for Choices:</span>
-								<span class="stat-value">{{
-									detailedResults.totalVotesForChoices
-								}}</span>
-							</div>
-
-							<div class="summary-stat">
-								<span class="stat-label">Abstentions:</span>
-								<span class="stat-value">
-									{{ detailedResults.abstentionCount }}
-									({{ detailedResults.abstentionPercentage.toFixed(1) }}%)
-								</span>
-							</div>
-
-							<div class="summary-stat">
 								<span class="stat-label">Eligible Voters:</span>
 								<span class="stat-value">{{
 									detailedResults.eligibleVoters

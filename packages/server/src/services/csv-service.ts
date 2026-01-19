@@ -17,6 +17,34 @@ const MAX_POOL_KEYS = 10;
 const COUNTER_INCREMENT = 1;
 const EMPTY_ARRAY_LENGTH = 0;
 
+// Valid user types for CSV import
+const VALID_USER_TYPES = new Set<string>(["voter", "admin", "watcher"]);
+
+/**
+ * Parse user_type from CSV and return isAdmin/isWatcher flags
+ */
+function parseUserType(userType: string | undefined): {
+	isAdmin: boolean;
+	isWatcher: boolean;
+} {
+	const trimmedType = userType?.trim().toLowerCase() ?? "";
+
+	if (trimmedType === "" || trimmedType === "voter") {
+		return { isAdmin: false, isWatcher: false };
+	}
+
+	if (!VALID_USER_TYPES.has(trimmedType)) {
+		throw new Error(
+			`Invalid user_type "${userType}". Must be one of: voter, admin, watcher`,
+		);
+	}
+
+	return {
+		isAdmin: trimmedType === "admin",
+		isWatcher: trimmedType === "watcher",
+	};
+}
+
 interface CSVImportResult {
 	success: number;
 	failed: number;
@@ -88,6 +116,9 @@ export async function importUsersFromCSV(
 						);
 					}
 
+					// Parse user type (defaults to voter if not specified)
+					const { isAdmin, isWatcher } = parseUserType(record.user_type);
+
 					// Extract pool keys from CSV row (pool_key_1 through pool_key_10)
 					const poolKeys: string[] = [];
 					for (
@@ -112,6 +143,8 @@ export async function importUsersFromCSV(
 						lastName: lastNameValue,
 						poolKeys:
 							poolKeys.length > EMPTY_ARRAY_LENGTH ? poolKeys : undefined,
+						isAdmin,
+						isWatcher,
 					});
 
 					result.success += COUNTER_INCREMENT;

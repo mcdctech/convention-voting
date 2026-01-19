@@ -45,10 +45,26 @@ export async function voterIdExists(voterId: string): Promise<boolean> {
 }
 
 /**
- * Create a single user
+ * Validate user creation request and prepare values
  */
-export async function createUser(request: CreateUserRequest): Promise<User> {
-	const { voterId, firstName, lastName, username, poolKeys } = request;
+async function validateAndPrepareUserCreation(
+	request: CreateUserRequest,
+): Promise<{
+	finalUsername: string;
+	finalIsAdmin: boolean;
+	finalIsWatcher: boolean;
+}> {
+	const { voterId, firstName, lastName, username, isAdmin, isWatcher } =
+		request;
+
+	// Normalize role flags to booleans
+	const finalIsAdmin = isAdmin === true;
+	const finalIsWatcher = isWatcher === true;
+
+	// Validate role exclusivity
+	if (finalIsAdmin && finalIsWatcher) {
+		throw new Error("User cannot be both admin and watcher");
+	}
 
 	// Check if voter ID already exists
 	if (await voterIdExists(voterId)) {
@@ -66,6 +82,18 @@ export async function createUser(request: CreateUserRequest): Promise<User> {
 		throw new Error(`Username ${finalUsername} already exists`);
 	}
 
+	return { finalUsername, finalIsAdmin, finalIsWatcher };
+}
+
+/**
+ * Create a single user
+ */
+export async function createUser(request: CreateUserRequest): Promise<User> {
+	const { voterId, firstName, lastName, poolKeys } = request;
+
+	const { finalUsername, finalIsAdmin, finalIsWatcher } =
+		await validateAndPrepareUserCreation(request);
+
 	const result = await db.query<{
 		id: string;
 		username: string;
@@ -73,14 +101,22 @@ export async function createUser(request: CreateUserRequest): Promise<User> {
 		first_name: string;
 		last_name: string;
 		is_admin: boolean;
+		is_watcher: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`INSERT INTO users (username, voter_id, first_name, last_name, password_hash)
-     VALUES (:username, :voterId, :firstName, :lastName, NULL)
-     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at`,
-		{ username: finalUsername, voterId, firstName, lastName },
+		`INSERT INTO users (username, voter_id, first_name, last_name, password_hash, is_admin, is_watcher)
+     VALUES (:username, :voterId, :firstName, :lastName, NULL, :isAdmin, :isWatcher)
+     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at`,
+		{
+			username: finalUsername,
+			voterId,
+			firstName,
+			lastName,
+			isAdmin: finalIsAdmin,
+			isWatcher: finalIsWatcher,
+		},
 	);
 
 	const {
@@ -93,6 +129,7 @@ export async function createUser(request: CreateUserRequest): Promise<User> {
 		firstName: row.first_name,
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
+		isWatcher: row.is_watcher,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -117,11 +154,12 @@ export async function getUserById(userId: string): Promise<User | null> {
 		first_name: string;
 		last_name: string;
 		is_admin: boolean;
+		is_watcher: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		"SELECT id, username, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at FROM users WHERE id = :userId",
+		"SELECT id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at FROM users WHERE id = :userId",
 		{ userId },
 	);
 
@@ -139,6 +177,7 @@ export async function getUserById(userId: string): Promise<User | null> {
 		firstName: row.first_name,
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
+		isWatcher: row.is_watcher,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -168,6 +207,7 @@ export async function listUsers(
 		first_name: string;
 		last_name: string;
 		is_admin: boolean;
+		is_watcher: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
@@ -175,7 +215,7 @@ export async function listUsers(
 	}>(
 		`SELECT
        u.id, u.username, u.voter_id, u.first_name, u.last_name,
-       u.is_admin, u.is_disabled, u.created_at, u.updated_at,
+       u.is_admin, u.is_watcher, u.is_disabled, u.created_at, u.updated_at,
        array_agg(p.pool_name ORDER BY p.pool_name) FILTER (WHERE p.pool_name IS NOT NULL) as pool_names
      FROM users u
      LEFT JOIN user_pools up ON u.id = up.user_id
@@ -193,6 +233,7 @@ export async function listUsers(
 		firstName: row.first_name,
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
+		isWatcher: row.is_watcher,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -276,6 +317,7 @@ export async function updateUser(
 			first_name: string;
 			last_name: string;
 			is_admin: boolean;
+			is_watcher: boolean;
 			is_disabled: boolean;
 			created_at: Date;
 			updated_at: Date;
@@ -283,7 +325,7 @@ export async function updateUser(
 			`UPDATE users
        SET ${setClauses.join(", ")}
        WHERE id = :userId
-       RETURNING id, username, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at`,
+       RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at`,
 			values,
 		);
 
@@ -301,6 +343,7 @@ export async function updateUser(
 			firstName: row.first_name,
 			lastName: row.last_name,
 			isAdmin: row.is_admin,
+			isWatcher: row.is_watcher,
 			isDisabled: row.is_disabled,
 			createdAt: row.created_at,
 			updatedAt: row.updated_at,
@@ -333,6 +376,7 @@ export async function disableUser(userId: string): Promise<User> {
 		first_name: string;
 		last_name: string;
 		is_admin: boolean;
+		is_watcher: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
@@ -340,7 +384,7 @@ export async function disableUser(userId: string): Promise<User> {
 		`UPDATE users
      SET is_disabled = TRUE, updated_at = NOW()
      WHERE id = :userId
-     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at`,
+     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at`,
 		{ userId },
 	);
 
@@ -358,6 +402,7 @@ export async function disableUser(userId: string): Promise<User> {
 		firstName: row.first_name,
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
+		isWatcher: row.is_watcher,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -375,6 +420,7 @@ export async function enableUser(userId: string): Promise<User> {
 		first_name: string;
 		last_name: string;
 		is_admin: boolean;
+		is_watcher: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
@@ -382,7 +428,7 @@ export async function enableUser(userId: string): Promise<User> {
 		`UPDATE users
      SET is_disabled = FALSE, updated_at = NOW()
      WHERE id = :userId
-     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_disabled, created_at, updated_at`,
+     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at`,
 		{ userId },
 	);
 
@@ -400,6 +446,7 @@ export async function enableUser(userId: string): Promise<User> {
 		firstName: row.first_name,
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
+		isWatcher: row.is_watcher,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,

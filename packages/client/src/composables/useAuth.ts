@@ -25,6 +25,7 @@ export function useAuth(): {
 	currentUser: typeof currentUser;
 	isAuthenticated: ReturnType<typeof computed<boolean>>;
 	isAdmin: ReturnType<typeof computed<boolean>>;
+	isWatcher: ReturnType<typeof computed<boolean>>;
 	isLoading: typeof isLoading;
 	isInitialized: typeof isInitialized;
 	login: (username: string, password: string) => Promise<void>;
@@ -35,6 +36,7 @@ export function useAuth(): {
 
 	const isAuthenticated = computed(() => currentUser.value !== null);
 	const isAdmin = computed(() => currentUser.value?.isAdmin ?? false);
+	const isWatcher = computed(() => currentUser.value?.isWatcher ?? false);
 
 	/**
 	 * Login with username and password
@@ -110,6 +112,7 @@ export function useAuth(): {
 		currentUser,
 		isAuthenticated,
 		isAdmin,
+		isWatcher,
 		isLoading,
 		isInitialized,
 		login,

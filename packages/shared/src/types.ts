@@ -13,9 +13,13 @@
  * - first_name: VARCHAR(255) NOT NULL
  * - last_name: VARCHAR(255) NOT NULL
  * - is_admin: BOOLEAN NOT NULL DEFAULT FALSE
+ * - is_watcher: BOOLEAN NOT NULL DEFAULT FALSE
  * - is_disabled: BOOLEAN NOT NULL DEFAULT FALSE
  * - created_at: TIMESTAMP WITH TIME ZONE
  * - updated_at: TIMESTAMP WITH TIME ZONE
+ *
+ * Role exclusivity: A user can only be admin, watcher, or voter (neither flag set).
+ * Database constraint prevents is_admin=TRUE AND is_watcher=TRUE.
  *
  * Note: poolNames is computed from user_pools join, not stored in database
  *
@@ -28,6 +32,7 @@ export interface User {
 	firstName: string;
 	lastName: string;
 	isAdmin: boolean;
+	isWatcher: boolean;
 	isDisabled: boolean;
 	createdAt: Date;
 	updatedAt: Date;
@@ -70,12 +75,19 @@ export interface PaginatedResponse<T> {
  */
 
 /**
+ * User type/role values
+ * Represents the exclusive role a user can have in the system
+ */
+export type UserType = "voter" | "admin" | "watcher";
+
+/**
  * CSV row format for bulk user upload
  */
 export interface UserCSVRow {
 	voter_id: string;
 	first_name: string;
 	last_name: string;
+	user_type?: string; // Optional: 'voter' (default), 'admin', or 'watcher'
 	pool_key_1?: string;
 	pool_key_2?: string;
 	pool_key_3?: string;
@@ -97,6 +109,8 @@ export interface CreateUserRequest {
 	lastName: string;
 	username?: string; // Optional, will be auto-generated if not provided
 	poolKeys?: string[]; // Optional pool keys to associate with user
+	isAdmin?: boolean; // Optional, defaults to false
+	isWatcher?: boolean; // Optional, defaults to false
 }
 
 /**
@@ -514,6 +528,7 @@ export interface AuthUser {
 	firstName: string;
 	lastName: string;
 	isAdmin: boolean;
+	isWatcher: boolean;
 }
 
 /**
@@ -531,6 +546,7 @@ export interface JwtPayload {
 	sub: string; // User ID
 	username: string;
 	isAdmin: boolean;
+	isWatcher: boolean;
 	iat: number;
 	exp: number;
 }
@@ -716,4 +732,114 @@ export interface QuorumReportResponse {
  */
 export interface QuorumActiveVotersResponse {
 	data: QuorumActiveVoter[];
+}
+
+/**
+ * Watcher Types
+ * These types are used for the watcher role's read-only reports
+ */
+
+/**
+ * Choice tally for watcher motion results
+ */
+export interface WatcherChoiceTally {
+	choiceId: number;
+	choiceName: string;
+	voteCount: number;
+	isWinner: boolean;
+}
+
+/**
+ * Motion result for watcher (completed votes only)
+ * Shows tallies but NOT who voted for what
+ */
+export interface WatcherMotionResult {
+	seatCount: number;
+	choiceTallies: WatcherChoiceTally[];
+}
+
+/**
+ * Voter entry in watcher's motion voter list
+ * Shows WHO voted, but NOT what they voted for
+ */
+export interface WatcherMotionVoter {
+	firstName: string;
+	lastName: string;
+	votedAt: Date;
+}
+
+/**
+ * Motion summary for watcher meeting report
+ */
+export interface WatcherMotionSummary {
+	motionId: number;
+	motionName: string;
+	status: MotionStatus;
+	votingPoolName: string | null;
+	totalVotesCast: number;
+	totalAbstentions: number;
+	votingStartedAt: Date | null;
+	votingEndedAt: Date | null;
+	result: WatcherMotionResult | null; // Only populated for completed motions
+}
+
+/**
+ * Watcher's view of a meeting report
+ * Shows all meetings with motion summaries
+ */
+export interface WatcherMeetingReport {
+	meetingId: number;
+	meetingName: string;
+	description: string | null;
+	startDate: Date;
+	endDate: Date;
+	quorumPoolName: string;
+	quorumCalledAt: Date | null;
+	motionSummaries: WatcherMotionSummary[];
+}
+
+/**
+ * Response for watcher meetings list
+ */
+export type WatcherMeetingsResponse = PaginatedResponse<WatcherMeetingReport>;
+
+/**
+ * Response for watcher motion voters endpoint
+ */
+export interface WatcherMotionVotersResponse {
+	data: WatcherMotionVoter[];
+}
+
+/**
+ * Response for watcher motion result endpoint
+ */
+export interface WatcherMotionResultResponse {
+	data: WatcherMotionResult;
+}
+
+/**
+ * Detailed motion information for watcher motion report page
+ * Shows different information based on motion status
+ */
+export interface WatcherMotionDetail {
+	motionId: number;
+	motionName: string;
+	description: string | null;
+	status: MotionStatus;
+	seatCount: number;
+	// Meeting info for navigation
+	meetingId: number;
+	meetingName: string;
+	// Voting pool
+	votingPoolName: string | null;
+	eligibleVoterCount: number | null;
+	// Voting times
+	plannedDuration: number;
+	votingStartedAt: Date | null;
+	votingEndedAt: Date | null;
+	endOverride: Date | null;
+	// Vote counts (null if not yet started)
+	totalVotesCast: number | null;
+	// Results (only for completed motions)
+	result: WatcherMotionResult | null;
 }

@@ -3,6 +3,7 @@
  */
 import { Router } from "express";
 import { HTTP_STATUS } from "@pdc/http-status-codes";
+import { requireVoter } from "../middleware/auth-middleware.js";
 import { getOpenMotionsForUser } from "../services/motion-service.js";
 import { getPoolsForUser } from "../services/pool-service.js";
 import { castVote, getMotionForVoting } from "../services/vote-service.js";
@@ -184,9 +185,11 @@ voterRouter.get(
 /**
  * POST /api/voter/motions/:id/vote
  * Cast a vote on a motion
+ * Protected by requireVoter to prevent watchers and admins from voting
  */
 voterRouter.post(
 	"/motions/:id/vote",
+	requireVoter,
 	async (
 		req: Request<
 			{ id: string },

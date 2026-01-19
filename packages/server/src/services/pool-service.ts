@@ -370,12 +370,13 @@ export async function getUsersInPool(
 		first_name: string;
 		last_name: string;
 		is_admin: boolean;
+		is_watcher: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
 	}>(
 		`SELECT u.id, u.username, u.voter_id, u.first_name, u.last_name,
-            u.is_admin, u.is_disabled, u.created_at, u.updated_at
+            u.is_admin, u.is_watcher, u.is_disabled, u.created_at, u.updated_at
      FROM users u
      INNER JOIN user_pools up ON u.id = up.user_id
      WHERE up.pool_id = :poolId
@@ -391,6 +392,7 @@ export async function getUsersInPool(
 		firstName: row.first_name,
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
+		isWatcher: row.is_watcher,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
