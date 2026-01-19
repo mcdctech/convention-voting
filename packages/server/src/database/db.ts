@@ -12,57 +12,55 @@ const logger = pino({ name: "database" });
 const FILENAME = fileURLToPath(import.meta.url);
 const DIRNAME = dirname(FILENAME);
 
-// Database defaults
+// Database defaults for local development
 const DEFAULT_DB_HOST = "localhost";
 const DEFAULT_DB_PORT = "5432";
 const DEFAULT_DB_USER = "postgres";
 const DEFAULT_DB_PASSWORD = "postgres";
 const DEFAULT_DB_NAME = "convention_voting";
-const DEFAULT_DB_SSLMODE = "";
 const DECIMAL_RADIX = 10;
 
 /**
- * Database configuration from environment variables
+ * Get environment variable with fallback
  */
-const dbConfig = {
-	host:
-		process.env.PGHOST !== undefined && process.env.PGHOST !== ""
-			? process.env.PGHOST
-			: DEFAULT_DB_HOST,
-	port: Number.parseInt(
-		process.env.PGPORT !== undefined && process.env.PGPORT !== ""
-			? process.env.PGPORT
-			: DEFAULT_DB_PORT,
-		DECIMAL_RADIX,
-	),
-	user:
-		process.env.PGUSER !== undefined && process.env.PGUSER !== ""
-			? process.env.PGUSER
-			: DEFAULT_DB_USER,
-	password:
-		process.env.PGPASSWORD !== undefined && process.env.PGPASSWORD !== ""
-			? process.env.PGPASSWORD
-			: DEFAULT_DB_PASSWORD,
-	database:
-		process.env.PGDATABASE !== undefined && process.env.PGDATABASE !== ""
-			? process.env.PGDATABASE
-			: DEFAULT_DB_NAME,
-	sslmode:
-		process.env.PGSSLMODE !== undefined && process.env.PGSSLMODE !== ""
-			? process.env.PGSSLMODE
-			: DEFAULT_DB_SSLMODE,
-};
-
-logger.info(
-	{ user: dbConfig.user, host: dbConfig.host, database: dbConfig.database },
-	"Database configuration",
-);
+function getEnv(key: string, defaultValue: string): string {
+	// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- dynamic key access cannot use destructuring
+	const value = process.env[key];
+	return value !== undefined && value !== "" ? value : defaultValue;
+}
 
 /**
- * Build connection string with optional SSL
+ * Build connection string from individual PG* env vars (for local development)
  */
-const sslParam = dbConfig.sslmode === "" ? "" : `?sslmode=${dbConfig.sslmode}`;
-const connectionString = `postgresql://${dbConfig.user}:${dbConfig.password}@${dbConfig.host}:${dbConfig.port}/${dbConfig.database}${sslParam}`;
+function buildConnectionString(): string {
+	const host = getEnv("PGHOST", DEFAULT_DB_HOST);
+	const port = Number.parseInt(
+		getEnv("PGPORT", DEFAULT_DB_PORT),
+		DECIMAL_RADIX,
+	);
+	const user = getEnv("PGUSER", DEFAULT_DB_USER);
+	const password = getEnv("PGPASSWORD", DEFAULT_DB_PASSWORD);
+	const database = getEnv("PGDATABASE", DEFAULT_DB_NAME);
+
+	logger.info({ user, host, database }, "Database configuration");
+	return `postgresql://${user}:${password}@${host}:${port}/${database}`;
+}
+
+/**
+ * Get connection string - prefer DATABASE_URL if set (used by DO managed databases),
+ * otherwise build from individual PG* environment variables (for local development)
+ */
+function getConnectionString(): string {
+	// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- false positive, already using destructuring
+	const { DATABASE_URL: databaseUrl } = process.env;
+	if (databaseUrl !== undefined && databaseUrl !== "") {
+		logger.info("Using DATABASE_URL for database connection");
+		return databaseUrl;
+	}
+	return buildConnectionString();
+}
+
+const connectionString = getConnectionString();
 
 /**
  * TinyPg database instance

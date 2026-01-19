@@ -16,7 +16,6 @@ services:
     routes:
       - path: /api
         preserve_path_prefix: true
-      - path: /health
     envs:
       # Server configuration
       - key: PORT
@@ -24,6 +23,10 @@ services:
         scope: RUN_TIME
       - key: HOST
         value: "0.0.0.0"
+        scope: RUN_TIME
+      # API prefix (must match the route path with preserve_path_prefix)
+      - key: API_PREFIX
+        value: "/api"
         scope: RUN_TIME
       # Database - auto-bound from managed PostgreSQL
       - key: PGHOST
@@ -43,7 +46,7 @@ services:
         value: ${db.DATABASE}
         scope: RUN_TIME
       - key: PGSSLMODE
-        value: "require"
+        value: "no-verify"
         scope: RUN_TIME
       # CORS - allows requests from the app's public URL
       - key: CORS_ORIGIN

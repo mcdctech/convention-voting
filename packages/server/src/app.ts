@@ -16,6 +16,9 @@ const logger = pino({ name: "app" });
 // Default CORS origin
 const DEFAULT_CORS_ORIGIN = "*";
 
+// API prefix (configurable for different deployment environments)
+const API_PREFIX = process.env.API_PREFIX ?? "";
+
 /**
  * Create and configure Express application
  */
@@ -50,15 +53,15 @@ export function createApp(): Express {
 	});
 
 	// Health check endpoint
-	app.get("/health", (req: Request, res: Response) => {
+	app.get(`${API_PREFIX}/health`, (req: Request, res: Response) => {
 		res.json({ status: "ok", timestamp: new Date().toISOString() });
 	});
 
 	// API routes
-	app.use("/api", router);
-	app.use("/api/auth", authRouter);
-	app.use("/api/voter", requireAuth, voterRouter);
-	app.use("/api/admin", requireAuth, requireAdmin, adminRouter);
+	app.use(API_PREFIX, router);
+	app.use(`${API_PREFIX}/auth`, authRouter);
+	app.use(`${API_PREFIX}/voter`, requireAuth, voterRouter);
+	app.use(`${API_PREFIX}/admin`, requireAuth, requireAdmin, adminRouter);
 
 	// 404 handler
 	app.use((req: Request, res: Response) => {
