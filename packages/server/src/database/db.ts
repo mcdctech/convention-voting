@@ -18,6 +18,7 @@ const DEFAULT_DB_PORT = "5432";
 const DEFAULT_DB_USER = "postgres";
 const DEFAULT_DB_PASSWORD = "postgres";
 const DEFAULT_DB_NAME = "convention_voting";
+const DEFAULT_DB_SSLMODE = "";
 const DECIMAL_RADIX = 10;
 
 /**
@@ -46,6 +47,10 @@ const dbConfig = {
 		process.env.PGDATABASE !== undefined && process.env.PGDATABASE !== ""
 			? process.env.PGDATABASE
 			: DEFAULT_DB_NAME,
+	sslmode:
+		process.env.PGSSLMODE !== undefined && process.env.PGSSLMODE !== ""
+			? process.env.PGSSLMODE
+			: DEFAULT_DB_SSLMODE,
 };
 
 logger.info(
@@ -54,10 +59,16 @@ logger.info(
 );
 
 /**
+ * Build connection string with optional SSL
+ */
+const sslParam = dbConfig.sslmode === "" ? "" : `?sslmode=${dbConfig.sslmode}`;
+const connectionString = `postgresql://${dbConfig.user}:${dbConfig.password}@${dbConfig.host}:${dbConfig.port}/${dbConfig.database}${sslParam}`;
+
+/**
  * TinyPg database instance
  */
 export const db = new TinyPg({
-	connection_string: `postgresql://${dbConfig.user}:${dbConfig.password}@${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`,
+	connection_string: connectionString,
 	root_dir: join(DIRNAME, "queries"),
 });
 
