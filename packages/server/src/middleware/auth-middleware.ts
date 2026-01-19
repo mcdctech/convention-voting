@@ -96,3 +96,61 @@ export function requireAdmin(
 
 	next();
 }
+
+/**
+ * Middleware to require watcher privileges
+ * Must be used after requireAuth middleware
+ */
+export function requireWatcher(
+	req: Request,
+	res: Response,
+	next: NextFunction,
+): void {
+	if (req.user === undefined) {
+		res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+			success: false,
+			error: "Authentication required",
+		});
+		return;
+	}
+
+	if (!req.user.isWatcher) {
+		res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
+			success: false,
+			error: "Watcher privileges required",
+		});
+		return;
+	}
+
+	next();
+}
+
+/**
+ * Middleware to require voter privileges (NOT admin, NOT watcher)
+ * Used to protect voting endpoints from non-voters
+ * Must be used after requireAuth middleware
+ */
+export function requireVoter(
+	req: Request,
+	res: Response,
+	next: NextFunction,
+): void {
+	if (req.user === undefined) {
+		res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+			success: false,
+			error: "Authentication required",
+		});
+		return;
+	}
+
+	// Watchers and admins cannot vote
+	if (req.user.isWatcher || req.user.isAdmin) {
+		res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
+			success: false,
+			error: "Voting privileges required",
+		});
+		return;
+	}
+
+	next();
+}

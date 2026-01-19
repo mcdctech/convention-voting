@@ -23,6 +23,7 @@ interface UserWithPassword {
 	firstName: string;
 	lastName: string;
 	isAdmin: boolean;
+	isWatcher: boolean;
 	isDisabled: boolean;
 	passwordHash: string | null;
 }
@@ -48,10 +49,11 @@ async function getUserByUsernameWithPassword(
 		first_name: string;
 		last_name: string;
 		is_admin: boolean;
+		is_watcher: boolean;
 		is_disabled: boolean;
 		password_hash: string | null;
 	}>(
-		`SELECT id, username, first_name, last_name, is_admin, is_disabled, password_hash
+		`SELECT id, username, first_name, last_name, is_admin, is_watcher, is_disabled, password_hash
 		 FROM users WHERE username = :username`,
 		{ username },
 	);
@@ -69,6 +71,7 @@ async function getUserByUsernameWithPassword(
 		firstName: row.first_name,
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
+		isWatcher: row.is_watcher,
 		isDisabled: row.is_disabled,
 		passwordHash: row.password_hash,
 	};
@@ -129,6 +132,7 @@ export async function validateLogin(
 			firstName: user.firstName,
 			lastName: user.lastName,
 			isAdmin: user.isAdmin,
+			isWatcher: user.isWatcher,
 		},
 	};
 }
@@ -150,6 +154,7 @@ export function generateToken(user: AuthUser): string {
 		sub: user.id,
 		username: user.username,
 		isAdmin: user.isAdmin,
+		isWatcher: user.isWatcher,
 	};
 
 	const signOptions: SignOptions = {
@@ -175,6 +180,8 @@ function isJwtPayload(decoded: unknown): decoded is JwtPayload {
 		typeof decoded.username === "string" &&
 		"isAdmin" in decoded &&
 		typeof decoded.isAdmin === "boolean" &&
+		"isWatcher" in decoded &&
+		typeof decoded.isWatcher === "boolean" &&
 		"iat" in decoded &&
 		typeof decoded.iat === "number" &&
 		"exp" in decoded &&
@@ -217,9 +224,10 @@ export async function getAuthUserById(
 		first_name: string;
 		last_name: string;
 		is_admin: boolean;
+		is_watcher: boolean;
 		is_disabled: boolean;
 	}>(
-		`SELECT id, username, first_name, last_name, is_admin, is_disabled
+		`SELECT id, username, first_name, last_name, is_admin, is_watcher, is_disabled
 		 FROM users WHERE id = :userId AND is_disabled = FALSE`,
 		{ userId },
 	);
@@ -237,5 +245,6 @@ export async function getAuthUserById(
 		firstName: row.first_name,
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
+		isWatcher: row.is_watcher,
 	};
 }

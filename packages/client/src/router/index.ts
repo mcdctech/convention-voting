@@ -27,11 +27,18 @@ import AdminMotionDetail from "../views/admin/MotionDetail.vue";
 import VoterDashboard from "../views/voter/VoterDashboard.vue";
 import VoterMotionDetail from "../views/voter/MotionDetail.vue";
 import MyPools from "../views/voter/MyPools.vue";
+import WatcherLayout from "../views/WatcherLayout.vue";
+import WatcherDashboard from "../views/watcher/WatcherDashboard.vue";
+import WatcherMeetingList from "../views/watcher/WatcherMeetingList.vue";
+import WatcherMeetingReport from "../views/watcher/WatcherMeetingReport.vue";
+import WatcherMotionReport from "../views/watcher/WatcherMotionReport.vue";
+import WatcherQuorumReport from "../views/watcher/WatcherQuorumReport.vue";
 
 declare module "vue-router" {
 	interface RouteMeta {
 		requiresAuth?: boolean;
 		requiresAdmin?: boolean;
+		requiresWatcher?: boolean;
 		guestOnly?: boolean;
 	}
 }
@@ -172,6 +179,41 @@ export const router = createRouter({
 				},
 			],
 		},
+		{
+			path: "/watcher",
+			component: WatcherLayout,
+			meta: { requiresAuth: true, requiresWatcher: true },
+			children: [
+				{
+					path: "",
+					name: "WatcherDashboard",
+					component: WatcherDashboard,
+				},
+				{
+					path: "meetings",
+					name: "WatcherMeetingList",
+					component: WatcherMeetingList,
+				},
+				{
+					path: "meetings/:id",
+					name: "WatcherMeetingReport",
+					component: WatcherMeetingReport,
+					props: true,
+				},
+				{
+					path: "meetings/:id/quorum",
+					name: "WatcherQuorumReport",
+					component: WatcherQuorumReport,
+					props: true,
+				},
+				{
+					path: "motions/:id",
+					name: "WatcherMotionReport",
+					component: WatcherMotionReport,
+					props: true,
+				},
+			],
+		},
 	],
 });
 
@@ -189,8 +231,28 @@ function shouldRedirectAdminFromVoterRoute(
 	if (!authenticated || !admin) {
 		return false;
 	}
-	// Voter-only routes are anything not under /admin and not /login
-	return !path.startsWith("/admin") && path !== "/login";
+	// Admin routes are /admin, watcher routes are /watcher, login is /login
+	// Admins should be redirected away from voter routes (/ and its children)
+	return (
+		!path.startsWith("/admin") &&
+		!path.startsWith("/watcher") &&
+		path !== "/login"
+	);
+}
+
+/**
+ * Check if watcher user should be redirected away from a non-watcher route
+ */
+function shouldRedirectWatcherFromOtherRoute(
+	path: string,
+	authenticated: boolean,
+	watcher: boolean,
+): boolean {
+	if (!authenticated || !watcher) {
+		return false;
+	}
+	// Watchers should only access /watcher routes and /login
+	return !path.startsWith("/watcher") && path !== "/login";
 }
 
 /**
@@ -207,10 +269,95 @@ function initializeKioskModeOnce(): void {
 }
 
 /**
+ * Get the appropriate home path for a user based on their role
+ */
+function getHomePath(admin: boolean, watcher: boolean): string {
+	if (admin) {
+		return "/admin";
+	}
+	if (watcher) {
+		return "/watcher";
+	}
+	return "/";
+}
+
+interface AuthState {
+	authenticated: boolean;
+	admin: boolean;
+	watcher: boolean;
+}
+
+interface RouteQuery {
+	kiosk?: string;
+}
+
+interface RouteMeta {
+	guestOnly?: boolean;
+	requiresAuth?: boolean;
+	requiresAdmin?: boolean;
+	requiresWatcher?: boolean;
+}
+
+/**
+ * Check route meta requirements and return redirect path if needed
+ */
+function checkMetaRequirements(
+	toMeta: RouteMeta,
+	authState: AuthState,
+): string | null {
+	const { authenticated, admin, watcher } = authState;
+
+	// Guest-only routes (like login) - redirect authenticated users
+	if (toMeta.guestOnly === true && authenticated) {
+		return getHomePath(admin, watcher);
+	}
+
+	// Protected routes - redirect unauthenticated users to login
+	if (toMeta.requiresAuth === true && !authenticated) {
+		return "/login";
+	}
+
+	// Admin-only routes - redirect non-admins
+	if (toMeta.requiresAdmin === true && !admin) {
+		return getHomePath(admin, watcher);
+	}
+
+	// Watcher-only routes - redirect non-watchers
+	if (toMeta.requiresWatcher === true && !watcher) {
+		return getHomePath(admin, watcher);
+	}
+
+	return null;
+}
+
+/**
+ * Check path-based redirect rules and return redirect path if needed
+ */
+function checkPathBasedRedirects(
+	toPath: string,
+	authState: AuthState,
+): string | null {
+	const { authenticated, admin, watcher } = authState;
+
+	// Redirect watcher users away from non-watcher routes
+	if (shouldRedirectWatcherFromOtherRoute(toPath, authenticated, watcher)) {
+		return "/watcher";
+	}
+
+	// Redirect admin users away from voter-only routes to admin panel
+	if (shouldRedirectAdminFromVoterRoute(toPath, authenticated, admin)) {
+		return "/admin";
+	}
+
+	return null;
+}
+
+/**
  * Navigation guard for authentication and authorization
  */
 router.beforeEach(async (to) => {
-	const { isAuthenticated, isAdmin, isInitialized, checkAuth } = useAuth();
+	const { isAuthenticated, isAdmin, isWatcher, isInitialized, checkAuth } =
+		useAuth();
 	const { getKioskModeQueryParam } = useKioskMode();
 
 	initializeKioskModeOnce();
@@ -221,28 +368,24 @@ router.beforeEach(async (to) => {
 	}
 
 	// Get kiosk query param to preserve in redirects
-	const kioskQuery = getKioskModeQueryParam();
+	const kioskQuery: RouteQuery = getKioskModeQueryParam();
 
-	// Guest-only routes (like login) - redirect authenticated users
-	if (to.meta.guestOnly === true && isAuthenticated.value) {
-		return { path: isAdmin.value ? "/admin" : "/", query: kioskQuery };
+	const authState: AuthState = {
+		authenticated: isAuthenticated.value,
+		admin: isAdmin.value,
+		watcher: isWatcher.value,
+	};
+
+	// Check route meta requirements first
+	const metaRedirect = checkMetaRequirements(to.meta, authState);
+	if (metaRedirect !== null) {
+		return { path: metaRedirect, query: kioskQuery };
 	}
 
-	// Protected routes - redirect unauthenticated users to login
-	if (to.meta.requiresAuth === true && !isAuthenticated.value) {
-		return { path: "/login", query: kioskQuery };
-	}
-
-	// Admin-only routes - redirect non-admins to voter dashboard
-	if (to.meta.requiresAdmin === true && !isAdmin.value) {
-		return { path: "/", query: kioskQuery };
-	}
-
-	// Redirect admin users away from voter-only routes to admin panel
-	const authenticated: boolean = isAuthenticated.value;
-	const admin: boolean = isAdmin.value;
-	if (shouldRedirectAdminFromVoterRoute(to.path, authenticated, admin)) {
-		return { path: "/admin", query: kioskQuery };
+	// Check path-based redirects
+	const pathRedirect = checkPathBasedRedirects(to.path, authState);
+	if (pathRedirect !== null) {
+		return { path: pathRedirect, query: kioskQuery };
 	}
 
 	// Allow navigation

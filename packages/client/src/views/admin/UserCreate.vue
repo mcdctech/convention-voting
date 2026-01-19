@@ -8,11 +8,15 @@ const router = useRouter();
 // Constants
 const EMPTY_STRING = "";
 
+// User role options
+type UserRole = "voter" | "admin" | "watcher";
+
 const formData = ref({
 	voterId: EMPTY_STRING,
 	firstName: EMPTY_STRING,
 	lastName: EMPTY_STRING,
 	username: EMPTY_STRING,
+	role: "voter" as UserRole,
 });
 
 const saving = ref(false);
@@ -40,6 +44,8 @@ async function handleSubmit(): Promise<void> {
 			...(formData.value.username.trim() !== EMPTY_STRING && {
 				username: formData.value.username.trim(),
 			}),
+			isAdmin: formData.value.role === "admin",
+			isWatcher: formData.value.role === "watcher",
 		};
 
 		await createUser(userData);
@@ -97,6 +103,28 @@ function cancel(): void {
 					>
 				</label>
 				<input id="username" v-model="formData.username" type="text" />
+			</div>
+
+			<div class="form-group">
+				<label for="role"> Role <span class="required">*</span> </label>
+				<select id="role" v-model="formData.role" required>
+					<option value="voter">Voter</option>
+					<option value="watcher">Watcher (Observer)</option>
+					<option value="admin">Admin</option>
+				</select>
+				<p class="role-description">
+					<template v-if="formData.role === 'voter'">
+						Voters can view open motions and cast votes.
+					</template>
+					<template v-else-if="formData.role === 'watcher'">
+						Watchers have read-only access to meeting reports, quorum status,
+						and completed motion results. They cannot vote.
+					</template>
+					<template v-else-if="formData.role === 'admin'">
+						Admins can manage users, meetings, motions, and system settings.
+						They cannot vote.
+					</template>
+				</p>
 			</div>
 
 			<div class="form-actions">
@@ -170,6 +198,13 @@ h2 {
 .form-group select:focus {
 	outline: none;
 	border-color: #1976d2;
+}
+
+.role-description {
+	margin-top: 0.5rem;
+	font-size: 0.875rem;
+	color: #666;
+	font-style: italic;
 }
 
 .form-actions {

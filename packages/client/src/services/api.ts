@@ -30,6 +30,10 @@ import type {
 	CastVoteResponse,
 	QuorumReport,
 	QuorumActiveVoter,
+	WatcherMeetingReport,
+	WatcherMotionDetail,
+	WatcherMotionVoter,
+	WatcherMotionResult,
 } from "@mcdc-convention-voting/shared";
 
 // Constants
@@ -868,5 +872,92 @@ export async function getQuorumVoters(
 ): Promise<ApiResponse<QuorumActiveVoter[]>> {
 	return await apiRequest<ApiResponse<QuorumActiveVoter[]>>(
 		`${API_PREFIX}/admin/meetings/${meetingId}/quorum/voters`,
+	);
+}
+
+/**
+ * Watcher API Functions
+ */
+
+interface WatcherMeetingsResponse {
+	data: WatcherMeetingReport[];
+	total: number;
+}
+
+/**
+ * Get all meetings for watcher (with motion summaries)
+ */
+export async function getWatcherMeetings(
+	page = DEFAULT_PAGE,
+	limit = DEFAULT_PAGE_LIMIT,
+): Promise<WatcherMeetingsResponse> {
+	return await apiRequest<WatcherMeetingsResponse>(
+		`${API_PREFIX}/watcher/meetings?page=${page}&limit=${limit}`,
+	);
+}
+
+/**
+ * Get detailed meeting report for watcher
+ */
+export async function getWatcherMeetingReport(
+	meetingId: number,
+): Promise<ApiResponse<WatcherMeetingReport>> {
+	return await apiRequest<ApiResponse<WatcherMeetingReport>>(
+		`${API_PREFIX}/watcher/meetings/${meetingId}`,
+	);
+}
+
+/**
+ * Get quorum report for watcher (read-only)
+ */
+export async function getWatcherQuorumReport(
+	meetingId: number,
+): Promise<ApiResponse<QuorumReport>> {
+	return await apiRequest<ApiResponse<QuorumReport>>(
+		`${API_PREFIX}/watcher/meetings/${meetingId}/quorum`,
+	);
+}
+
+/**
+ * Get quorum voters for watcher (read-only)
+ */
+export async function getWatcherQuorumVoters(
+	meetingId: number,
+): Promise<ApiResponse<QuorumActiveVoter[]>> {
+	return await apiRequest<ApiResponse<QuorumActiveVoter[]>>(
+		`${API_PREFIX}/watcher/meetings/${meetingId}/quorum/voters`,
+	);
+}
+
+/**
+ * Get detailed motion information for watcher motion report page
+ */
+export async function getWatcherMotionDetail(
+	motionId: number,
+): Promise<ApiResponse<WatcherMotionDetail>> {
+	return await apiRequest<ApiResponse<WatcherMotionDetail>>(
+		`${API_PREFIX}/watcher/motions/${motionId}`,
+	);
+}
+
+/**
+ * Get voters for a completed motion (who voted, not what they voted for)
+ */
+export async function getWatcherMotionVoters(
+	motionId: number,
+): Promise<ApiResponse<WatcherMotionVoter[]>> {
+	return await apiRequest<ApiResponse<WatcherMotionVoter[]>>(
+		`${API_PREFIX}/watcher/motions/${motionId}/voters`,
+	);
+}
+
+/**
+ * Get results for a completed motion
+ */
+export async function getWatcherMotionResult(
+	motionId: number,
+): Promise<ApiResponse<WatcherMotionResult>> {
+	return await apiRequest<ApiResponse<WatcherMotionResult>>(
+		`${API_PREFIX}/watcher/motions/${motionId}/results`,
 	);
 }

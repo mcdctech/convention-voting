@@ -71,6 +71,10 @@ function goToUsers(): void {
 				<li><strong>first_name</strong> - Voter's first name</li>
 				<li><strong>last_name</strong> - Voter's last name</li>
 				<li>
+					<strong>user_type</strong> (optional) - User role: "voter" (default),
+					"admin", or "watcher"
+				</li>
+				<li>
 					<strong>pool_key_1</strong> through <strong>pool_key_10</strong>
 					(optional) - Pool keys to assign the user to (up to 10 pools)
 				</li>
@@ -79,6 +83,13 @@ function goToUsers(): void {
 				<em>
 					Note: Usernames will be auto-generated from names. Passwords will be
 					NULL initially and can be generated in bulk later.
+				</em>
+			</p>
+			<p>
+				<em>
+					User types: "voter" can vote, "admin" can manage the system but cannot
+					vote, "watcher" has read-only access to reports. If not specified,
+					defaults to "voter".
 				</em>
 			</p>
 			<p>

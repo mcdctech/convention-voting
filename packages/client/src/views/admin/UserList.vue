@@ -163,7 +163,7 @@ onMounted(() => {
 						<th>Voter ID</th>
 						<th>Pools</th>
 						<th>Status</th>
-						<th>Admin</th>
+						<th>Role</th>
 						<th>Actions</th>
 					</tr>
 				</thead>
@@ -186,7 +186,19 @@ onMounted(() => {
 								{{ user.isDisabled ? "Disabled" : "Active" }}
 							</span>
 						</td>
-						<td>{{ user.isAdmin ? "Yes" : "No" }}</td>
+						<td>
+							<span
+								:class="{
+									'role-admin': user.isAdmin,
+									'role-watcher': user.isWatcher,
+									'role-voter': !user.isAdmin && !user.isWatcher,
+								}"
+							>
+								{{
+									user.isAdmin ? "Admin" : user.isWatcher ? "Watcher" : "Voter"
+								}}
+							</span>
+						</td>
 						<td class="actions">
 							<button class="btn btn-small" @click="editUser(user.id)">
 								Edit
@@ -364,6 +376,36 @@ h2 {
 .status-disabled {
 	color: #c62828;
 	font-weight: 500;
+}
+
+.role-admin {
+	display: inline-block;
+	padding: 0.25rem 0.5rem;
+	border-radius: 4px;
+	font-size: 0.75rem;
+	font-weight: 600;
+	background-color: #e3f2fd;
+	color: #1565c0;
+}
+
+.role-watcher {
+	display: inline-block;
+	padding: 0.25rem 0.5rem;
+	border-radius: 4px;
+	font-size: 0.75rem;
+	font-weight: 600;
+	background-color: #f3e5f5;
+	color: #7b1fa2;
+}
+
+.role-voter {
+	display: inline-block;
+	padding: 0.25rem 0.5rem;
+	border-radius: 4px;
+	font-size: 0.75rem;
+	font-weight: 600;
+	background-color: #e8f5e9;
+	color: #2e7d32;
 }
 
 .actions {
