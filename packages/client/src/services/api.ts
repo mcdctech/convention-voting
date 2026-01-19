@@ -28,6 +28,8 @@ import type {
 	MotionForVoting,
 	CastVoteRequest,
 	CastVoteResponse,
+	QuorumReport,
+	QuorumActiveVoter,
 } from "@mcdc-convention-voting/shared";
 
 // Constants
@@ -825,4 +827,46 @@ export async function castVote(
  */
 export async function getMyPools(): Promise<ApiResponse<Pool[]>> {
 	return await apiRequest<ApiResponse<Pool[]>>(`${API_PREFIX}/voter/pools`);
+}
+
+/**
+ * Quorum Management API Functions
+ */
+
+/**
+ * Get quorum report for a meeting
+ */
+export async function getQuorumReport(
+	meetingId: number,
+): Promise<ApiResponse<QuorumReport>> {
+	return await apiRequest<ApiResponse<QuorumReport>>(
+		`${API_PREFIX}/admin/meetings/${meetingId}/quorum`,
+	);
+}
+
+/**
+ * Call or uncall quorum for a meeting
+ */
+export async function updateQuorum(
+	meetingId: number,
+	quorumCalledAt: string | null,
+): Promise<ApiResponse<QuorumReport>> {
+	return await apiRequest<ApiResponse<QuorumReport>>(
+		`${API_PREFIX}/admin/meetings/${meetingId}/quorum`,
+		{
+			method: "PUT",
+			body: JSON.stringify({ quorumCalledAt }),
+		},
+	);
+}
+
+/**
+ * Get list of active voters for quorum
+ */
+export async function getQuorumVoters(
+	meetingId: number,
+): Promise<ApiResponse<QuorumActiveVoter[]>> {
+	return await apiRequest<ApiResponse<QuorumActiveVoter[]>>(
+		`${API_PREFIX}/admin/meetings/${meetingId}/quorum/voters`,
+	);
 }
