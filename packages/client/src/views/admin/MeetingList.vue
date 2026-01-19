@@ -50,6 +50,10 @@ function viewMotions(meetingId: number): void {
 	void router.push(`/admin/meetings/${meetingId}/motions`);
 }
 
+function viewQuorum(meetingId: number): void {
+	void router.push(`/admin/meetings/${meetingId}/quorum`);
+}
+
 function requestDelete(meetingId: number): void {
 	meetingToDelete.value = meetingId;
 	showDeleteModal.value = true;
@@ -141,6 +145,9 @@ onMounted(() => {
 						<td class="actions-cell">
 							<button class="btn btn-small" @click="viewMotions(meeting.id)">
 								Motions
+							</button>
+							<button class="btn btn-small" @click="viewQuorum(meeting.id)">
+								Quorum
 							</button>
 							<button class="btn btn-small" @click="editMeeting(meeting.id)">
 								Edit

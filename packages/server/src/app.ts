@@ -10,6 +10,7 @@ import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
 import { voterRouter } from "./routes/voter.js";
 import { requireAuth, requireAdmin } from "./middleware/auth-middleware.js";
+import { activityLogger } from "./middleware/activity-logger-middleware.js";
 
 const logger = pino({ name: "app" });
 
@@ -60,8 +61,14 @@ export function createApp(): Express {
 	// API routes
 	app.use(API_PREFIX, router);
 	app.use(`${API_PREFIX}/auth`, authRouter);
-	app.use(`${API_PREFIX}/voter`, requireAuth, voterRouter);
-	app.use(`${API_PREFIX}/admin`, requireAuth, requireAdmin, adminRouter);
+	app.use(`${API_PREFIX}/voter`, requireAuth, activityLogger, voterRouter);
+	app.use(
+		`${API_PREFIX}/admin`,
+		requireAuth,
+		requireAdmin,
+		activityLogger,
+		adminRouter,
+	);
 
 	// 404 handler
 	app.use((req: Request, res: Response) => {

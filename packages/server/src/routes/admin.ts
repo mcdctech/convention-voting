@@ -54,6 +54,11 @@ import {
 	importUsersFromCSV,
 	importPoolsFromCSV,
 } from "../services/csv-service.js";
+import {
+	getQuorumReport,
+	callQuorum,
+	getActiveVotersForQuorum,
+} from "../services/quorum-service.js";
 import type {
 	CreateUserRequest,
 	UpdateUserRequest,
@@ -1232,3 +1237,77 @@ adminRouter.delete("/choices/:id", async (req: Request, res: Response) => {
 			.json({ error: `Failed to delete choice: ${message}` });
 	}
 });
+
+/**
+ * Quorum Management Routes
+ */
+
+/**
+ * GET /api/admin/meetings/:id/quorum
+ * Get quorum report for a meeting
+ */
+adminRouter.get("/meetings/:id/quorum", async (req: Request, res: Response) => {
+	try {
+		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+		const report = await getQuorumReport(meetingId);
+
+		if (report === null) {
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
+				.json({ error: "Meeting not found" });
+			return;
+		}
+
+		res.json({ success: true, data: report });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+			.json({ error: `Failed to get quorum report: ${message}` });
+	}
+});
+
+/**
+ * PUT /api/admin/meetings/:id/quorum
+ * Call or uncall quorum for a meeting
+ */
+adminRouter.put("/meetings/:id/quorum", async (req: Request, res: Response) => {
+	try {
+		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- Express req.body is any
+		const quorumCalledAt: string | null = req.body.quorumCalledAt ?? null;
+
+		const timestamp = quorumCalledAt === null ? null : new Date(quorumCalledAt);
+
+		await callQuorum(meetingId, timestamp);
+
+		// Return updated quorum report
+		const report = await getQuorumReport(meetingId);
+		res.json({ success: true, data: report });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+			.json({ error: `Failed to update quorum: ${message}` });
+	}
+});
+
+/**
+ * GET /api/admin/meetings/:id/quorum/voters
+ * Get list of active voters for quorum (detailed view)
+ */
+adminRouter.get(
+	"/meetings/:id/quorum/voters",
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			const voters = await getActiveVotersForQuorum(meetingId);
+			res.json({ success: true, data: voters });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get active voters: ${message}` });
+		}
+	},
+);

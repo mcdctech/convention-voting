@@ -20,6 +20,7 @@ import PoolUsers from "../views/admin/PoolUsers.vue";
 import MeetingList from "../views/admin/MeetingList.vue";
 import MeetingCreate from "../views/admin/MeetingCreate.vue";
 import MeetingEdit from "../views/admin/MeetingEdit.vue";
+import MeetingQuorum from "../views/admin/MeetingQuorum.vue";
 import MotionList from "../views/admin/MotionList.vue";
 import MotionCreate from "../views/admin/MotionCreate.vue";
 import AdminMotionDetail from "../views/admin/MotionDetail.vue";
@@ -143,6 +144,12 @@ export const router = createRouter({
 					path: "meetings/:id/edit",
 					name: "MeetingEdit",
 					component: MeetingEdit,
+					props: true,
+				},
+				{
+					path: "meetings/:id/quorum",
+					name: "MeetingQuorum",
+					component: MeetingQuorum,
 					props: true,
 				},
 				{

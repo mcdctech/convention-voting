@@ -79,6 +79,7 @@ export async function createMeeting(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
@@ -104,6 +105,7 @@ export async function createMeeting(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -122,6 +124,7 @@ export async function getMeetingById(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 		pool_name: string;
@@ -147,6 +150,7 @@ export async function getMeetingById(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		quorumVotingPoolName: row.pool_name,
@@ -176,6 +180,7 @@ export async function listMeetings(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 		pool_name: string;
@@ -195,6 +200,7 @@ export async function listMeetings(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		quorumVotingPoolName: row.pool_name,
@@ -265,6 +271,7 @@ export async function updateMeeting(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
@@ -289,6 +296,7 @@ export async function updateMeeting(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};

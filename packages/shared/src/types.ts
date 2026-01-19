@@ -241,6 +241,7 @@ export enum MotionStatus {
  * - start_date: TIMESTAMP WITH TIME ZONE NOT NULL
  * - end_date: TIMESTAMP WITH TIME ZONE NOT NULL
  * - quorum_voting_pool_id: INTEGER NOT NULL REFERENCES pools(id) ON DELETE RESTRICT
+ * - quorum_called_at: TIMESTAMP WITH TIME ZONE (nullable)
  * - created_at: TIMESTAMP WITH TIME ZONE
  * - updated_at: TIMESTAMP WITH TIME ZONE
  *
@@ -253,6 +254,7 @@ export interface Meeting {
 	startDate: Date;
 	endDate: Date;
 	quorumVotingPoolId: number;
+	quorumCalledAt: Date | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -638,4 +640,80 @@ export interface MotionForVoting extends OpenMotionForVoter {
  */
 export interface CastVoteResponse {
 	vote: Vote;
+}
+
+/**
+ * Quorum Tracking Types
+ */
+
+/**
+ * Activity log entry for quorum tracking
+ *
+ * Database schema (activity_logs table):
+ * - id: SERIAL PRIMARY KEY
+ * - user_id: UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+ * - url_path: VARCHAR(500) NOT NULL
+ * - created_at: TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+ *
+ * Note: No meeting_id - activity is associated with meetings via query-time joins
+ * based on user IDs and timestamps.
+ *
+ * IMPORTANT: Keep this type in sync with database migrations
+ */
+export interface ActivityLog {
+	id: number;
+	userId: string;
+	urlPath: string;
+	createdAt: Date;
+}
+
+/**
+ * Quorum report for a meeting
+ *
+ * Provides aggregate statistics about voter presence at a meeting
+ * based on API activity during the meeting time window.
+ */
+export interface QuorumReport {
+	meetingId: number;
+	meetingName: string;
+	totalEligibleVoters: number;
+	activeVoterCount: number;
+	activeVoterPercentage: number;
+	quorumCalledAt: Date | null;
+	calculatedAsOf: Date;
+	meetingStartDate: Date;
+	meetingEndDate: Date;
+	quorumPoolName: string;
+}
+
+/**
+ * Active voter entry for detailed quorum view
+ */
+export interface QuorumActiveVoter {
+	userId: string;
+	username: string;
+	firstName: string;
+	lastName: string;
+	lastActivity: Date;
+}
+
+/**
+ * Request to call/uncall quorum
+ */
+export interface CallQuorumRequest {
+	quorumCalledAt: string | null; // ISO 8601 string, null to clear
+}
+
+/**
+ * Response for quorum report endpoint
+ */
+export interface QuorumReportResponse {
+	data: QuorumReport;
+}
+
+/**
+ * Response for active voters endpoint
+ */
+export interface QuorumActiveVotersResponse {
+	data: QuorumActiveVoter[];
 }
