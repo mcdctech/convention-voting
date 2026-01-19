@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
-import { getMotionForVoting, castVote } from "../../services/api";
+import {
+	getMotionForVoting,
+	castVote,
+	getOpenMotions,
+} from "../../services/api";
+import { useAuth } from "../../composables/useAuth";
+import { useKioskMode } from "../../composables/useKioskMode";
+import VoteSuccessKiosk from "../../components/VoteSuccessKiosk.vue";
 import type { MotionForVoting, Choice } from "@mcdc-convention-voting/shared";
 
 const props = defineProps<{
@@ -9,6 +16,9 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
+const { isAdmin } = useAuth();
+const { isKioskMode } = useKioskMode();
+
 const motion = ref<MotionForVoting | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -18,6 +28,7 @@ const selectedChoiceIds = ref<number[]>([]);
 const isAbstaining = ref(false);
 const showConfirmModal = ref(false);
 const showSuccessModal = ref(false);
+const showKioskLogout = ref(false);
 const isSubmitting = ref(false);
 const submitError = ref<string | null>(null);
 
@@ -108,6 +119,12 @@ const cannotVoteMessage = computed((): string => {
 	}
 });
 
+// Determine if we should use kiosk mode success screen
+// Only for non-admin users in kiosk mode
+const useKioskSuccessScreen = computed(
+	(): boolean => isKioskMode.value && !isAdmin.value,
+);
+
 async function loadMotion(): Promise<void> {
 	const motionId = Number.parseInt(props.id, DECIMAL_RADIX);
 	if (Number.isNaN(motionId)) {
@@ -164,6 +181,35 @@ function cancelConfirm(): void {
 	showConfirmModal.value = false;
 }
 
+async function checkForRemainingOpenMotions(): Promise<boolean> {
+	const openMotionsResponse = await getOpenMotions();
+	const motionsList = openMotionsResponse.data?.data;
+	return (
+		openMotionsResponse.success &&
+		motionsList !== undefined &&
+		motionsList.length > ZERO
+	);
+}
+
+async function handlePostVoteSuccess(): Promise<void> {
+	showConfirmModal.value = false;
+
+	// In kiosk mode (non-admin), check if there are remaining open motions
+	if (!useKioskSuccessScreen.value) {
+		showSuccessModal.value = true;
+		return;
+	}
+
+	const hasOpenMotions = await checkForRemainingOpenMotions();
+	if (hasOpenMotions) {
+		// Still have open motions, show normal success modal
+		showSuccessModal.value = true;
+	} else {
+		// No more open motions, show kiosk logout screen
+		showKioskLogout.value = true;
+	}
+}
+
 async function submitVote(): Promise<void> {
 	if (motion.value === null) {
 		return;
@@ -183,8 +229,7 @@ async function submitVote(): Promise<void> {
 			return;
 		}
 
-		showConfirmModal.value = false;
-		showSuccessModal.value = true;
+		await handlePostVoteSuccess();
 	} catch (err) {
 		submitError.value =
 			err instanceof Error ? err.message : "Failed to cast vote";
@@ -376,7 +421,7 @@ onUnmounted((): void => {
 			</div>
 		</div>
 
-		<!-- Success Modal -->
+		<!-- Success Modal (normal mode) -->
 		<div v-if="showSuccessModal" class="modal-overlay">
 			<div class="modal success-modal">
 				<div class="success-icon">&#10003;</div>
@@ -387,6 +432,9 @@ onUnmounted((): void => {
 				</button>
 			</div>
 		</div>
+
+		<!-- Kiosk mode logout screen (no remaining open motions) -->
+		<VoteSuccessKiosk v-if="showKioskLogout" />
 	</div>
 </template>
 
