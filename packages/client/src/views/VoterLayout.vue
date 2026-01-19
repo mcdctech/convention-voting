@@ -4,12 +4,16 @@ import { RouterLink, useRouter } from "vue-router";
 import { useAuth } from "../composables/useAuth";
 import { useKioskMode } from "../composables/useKioskMode";
 import { useActivityTimeout } from "../composables/useActivityTimeout";
+import { useMobileNav } from "../composables/useMobileNav";
 import KioskModeIndicator from "../components/KioskModeIndicator.vue";
 import InactivityWarningModal from "../components/InactivityWarningModal.vue";
+import NavHamburger from "../components/NavHamburger.vue";
+import MobileNavOverlay from "../components/MobileNavOverlay.vue";
 
 const router = useRouter();
 const { currentUser, isAdmin, logout } = useAuth();
 const { isKioskMode, getKioskModeQueryParam } = useKioskMode();
+const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 const {
 	showWarning,
 	warningSecondsLeft,
@@ -59,7 +63,8 @@ onUnmounted(() => {
 				<RouterLink to="/" class="logo-link">
 					<h1>MCDC Convention Voting</h1>
 				</RouterLink>
-				<div class="user-info">
+				<!-- Desktop navigation -->
+				<div class="user-info desktop-nav">
 					<span v-if="currentUser" class="user-name">
 						{{ currentUser.firstName }} {{ currentUser.lastName }}
 					</span>
@@ -67,8 +72,30 @@ onUnmounted(() => {
 					<RouterLink to="/pools" class="btn btn-nav">My Pools</RouterLink>
 					<button class="btn btn-logout" @click="logout">Logout</button>
 				</div>
+				<!-- Mobile hamburger button -->
+				<NavHamburger
+					class="mobile-hamburger"
+					:is-open="isMobileNavOpen"
+					@toggle="toggleNav"
+				/>
 			</div>
 		</header>
+
+		<!-- Mobile navigation overlay -->
+		<MobileNavOverlay :is-open="isMobileNavOpen" @close="closeNav">
+			<div class="mobile-nav-content">
+				<div v-if="currentUser" class="mobile-user-name">
+					{{ currentUser.firstName }} {{ currentUser.lastName }}
+				</div>
+				<RouterLink to="/" class="mobile-nav-link" @click="closeNav">
+					Dashboard
+				</RouterLink>
+				<RouterLink to="/pools" class="mobile-nav-link" @click="closeNav">
+					My Pools
+				</RouterLink>
+				<button class="mobile-logout-btn" @click="logout">Logout</button>
+			</div>
+		</MobileNavOverlay>
 
 		<main class="main-content">
 			<router-view />
@@ -150,5 +177,72 @@ onUnmounted(() => {
 	max-width: 1200px;
 	margin: 0 auto;
 	padding: 2rem;
+}
+
+/* Mobile hamburger - hidden on desktop */
+.mobile-hamburger {
+	display: none;
+}
+
+/* Mobile navigation content styles */
+.mobile-nav-content {
+	display: flex;
+	flex-direction: column;
+	padding: 1rem;
+}
+
+.mobile-user-name {
+	padding: 1rem;
+	font-size: 1rem;
+	font-weight: 600;
+	color: white;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+	margin-bottom: 0.5rem;
+}
+
+.mobile-nav-link {
+	display: block;
+	padding: 1rem;
+	color: white;
+	text-decoration: none;
+	font-size: 1rem;
+	border-radius: 4px;
+	transition: background-color 0.2s;
+}
+
+.mobile-nav-link:hover {
+	background-color: rgba(255, 255, 255, 0.1);
+}
+
+.mobile-logout-btn {
+	margin-top: 1rem;
+	padding: 1rem;
+	background-color: rgba(255, 255, 255, 0.1);
+	border: 1px solid rgba(255, 255, 255, 0.3);
+	color: white;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 1rem;
+	text-align: left;
+	transition: background-color 0.2s;
+}
+
+.mobile-logout-btn:hover {
+	background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Responsive breakpoint */
+@media (max-width: 767px) {
+	.desktop-nav {
+		display: none;
+	}
+
+	.mobile-hamburger {
+		display: flex;
+	}
+
+	.main-content {
+		padding: 1rem;
+	}
 }
 </style>
