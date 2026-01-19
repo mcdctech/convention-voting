@@ -1,0 +1,80 @@
+name: mcdc-convention-voting
+region: nyc
+
+services:
+  - name: api
+    github:
+      repo: mcdctech/convention-voting
+      branch: main
+      deploy_on_push: true
+    environment_slug: node-js
+    build_command: npm ci && npm run build
+    run_command: node packages/server/dist/server.js
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb
+    routes:
+      - path: /api
+        preserve_path_prefix: true
+      - path: /health
+    envs:
+      # Server configuration
+      - key: PORT
+        value: "3000"
+        scope: RUN_TIME
+      - key: HOST
+        value: "0.0.0.0"
+        scope: RUN_TIME
+      # Database - auto-bound from managed PostgreSQL
+      - key: PGHOST
+        value: ${db.HOSTNAME}
+        scope: RUN_TIME
+      - key: PGPORT
+        value: ${db.PORT}
+        scope: RUN_TIME
+      - key: PGUSER
+        value: ${db.USERNAME}
+        scope: RUN_TIME
+      - key: PGPASSWORD
+        value: ${db.PASSWORD}
+        scope: RUN_TIME
+        type: SECRET
+      - key: PGDATABASE
+        value: ${db.DATABASE}
+        scope: RUN_TIME
+      # CORS - allows requests from the app's public URL
+      - key: CORS_ORIGIN
+        value: ${APP_URL}
+        scope: RUN_TIME
+      # JWT configuration
+      - key: JWT_EXPIRES_IN
+        value: "24h"
+        scope: RUN_TIME
+      # NOTE: These MUST be configured in DO Console during app creation:
+      # - JWT_SECRET (type: SECRET) - generate with: openssl rand -base64 32
+      # - ADMIN_USERNAME
+      # - ADMIN_PASSWORD (type: SECRET)
+
+static_sites:
+  - name: client
+    github:
+      repo: mcdctech/convention-voting
+      branch: main
+      deploy_on_push: true
+    environment_slug: node-js
+    build_command: npm ci && npm run build
+    output_dir: packages/client/dist
+    index_document: index.html
+    error_document: index.html
+    routes:
+      - path: /
+    envs:
+      - key: VITE_API_URL
+        value: ""
+        scope: BUILD_TIME
+
+databases:
+  - name: db
+    engine: PG
+    version: "18"
+    production: true
