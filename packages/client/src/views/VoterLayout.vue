@@ -56,16 +56,15 @@ onUnmounted(() => {
 	<div class="voter-layout">
 		<header class="header">
 			<div class="header-content">
-				<h1>MCDC Convention Voting</h1>
+				<RouterLink to="/" class="logo-link">
+					<h1>MCDC Convention Voting</h1>
+				</RouterLink>
 				<div class="user-info">
 					<span v-if="currentUser" class="user-name">
 						{{ currentUser.firstName }} {{ currentUser.lastName }}
 					</span>
 					<RouterLink to="/" class="btn btn-nav">Dashboard</RouterLink>
 					<RouterLink to="/pools" class="btn btn-nav">My Pools</RouterLink>
-					<RouterLink v-if="isAdmin" to="/admin" class="btn btn-admin">
-						Admin Panel
-					</RouterLink>
 					<button class="btn btn-logout" @click="logout">Logout</button>
 				</div>
 			</div>
@@ -113,6 +112,11 @@ onUnmounted(() => {
 	font-size: 1.25rem;
 }
 
+.logo-link {
+	text-decoration: none;
+	color: inherit;
+}
+
 .user-info {
 	display: flex;
 	align-items: center;
@@ -124,7 +128,6 @@ onUnmounted(() => {
 }
 
 .btn-nav,
-.btn-admin,
 .btn-logout {
 	padding: 0.5rem 1rem;
 	background-color: transparent;
@@ -138,7 +141,6 @@ onUnmounted(() => {
 }
 
 .btn-nav:hover,
-.btn-admin:hover,
 .btn-logout:hover {
 	background-color: white;
 	color: #2c3e50;

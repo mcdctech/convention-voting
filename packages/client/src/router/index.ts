@@ -172,19 +172,41 @@ export const router = createRouter({
 let kioskModeInitialized = false;
 
 /**
+ * Check if admin user should be redirected away from a voter-only route
+ */
+function shouldRedirectAdminFromVoterRoute(
+	path: string,
+	authenticated: boolean,
+	admin: boolean,
+): boolean {
+	if (!authenticated || !admin) {
+		return false;
+	}
+	// Voter-only routes are anything not under /admin and not /login
+	return !path.startsWith("/admin") && path !== "/login";
+}
+
+/**
+ * Initialize kiosk mode from URL on first navigation
+ */
+function initializeKioskModeOnce(): void {
+	if (kioskModeInitialized) {
+		return;
+	}
+	const searchString: string = window.location.search;
+	const searchParams = new URLSearchParams(searchString);
+	initKioskMode(searchParams);
+	kioskModeInitialized = true;
+}
+
+/**
  * Navigation guard for authentication and authorization
  */
 router.beforeEach(async (to) => {
 	const { isAuthenticated, isAdmin, isInitialized, checkAuth } = useAuth();
 	const { getKioskModeQueryParam } = useKioskMode();
 
-	// Initialize kiosk mode from URL on first navigation
-	if (!kioskModeInitialized) {
-		const searchString: string = window.location.search;
-		const searchParams = new URLSearchParams(searchString);
-		initKioskMode(searchParams);
-		kioskModeInitialized = true;
-	}
+	initializeKioskModeOnce();
 
 	// Wait for auth initialization if not done yet
 	if (!isInitialized.value) {
@@ -196,11 +218,7 @@ router.beforeEach(async (to) => {
 
 	// Guest-only routes (like login) - redirect authenticated users
 	if (to.meta.guestOnly === true && isAuthenticated.value) {
-		// Redirect admins to admin panel, others to voter dashboard
-		if (isAdmin.value) {
-			return { path: "/admin", query: kioskQuery };
-		}
-		return { path: "/", query: kioskQuery };
+		return { path: isAdmin.value ? "/admin" : "/", query: kioskQuery };
 	}
 
 	// Protected routes - redirect unauthenticated users to login
@@ -211,6 +229,13 @@ router.beforeEach(async (to) => {
 	// Admin-only routes - redirect non-admins to voter dashboard
 	if (to.meta.requiresAdmin === true && !isAdmin.value) {
 		return { path: "/", query: kioskQuery };
+	}
+
+	// Redirect admin users away from voter-only routes to admin panel
+	const authenticated: boolean = isAuthenticated.value;
+	const admin: boolean = isAdmin.value;
+	if (shouldRedirectAdminFromVoterRoute(to.path, authenticated, admin)) {
+		return { path: "/admin", query: kioskQuery };
 	}
 
 	// Allow navigation
