@@ -1,7 +1,13 @@
+<script setup lang="ts">
+import { RouterLink } from "vue-router";
+</script>
+
 <template>
 	<div class="admin-layout">
 		<header class="admin-header">
-			<h1>MCDC Convention Voting - Admin</h1>
+			<RouterLink to="/" class="logo-link">
+				<h1>MCDC Convention Voting - Admin</h1>
+			</RouterLink>
 			<nav class="admin-nav">
 				<router-link to="/admin/users" class="nav-link"> Users </router-link>
 				<router-link to="/admin/users/upload" class="nav-link">
@@ -49,6 +55,11 @@
 .admin-header h1 {
 	margin: 0 0 1rem 0;
 	font-size: 1.5rem;
+}
+
+.logo-link {
+	text-decoration: none;
+	color: inherit;
 }
 
 .admin-nav {
