@@ -156,12 +156,14 @@ export async function upsertUser(request: CreateUserRequest): Promise<User> {
 		username,
 		isAdmin,
 		isWatcher,
+		isDisabled,
 		poolKeys,
 	} = request;
 
 	// Normalize role flags to booleans
 	const finalIsAdmin = isAdmin === true;
 	const finalIsWatcher = isWatcher === true;
+	const finalIsDisabled = isDisabled === true;
 
 	// Validate role exclusivity
 	if (finalIsAdmin && finalIsWatcher) {
@@ -186,13 +188,14 @@ export async function upsertUser(request: CreateUserRequest): Promise<User> {
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`INSERT INTO users (username, voter_id, first_name, last_name, password_hash, is_admin, is_watcher)
-     VALUES (:username, :voterId, :firstName, :lastName, NULL, :isAdmin, :isWatcher)
+		`INSERT INTO users (username, voter_id, first_name, last_name, password_hash, is_admin, is_watcher, is_disabled)
+     VALUES (:username, :voterId, :firstName, :lastName, NULL, :isAdmin, :isWatcher, :isDisabled)
      ON CONFLICT (voter_id) DO UPDATE SET
        first_name = EXCLUDED.first_name,
        last_name = EXCLUDED.last_name,
        is_admin = EXCLUDED.is_admin,
        is_watcher = EXCLUDED.is_watcher,
+       is_disabled = EXCLUDED.is_disabled,
        updated_at = NOW()
      RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at`,
 		{
@@ -202,6 +205,7 @@ export async function upsertUser(request: CreateUserRequest): Promise<User> {
 			lastName,
 			isAdmin: finalIsAdmin,
 			isWatcher: finalIsWatcher,
+			isDisabled: finalIsDisabled,
 		},
 	);
 

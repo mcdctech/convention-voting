@@ -93,6 +93,10 @@ function goToUsers(): void {
 					"admin", or "watcher"
 				</li>
 				<li>
+					<strong>is_enabled</strong> - Whether the user account is enabled:
+					"true" or "1" for enabled, "false" or "0" for disabled
+				</li>
+				<li>
 					<strong>pool_key_1</strong> through <strong>pool_key_10</strong>
 					(optional) - Pool keys to assign the user to (up to 10 pools).
 					Lowercase letters, numbers, hyphens, and underscores only.

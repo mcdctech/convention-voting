@@ -88,6 +88,7 @@ export interface UserCSVRow {
 	first_name: string;
 	last_name: string;
 	user_type?: string; // Optional: 'voter' (default), 'admin', or 'watcher'
+	is_enabled: string; // Required: 'true', '1', 'false', or '0'
 	pool_key_1?: string;
 	pool_key_2?: string;
 	pool_key_3?: string;
@@ -111,6 +112,7 @@ export interface CreateUserRequest {
 	poolKeys?: string[]; // Optional pool keys to associate with user
 	isAdmin?: boolean; // Optional, defaults to false
 	isWatcher?: boolean; // Optional, defaults to false
+	isDisabled?: boolean; // Optional, defaults to false
 }
 
 /**
