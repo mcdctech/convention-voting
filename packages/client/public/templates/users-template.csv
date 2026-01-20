@@ -1,0 +1,4 @@
+voter_id,first_name,last_name,user_type,pool_key_1,pool_key_2,pool_key_3,pool_key_4,pool_key_5,pool_key_6,pool_key_7,pool_key_8,pool_key_9,pool_key_10
+V001,John,Doe,voter,congressional-district-1,,,,,,,,
+V002,Jane,Smith,watcher,,,,,,,,,
+V003,Admin,User,admin,,,,,,,,,
