@@ -185,17 +185,32 @@ export async function getUserById(userId: string): Promise<User | null> {
 }
 
 /**
- * List users with pagination
+ * List users with pagination and optional search
  */
 export async function listUsers(
 	page = DEFAULT_PAGE,
 	limit = DEFAULT_LIMIT,
+	search?: string,
 ): Promise<{ users: User[]; total: number }> {
 	const offset = (page - PAGE_OFFSET_ADJUSTMENT) * limit;
 
-	// Get total count
+	// Build WHERE clause for search (searches name, username, and voter ID)
+	const searchTerm =
+		search === undefined || search.trim() === "" ? null : search.trim();
+	const hasSearch = searchTerm !== null;
+	const whereClause = hasSearch
+		? "WHERE u.first_name ILIKE :search_pattern OR u.last_name ILIKE :search_pattern OR (u.first_name || ' ' || u.last_name) ILIKE :search_pattern OR u.username ILIKE :search_pattern OR u.voter_id ILIKE :search_pattern"
+		: "";
+	const searchPattern = hasSearch ? `%${searchTerm}%` : "";
+
+	// Get total count (with optional search filter)
+	const countQuery = hasSearch
+		? `SELECT COUNT(*) as count FROM users u ${whereClause}`
+		: "SELECT COUNT(*) as count FROM users";
+
 	const countResult = await db.query<{ count: string }>(
-		"SELECT COUNT(*) as count FROM users",
+		countQuery,
+		hasSearch ? { search_pattern: searchPattern } : {},
 	);
 	const total = parseInt(countResult.rows[FIRST_ROW].count, 10);
 
@@ -220,10 +235,13 @@ export async function listUsers(
      FROM users u
      LEFT JOIN user_pools up ON u.id = up.user_id
      LEFT JOIN pools p ON up.pool_id = p.id
+     ${whereClause}
      GROUP BY u.id
      ORDER BY u.created_at DESC
      LIMIT :limit OFFSET :offset`,
-		{ limit, offset },
+		hasSearch
+			? { limit, offset, search_pattern: searchPattern }
+			: { limit, offset },
 	);
 
 	const users = result.rows.map((row) => ({

@@ -7,6 +7,7 @@ import {
 	enableUser,
 	resetUserPassword,
 } from "../../services/api";
+import TablePagination from "../../components/TablePagination.vue";
 import type { User } from "@mcdc-convention-voting/shared";
 
 const router = useRouter();
@@ -21,6 +22,7 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const currentPage = ref(INITIAL_PAGE);
 const totalUsers = ref(INITIAL_TOTAL);
+const searchQuery = ref("");
 
 const generatedPassword = ref<{
 	username: string;
@@ -39,15 +41,32 @@ async function loadUsers(): Promise<void> {
 	error.value = null;
 
 	try {
-		const response = await getUsers(currentPage.value, USERS_PER_PAGE);
-		const { data, total } = response;
+		const search = searchQuery.value.trim();
+		const searchParam = search === "" ? undefined : search;
+		const response = await getUsers(
+			currentPage.value,
+			USERS_PER_PAGE,
+			searchParam,
+		);
+		const { data, pagination } = response;
 		users.value = data;
-		totalUsers.value = total;
+		totalUsers.value = pagination.total;
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to load users";
 	} finally {
 		loading.value = false;
 	}
+}
+
+function handleSearch(): void {
+	currentPage.value = INITIAL_PAGE;
+	void loadUsers();
+}
+
+function clearSearch(): void {
+	searchQuery.value = "";
+	currentPage.value = INITIAL_PAGE;
+	void loadUsers();
 }
 
 function requestDisable(userId: string): void {
@@ -142,7 +161,17 @@ onMounted(() => {
 
 <template>
 	<div class="user-list">
-		<h2>User Management</h2>
+		<div class="header">
+			<h2>Users</h2>
+			<div class="header-actions">
+				<router-link to="/admin/users/create" class="btn btn-primary">
+					Create User
+				</router-link>
+				<router-link to="/admin/users/upload" class="btn btn-secondary">
+					Upload CSV
+				</router-link>
+			</div>
+		</div>
 
 		<div v-if="loading" class="loading">Loading users...</div>
 
@@ -150,9 +179,25 @@ onMounted(() => {
 			{{ error }}
 		</div>
 
-		<div v-if="!loading && !error" class="users-container">
-			<div class="users-header">
-				<p>Total Users: {{ totalUsers }}</p>
+		<div v-if="!loading && !error" class="table-container">
+			<div class="table-header">
+				<div class="search-box">
+					<input
+						v-model="searchQuery"
+						type="text"
+						placeholder="Search by name, username, or voter ID..."
+						class="search-input"
+						@keyup.enter="handleSearch"
+					/>
+					<button class="btn btn-small" @click="handleSearch">Search</button>
+					<button
+						v-if="searchQuery"
+						class="btn btn-small btn-secondary"
+						@click="clearSearch"
+					>
+						Clear
+					</button>
+				</div>
 			</div>
 
 			<table class="users-table">
@@ -228,25 +273,12 @@ onMounted(() => {
 				</tbody>
 			</table>
 
-			<div v-if="totalPages > 1" class="pagination">
-				<button
-					class="btn btn-small"
-					:disabled="currentPage === 1"
-					@click="goToPage(currentPage - 1)"
-				>
-					Previous
-				</button>
-				<span class="page-info">
-					Page {{ currentPage }} of {{ totalPages }}
-				</span>
-				<button
-					class="btn btn-small"
-					:disabled="currentPage >= totalPages"
-					@click="goToPage(currentPage + 1)"
-				>
-					Next
-				</button>
-			</div>
+			<TablePagination
+				:current-page="currentPage"
+				:total-pages="totalPages"
+				:total-items="totalUsers"
+				@page-change="goToPage"
+			/>
 		</div>
 
 		<div v-if="showDisableModal" class="modal" @click="cancelDisable">
@@ -308,12 +340,25 @@ onMounted(() => {
 
 <style scoped>
 .user-list {
-	max-width: 1200px;
+	max-width: 1400px;
+	margin: 0 auto;
 }
 
-h2 {
-	margin-bottom: 1.5rem;
+.header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 2rem;
+}
+
+.header h2 {
+	margin: 0;
 	color: #2c3e50;
+}
+
+.header-actions {
+	display: flex;
+	gap: 1rem;
 }
 
 .loading,
@@ -333,17 +378,36 @@ h2 {
 	color: #c62828;
 }
 
-.users-container {
+.table-container {
 	background: white;
 	border-radius: 8px;
-	padding: 1.5rem;
-	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	overflow: hidden;
 }
 
-.users-header {
-	margin-bottom: 1rem;
-	padding-bottom: 1rem;
-	border-bottom: 1px solid #e0e0e0;
+.table-header {
+	padding: 1rem;
+	border-bottom: 1px solid #dee2e6;
+}
+
+.search-box {
+	display: flex;
+	gap: 0.5rem;
+	align-items: center;
+}
+
+.search-input {
+	padding: 0.5rem 0.75rem;
+	border: 1px solid #dee2e6;
+	border-radius: 4px;
+	font-size: 0.875rem;
+	width: 280px;
+}
+
+.search-input:focus {
+	outline: none;
+	border-color: #1976d2;
+	box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
 }
 
 .users-table {
@@ -353,13 +417,13 @@ h2 {
 
 .users-table th,
 .users-table td {
-	padding: 0.75rem;
+	padding: 1rem;
 	text-align: left;
-	border-bottom: 1px solid #e0e0e0;
+	border-bottom: 1px solid #dee2e6;
 }
 
 .users-table th {
-	background-color: #f5f5f5;
+	background-color: #f8f9fa;
 	font-weight: 600;
 	color: #2c3e50;
 }
@@ -418,14 +482,25 @@ h2 {
 	padding: 0.5rem 1rem;
 	border: none;
 	border-radius: 4px;
-	background-color: #1976d2;
+	background-color: #34495e;
 	color: white;
 	cursor: pointer;
 	font-size: 0.875rem;
-	transition: background-color 0.2s;
+	font-weight: 500;
+	text-decoration: none;
+	display: inline-block;
+	transition: all 0.2s;
 }
 
 .btn:hover:not(:disabled) {
+	background-color: #2c3e50;
+}
+
+.btn-primary {
+	background-color: #1976d2;
+}
+
+.btn-primary:hover:not(:disabled) {
 	background-color: #1565c0;
 }
 
@@ -461,21 +536,6 @@ h2 {
 
 .btn-secondary:hover:not(:disabled) {
 	background-color: #616161;
-}
-
-.pagination {
-	display: flex;
-	justify-content: center;
-	align-items: center;
-	gap: 1rem;
-	margin-top: 1.5rem;
-	padding-top: 1rem;
-	border-top: 1px solid #e0e0e0;
-}
-
-.page-info {
-	font-size: 0.875rem;
-	color: #616161;
 }
 
 .modal {

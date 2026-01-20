@@ -90,11 +90,16 @@ export function clearAuthToken(): void {
 	localStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
-interface PaginatedResponse<T> {
-	data: T[];
-	total: number;
+interface Pagination {
 	page: number;
 	limit: number;
+	total: number;
+	totalPages: number;
+}
+
+interface PaginatedResponse<T> {
+	data: T[];
+	pagination: Pagination;
 }
 
 export interface ApiResponse<T> {
@@ -216,14 +221,22 @@ export async function uploadUsersCSV(
 }
 
 /**
- * Get paginated list of users
+ * Get paginated list of users with optional search
  */
 export async function getUsers(
 	page = DEFAULT_PAGE,
 	limit = DEFAULT_PAGE_LIMIT,
+	search?: string,
 ): Promise<PaginatedResponse<User>> {
+	const params = new URLSearchParams({
+		page: String(page),
+		limit: String(limit),
+	});
+	if (search !== undefined && search.trim() !== "") {
+		params.set("search", search.trim());
+	}
 	return await apiRequest<PaginatedResponse<User>>(
-		`${API_PREFIX}/admin/users?page=${page}&limit=${limit}`,
+		`${API_PREFIX}/admin/users?${params.toString()}`,
 	);
 }
 
@@ -881,7 +894,7 @@ export async function getQuorumVoters(
 
 interface WatcherMeetingsResponse {
 	data: WatcherMeetingReport[];
-	total: number;
+	pagination: Pagination;
 }
 
 /**

@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { getWatcherMeetings } from "../../services/api";
+import TablePagination from "../../components/TablePagination.vue";
 import type { WatcherMeetingReport } from "@mcdc-convention-voting/shared";
 
 const router = useRouter();
@@ -9,7 +10,6 @@ const router = useRouter();
 const MEETINGS_PER_PAGE = 50;
 const INITIAL_PAGE = 1;
 const INITIAL_TOTAL = 0;
-const MIN_PAGE = 1;
 
 const meetings = ref<WatcherMeetingReport[]>([]);
 const loading = ref(false);
@@ -31,7 +31,7 @@ async function loadMeetings(): Promise<void> {
 			MEETINGS_PER_PAGE,
 		);
 		meetings.value = response.data;
-		totalMeetings.value = response.total;
+		totalMeetings.value = response.pagination.total;
 	} catch (err) {
 		error.value =
 			err instanceof Error ? err.message : "Failed to load meetings";
@@ -53,10 +53,8 @@ function formatDate(date: Date | string): string {
 }
 
 function goToPage(page: number): void {
-	if (page >= MIN_PAGE && page <= totalPages.value) {
-		currentPage.value = page;
-		void loadMeetings();
-	}
+	currentPage.value = page;
+	void loadMeetings();
 }
 
 onMounted(() => {
@@ -133,25 +131,12 @@ onMounted(() => {
 				</tbody>
 			</table>
 
-			<div v-if="totalPages > 1" class="pagination">
-				<button
-					class="btn btn-small"
-					:disabled="currentPage === 1"
-					@click="goToPage(currentPage - 1)"
-				>
-					Previous
-				</button>
-				<span class="page-info">
-					Page {{ currentPage }} of {{ totalPages }} ({{ totalMeetings }} total)
-				</span>
-				<button
-					class="btn btn-small"
-					:disabled="currentPage >= totalPages"
-					@click="goToPage(currentPage + 1)"
-				>
-					Next
-				</button>
-			</div>
+			<TablePagination
+				:current-page="currentPage"
+				:total-pages="totalPages"
+				:total-items="totalMeetings"
+				@page-change="goToPage"
+			/>
 		</div>
 	</div>
 </template>
@@ -260,19 +245,8 @@ onMounted(() => {
 .actions-cell {
 	display: flex;
 	gap: 0.5rem;
-}
-
-.pagination {
-	display: flex;
-	justify-content: space-between;
+	flex-wrap: wrap;
 	align-items: center;
-	padding: 1rem;
-	border-top: 1px solid #dee2e6;
-}
-
-.page-info {
-	color: #666;
-	font-size: 0.875rem;
 }
 
 .btn {
