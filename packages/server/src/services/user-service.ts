@@ -472,17 +472,18 @@ export async function enableUser(userId: string): Promise<User> {
 }
 
 /**
- * Generate passwords for all users
+ * Generate passwords for all non-admin users
+ * Admin users are excluded to prevent accidental credential changes
  */
 export async function generatePasswordsForUsers(): Promise<
 	PasswordGenerationResult[]
 > {
-	// Get all users
+	// Get all non-admin users
 	const usersResult = await db.query<{
 		id: string;
 		username: string;
 		voter_id: string | null;
-	}>("SELECT id, username, voter_id FROM users");
+	}>("SELECT id, username, voter_id FROM users WHERE is_admin = FALSE");
 
 	const results: PasswordGenerationResult[] = [];
 
