@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { getPools, disablePool, enablePool } from "../../services/api";
+import TablePagination from "../../components/TablePagination.vue";
 import type { Pool } from "@mcdc-convention-voting/shared";
 
 const router = useRouter();
@@ -9,7 +10,6 @@ const router = useRouter();
 const POOLS_PER_PAGE = 50;
 const INITIAL_PAGE = 1;
 const INITIAL_TOTAL = 0;
-const MIN_PAGE = 1;
 
 const pools = ref<Pool[]>([]);
 const loading = ref(false);
@@ -33,9 +33,9 @@ async function loadPools(): Promise<void> {
 
 	try {
 		const response = await getPools(currentPage.value, POOLS_PER_PAGE);
-		const { data, total } = response;
+		const { data, pagination } = response;
 		pools.value = data;
-		totalPools.value = total;
+		totalPools.value = pagination.total;
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to load pools";
 	} finally {
@@ -106,10 +106,8 @@ async function handleEnable(): Promise<void> {
 }
 
 function goToPage(page: number): void {
-	if (page >= MIN_PAGE && page <= totalPages.value) {
-		currentPage.value = page;
-		void loadPools();
-	}
+	currentPage.value = page;
+	void loadPools();
 }
 
 onMounted(() => {
@@ -196,25 +194,12 @@ onMounted(() => {
 				</tbody>
 			</table>
 
-			<div class="pagination">
-				<button
-					class="btn btn-small"
-					:disabled="currentPage === 1"
-					@click="goToPage(currentPage - 1)"
-				>
-					Previous
-				</button>
-				<span class="page-info">
-					Page {{ currentPage }} of {{ totalPages }} ({{ totalPools }} total)
-				</span>
-				<button
-					class="btn btn-small"
-					:disabled="currentPage >= totalPages"
-					@click="goToPage(currentPage + 1)"
-				>
-					Next
-				</button>
-			</div>
+			<TablePagination
+				:current-page="currentPage"
+				:total-pages="totalPages"
+				:total-items="totalPools"
+				@page-change="goToPage"
+			/>
 		</div>
 
 		<!-- Disable Confirmation Modal -->
@@ -361,19 +346,8 @@ onMounted(() => {
 .actions-cell {
 	display: flex;
 	gap: 0.5rem;
-}
-
-.pagination {
-	display: flex;
-	justify-content: space-between;
+	flex-wrap: wrap;
 	align-items: center;
-	padding: 1rem;
-	border-top: 1px solid #dee2e6;
-}
-
-.page-info {
-	color: #666;
-	font-size: 0.875rem;
 }
 
 .btn {

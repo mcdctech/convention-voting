@@ -9,6 +9,7 @@ import {
 	deleteMotion,
 	updateMotionStatus,
 } from "../../services/api";
+import TablePagination from "../../components/TablePagination.vue";
 import type {
 	MotionVoteStats,
 	MotionWithPool,
@@ -24,7 +25,6 @@ const router = useRouter();
 const MOTIONS_PER_PAGE = 50;
 const INITIAL_PAGE = 1;
 const INITIAL_TOTAL = 0;
-const MIN_PAGE = 1;
 const DECIMAL_RADIX = 10;
 const STATS_POLL_INTERVAL_MS = 30000; // 30 seconds
 
@@ -99,9 +99,9 @@ async function loadMotions(): Promise<void> {
 			currentPage.value,
 			MOTIONS_PER_PAGE,
 		);
-		const { data, total } = response;
+		const { data, pagination } = response;
 		motions.value = data;
-		totalMotions.value = total;
+		totalMotions.value = pagination.total;
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to load motions";
 	} finally {
@@ -214,10 +214,8 @@ async function handleDelete(): Promise<void> {
 }
 
 function goToPage(page: number): void {
-	if (page >= MIN_PAGE && page <= totalPages.value) {
-		currentPage.value = page;
-		void loadMotions();
-	}
+	currentPage.value = page;
+	void loadMotions();
 }
 
 function goBack(): void {
@@ -510,25 +508,12 @@ watch(currentPage, () => {
 				</tbody>
 			</table>
 
-			<div v-if="totalPages > 1" class="pagination">
-				<button
-					class="btn btn-small"
-					:disabled="currentPage === 1"
-					@click="goToPage(currentPage - 1)"
-				>
-					Previous
-				</button>
-				<span class="page-info">
-					Page {{ currentPage }} of {{ totalPages }} ({{ totalMotions }} total)
-				</span>
-				<button
-					class="btn btn-small"
-					:disabled="currentPage >= totalPages"
-					@click="goToPage(currentPage + 1)"
-				>
-					Next
-				</button>
-			</div>
+			<TablePagination
+				:current-page="currentPage"
+				:total-pages="totalPages"
+				:total-items="totalMotions"
+				@page-change="goToPage"
+			/>
 		</div>
 
 		<!-- Delete Confirmation Modal -->
@@ -708,19 +693,6 @@ watch(currentPage, () => {
 	gap: 0.5rem;
 	flex-wrap: wrap;
 	align-items: center;
-}
-
-.pagination {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	padding: 1rem;
-	border-top: 1px solid #dee2e6;
-}
-
-.page-info {
-	color: #666;
-	font-size: 0.875rem;
 }
 
 .btn {
