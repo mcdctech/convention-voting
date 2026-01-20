@@ -8,9 +8,11 @@ import {
 	resetUserPassword,
 } from "../../services/api";
 import TablePagination from "../../components/TablePagination.vue";
+import { useAuth } from "../../composables/useAuth";
 import type { User } from "@mcdc-convention-voting/shared";
 
 const router = useRouter();
+const { currentUser } = useAuth();
 
 // Constants
 const USERS_PER_PAGE = 50;
@@ -263,6 +265,7 @@ onMounted(() => {
 								Enable
 							</button>
 							<button
+								v-if="user.id !== currentUser?.id"
 								class="btn btn-small btn-secondary"
 								@click="requestResetPassword(user.id)"
 							>

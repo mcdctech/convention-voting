@@ -67,11 +67,12 @@ function downloadCSV(): void {
 			<h3>⚠️ Important Information</h3>
 			<p>
 				<strong>
-					This will generate NEW passwords for ALL users in the system.
+					This will generate NEW passwords for all voters and watchers.
 				</strong>
 			</p>
+			<p class="note">Admin accounts are not affected by this operation.</p>
 			<ul>
-				<li>ALL existing passwords will be reset</li>
+				<li>All voter and watcher passwords will be reset</li>
 				<li>Passwords are generated once and cannot be retrieved again</li>
 				<li>Each password consists of a 5-letter word followed by 3 digits</li>
 				<li>Passwords are immediately hashed after generation</li>
@@ -100,12 +101,13 @@ function downloadCSV(): void {
 			<div class="modal-content" @click.stop>
 				<h3>Confirm Password Generation</h3>
 				<p>
-					Are you sure you want to generate NEW passwords for ALL users? This
-					will reset ALL existing passwords and cannot be undone.
+					Are you sure you want to generate NEW passwords for all voters and
+					watchers? This will reset their existing passwords and cannot be
+					undone. Admin accounts will not be affected.
 				</p>
 				<div class="modal-actions">
 					<button class="btn btn-primary" @click="handleGenerate">
-						Yes, Reset All Passwords
+						Yes, Reset Passwords
 					</button>
 					<button class="btn btn-secondary" @click="cancelGenerate">
 						Cancel
@@ -182,6 +184,12 @@ h2 {
 
 .warning-box li {
 	margin: 0.5rem 0;
+}
+
+.warning-box .note {
+	font-size: 0.875rem;
+	color: #5d4037;
+	margin-top: 0.5rem;
 }
 
 .error {
