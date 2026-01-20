@@ -83,6 +83,18 @@ import type {
 
 export const adminRouter = Router();
 
+/**
+ * Check if a value is missing, null, or empty string (after trimming)
+ * Used for runtime validation of required string fields from request body
+ */
+function isEmptyString(value: unknown): boolean {
+	return (
+		value === undefined ||
+		value === null ||
+		(typeof value === "string" && value.trim() === "")
+	);
+}
+
 // Pagination defaults
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 50;
@@ -185,9 +197,9 @@ adminRouter.post("/users", async (req: Request, res: Response) => {
 
 		// Validate required fields
 		if (
-			request.voterId === "" ||
-			request.firstName === "" ||
-			request.lastName === ""
+			isEmptyString(request.voterId) ||
+			isEmptyString(request.firstName) ||
+			isEmptyString(request.lastName)
 		) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
 				error: "Missing required fields: voterId, firstName, lastName",
@@ -195,7 +207,16 @@ adminRouter.post("/users", async (req: Request, res: Response) => {
 			return;
 		}
 
-		const user = await createUser(request);
+		// Trim whitespace from validated fields
+		const trimmedRequest: CreateUserRequest = {
+			...request,
+			voterId: request.voterId.trim(),
+			firstName: request.firstName.trim(),
+			lastName: request.lastName.trim(),
+			username: request.username?.trim(),
+		};
+
+		const user = await createUser(trimmedRequest);
 		res
 			.status(HTTP_STATUS.SUCCESSFUL.CREATED)
 			.json({ success: true, data: user });
@@ -471,14 +492,21 @@ adminRouter.post("/pools", async (req: Request, res: Response) => {
 		const request: CreatePoolRequest = req.body;
 
 		// Validate required fields
-		if (request.poolKey === "" || request.poolName === "") {
+		if (isEmptyString(request.poolKey) || isEmptyString(request.poolName)) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
 				error: "Missing required fields: poolKey, poolName",
 			});
 			return;
 		}
 
-		const pool = await createPool(request);
+		// Trim whitespace from validated fields
+		const trimmedRequest: CreatePoolRequest = {
+			...request,
+			poolKey: request.poolKey.trim(),
+			poolName: request.poolName.trim(),
+		};
+
+		const pool = await createPool(trimmedRequest);
 		res
 			.status(HTTP_STATUS.SUCCESSFUL.CREATED)
 			.json({ success: true, data: pool });
@@ -1099,16 +1127,18 @@ adminRouter.post(
 			const body: Omit<CreateChoiceRequest, "motionId"> = req.body;
 
 			// Validate required fields
-			if (body.name === "") {
+			if (isEmptyString(body.name)) {
 				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
 					error: "Missing required field: name",
 				});
 				return;
 			}
 
+			// Trim whitespace and build request
 			const request: CreateChoiceRequest = {
 				...body,
 				motionId,
+				name: body.name.trim(),
 			};
 
 			const choice = await createChoice(request);
