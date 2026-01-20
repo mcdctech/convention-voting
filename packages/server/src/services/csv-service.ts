@@ -31,7 +31,12 @@ const POOL_KEY_PATTERN = /^[a-z0-9_-]+$/;
 const PRINTABLE_ASCII_PATTERN = /^[\x20-\x7E]*$/;
 
 // Required headers for CSV files
-const REQUIRED_USER_HEADERS = ["voter_id", "first_name", "last_name"];
+const REQUIRED_USER_HEADERS = [
+	"voter_id",
+	"first_name",
+	"last_name",
+	"is_enabled",
+];
 const REQUIRED_POOL_HEADERS = ["pool_key", "pool_name"];
 
 interface ValidationResult {
@@ -160,6 +165,10 @@ function validateHeaders(
 // Valid user types for CSV import
 const VALID_USER_TYPES = new Set<string>(["voter", "admin", "watcher"]);
 
+// Valid is_enabled values for CSV import
+const ENABLED_VALUES = new Set<string>(["true", "1"]);
+const DISABLED_VALUES = new Set<string>(["false", "0"]);
+
 /**
  * Parse user_type from CSV and return isAdmin/isWatcher flags
  */
@@ -183,6 +192,33 @@ function parseUserType(userType: string | undefined): {
 		isAdmin: trimmedType === "admin",
 		isWatcher: trimmedType === "watcher",
 	};
+}
+
+/**
+ * Parse is_enabled from CSV and return isEnabled boolean
+ * Field is required - empty/missing values will throw an error
+ */
+function parseIsEnabled(value: string | undefined): boolean {
+	const trimmed = value?.trim().toLowerCase() ?? "";
+
+	// Field is required - empty/missing is an error
+	if (trimmed === "") {
+		throw new Error(
+			"is_enabled is required. Must be one of: true, false, 1, 0",
+		);
+	}
+
+	if (ENABLED_VALUES.has(trimmed)) {
+		return true;
+	}
+
+	if (DISABLED_VALUES.has(trimmed)) {
+		return false;
+	}
+
+	throw new Error(
+		`Invalid is_enabled value "${value}". Must be one of: true, false, 1, 0`,
+	);
 }
 
 interface CSVImportResult {
@@ -318,6 +354,9 @@ export async function importUsersFromCSV(
 					// Parse user type (defaults to voter if not specified)
 					const { isAdmin, isWatcher } = parseUserType(record.user_type);
 
+					// Parse is_enabled (required field)
+					const isEnabled = parseIsEnabled(record.is_enabled);
+
 					// Validate voter_id format
 					const voterIdValidation = validateVoterId(voterIdValue);
 					if (!voterIdValidation.isValid) {
@@ -370,6 +409,7 @@ export async function importUsersFromCSV(
 							poolKeys.length > EMPTY_ARRAY_LENGTH ? poolKeys : undefined,
 						isAdmin,
 						isWatcher,
+						isDisabled: !isEnabled,
 					});
 
 					result.success += COUNTER_INCREMENT;
