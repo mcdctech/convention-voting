@@ -16,6 +16,7 @@ import {
 	requireWatcher,
 } from "./middleware/auth-middleware.js";
 import { activityLogger } from "./middleware/activity-logger-middleware.js";
+import { getShallowHealth, getDeepHealth } from "./services/health-service.js";
 
 const logger = pino({ name: "app" });
 
@@ -59,8 +60,24 @@ export function createApp(): Express {
 	});
 
 	// Health check endpoint
+	// Use ?deep=true for comprehensive health check including database connectivity
 	app.get(`${API_PREFIX}/health`, (req: Request, res: Response) => {
-		res.json({ status: "ok", timestamp: new Date().toISOString() });
+		const isDeepCheck = req.query.deep === "true";
+
+		if (!isDeepCheck) {
+			// Shallow health check - fast liveness probe
+			res.json(getShallowHealth());
+			return;
+		}
+
+		// Deep health check - verify database connectivity
+		void getDeepHealth().then((health) => {
+			const statusCode =
+				health.status === "healthy"
+					? HTTP_STATUS.SUCCESSFUL.OK
+					: HTTP_STATUS.SERVER_ERROR.SERVICE_UNAVAILABLE;
+			res.status(statusCode).json(health);
+		});
 	});
 
 	// API routes
