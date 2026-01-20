@@ -65,18 +65,37 @@ function goToUsers(): void {
 
 		<div class="upload-info">
 			<h3>CSV Format Requirements</h3>
+			<p>
+				<a
+					href="/templates/users-template.csv"
+					download="users-template.csv"
+					class="download-template"
+				>
+					Download Template CSV
+				</a>
+			</p>
 			<p>The CSV file must contain the following columns:</p>
 			<ul>
-				<li><strong>voter_id</strong> - Unique identifier for the voter</li>
-				<li><strong>first_name</strong> - Voter's first name</li>
-				<li><strong>last_name</strong> - Voter's last name</li>
+				<li>
+					<strong>voter_id</strong> - Unique identifier for the voter. ASCII
+					letters, numbers, hyphens, and underscores only (no spaces).
+				</li>
+				<li>
+					<strong>first_name</strong> - Voter's first name. ASCII letters,
+					spaces, hyphens, and apostrophes only.
+				</li>
+				<li>
+					<strong>last_name</strong> - Voter's last name. ASCII letters, spaces,
+					hyphens, and apostrophes only.
+				</li>
 				<li>
 					<strong>user_type</strong> (optional) - User role: "voter" (default),
 					"admin", or "watcher"
 				</li>
 				<li>
 					<strong>pool_key_1</strong> through <strong>pool_key_10</strong>
-					(optional) - Pool keys to assign the user to (up to 10 pools)
+					(optional) - Pool keys to assign the user to (up to 10 pools).
+					Lowercase letters, numbers, hyphens, and underscores only.
 				</li>
 			</ul>
 			<p>
@@ -331,5 +350,20 @@ h2 {
 	background-color: #f5f5f5;
 	font-weight: 600;
 	color: #2c3e50;
+}
+
+.download-template {
+	display: inline-block;
+	padding: 0.5rem 1rem;
+	background-color: #4caf50;
+	color: white;
+	text-decoration: none;
+	border-radius: 4px;
+	font-weight: 500;
+	transition: background-color 0.2s;
+}
+
+.download-template:hover {
+	background-color: #388e3c;
 }
 </style>

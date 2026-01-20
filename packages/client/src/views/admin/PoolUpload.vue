@@ -65,19 +65,29 @@ function goToPools(): void {
 
 		<div class="upload-info">
 			<h3>CSV Format Requirements</h3>
+			<p>
+				<a
+					href="/templates/pools-template.csv"
+					download="pools-template.csv"
+					class="download-template"
+				>
+					Download Template CSV
+				</a>
+			</p>
 			<p>The CSV file must contain the following columns:</p>
 			<ul>
 				<li>
 					<strong>pool_key</strong> - Unique identifier for the pool (e.g.,
-					"congressional-district-1")
+					"congressional-district-1"). Lowercase letters, numbers, hyphens, and
+					underscores only.
 				</li>
 				<li>
 					<strong>pool_name</strong> - Display name for the pool (e.g.,
-					"Congressional District 1")
+					"Congressional District 1"). Printable ASCII characters only.
 				</li>
 				<li>
 					<strong>description</strong> - Optional description or notes about the
-					pool
+					pool. Printable ASCII characters only.
 				</li>
 			</ul>
 			<p>
@@ -318,5 +328,20 @@ h2 {
 	background-color: #f5f5f5;
 	font-weight: 600;
 	color: #2c3e50;
+}
+
+.download-template {
+	display: inline-block;
+	padding: 0.5rem 1rem;
+	background-color: #4caf50;
+	color: white;
+	text-decoration: none;
+	border-radius: 4px;
+	font-weight: 500;
+	transition: background-color 0.2s;
+}
+
+.download-template:hover {
+	background-color: #388e3c;
 }
 </style>

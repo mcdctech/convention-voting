@@ -200,8 +200,17 @@ export async function uploadUsersCSV(
 	formData.append("file", file);
 
 	const url = `${API_BASE_URL}${API_PREFIX}/admin/users/upload`;
+
+	// Build headers with auth token (don't set Content-Type for FormData)
+	const requestHeaders = new Headers();
+	const token = getAuthToken();
+	if (token !== null) {
+		requestHeaders.set("Authorization", `Bearer ${token}`);
+	}
+
 	const response = await fetch(url, {
 		method: "POST",
+		headers: requestHeaders,
 		body: formData,
 	});
 
@@ -366,8 +375,12 @@ export async function uploadPoolsCSV(
 	const formData = new FormData();
 	formData.append("file", file);
 
+	// Build headers with auth token (don't set Content-Type for FormData)
 	const requestHeaders = new Headers();
-	// Don't set Content-Type for FormData - browser will set it with boundary
+	const token = getAuthToken();
+	if (token !== null) {
+		requestHeaders.set("Authorization", `Bearer ${token}`);
+	}
 
 	const response = await fetch(
 		`${API_BASE_URL}${API_PREFIX}/admin/pools/upload`,
