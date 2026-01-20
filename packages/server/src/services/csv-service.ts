@@ -4,8 +4,8 @@
 import { Readable } from "node:stream";
 import { parse } from "csv-parse";
 import pino from "pino";
-import { createUser } from "./user-service.js";
-import { createPool } from "./pool-service.js";
+import { upsertUser } from "./user-service.js";
+import { upsertPool } from "./pool-service.js";
 import type { UserCSVRow, PoolCSVRow } from "@mcdc-convention-voting/shared";
 
 const logger = pino({ name: "csv-service" });
@@ -360,9 +360,9 @@ export async function importUsersFromCSV(
 						}
 					}
 
-					// Create user
+					// Upsert user (insert or update on conflict for idempotent uploads)
 					// eslint-disable-next-line no-await-in-loop -- Sequential user creation required for CSV import
-					await createUser({
+					await upsertUser({
 						voterId: voterIdValue,
 						firstName: firstNameValue,
 						lastName: lastNameValue,
@@ -473,9 +473,9 @@ export async function importPoolsFromCSV(
 						descriptionValue,
 					);
 
-					// Create pool
+					// Upsert pool (insert or update on conflict for idempotent uploads)
 					// eslint-disable-next-line no-await-in-loop -- Sequential pool creation required for CSV import
-					await createPool({
+					await upsertPool({
 						poolKey: validatedPool.poolKey,
 						poolName: validatedPool.poolName,
 						description: validatedPool.description,

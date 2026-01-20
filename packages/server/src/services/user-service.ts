@@ -144,6 +144,92 @@ export async function createUser(request: CreateUserRequest): Promise<User> {
 }
 
 /**
+ * Upsert a single user (insert or update on conflict)
+ * Used for idempotent CSV uploads - if voter_id exists, updates the user instead of erroring
+ * Username is preserved for existing users
+ */
+export async function upsertUser(request: CreateUserRequest): Promise<User> {
+	const {
+		voterId,
+		firstName,
+		lastName,
+		username,
+		isAdmin,
+		isWatcher,
+		poolKeys,
+	} = request;
+
+	// Normalize role flags to booleans
+	const finalIsAdmin = isAdmin === true;
+	const finalIsWatcher = isWatcher === true;
+
+	// Validate role exclusivity
+	if (finalIsAdmin && finalIsWatcher) {
+		throw new Error("User cannot be both admin and watcher");
+	}
+
+	// Generate username for potential insert (will be ignored if user exists)
+	const generatedUsername =
+		username !== undefined && username !== ""
+			? username
+			: await generateUniqueUsername(firstName, lastName, usernameExists);
+
+	const result = await db.query<{
+		id: string;
+		username: string;
+		voter_id: string;
+		first_name: string;
+		last_name: string;
+		is_admin: boolean;
+		is_watcher: boolean;
+		is_disabled: boolean;
+		created_at: Date;
+		updated_at: Date;
+	}>(
+		`INSERT INTO users (username, voter_id, first_name, last_name, password_hash, is_admin, is_watcher)
+     VALUES (:username, :voterId, :firstName, :lastName, NULL, :isAdmin, :isWatcher)
+     ON CONFLICT (voter_id) DO UPDATE SET
+       first_name = EXCLUDED.first_name,
+       last_name = EXCLUDED.last_name,
+       is_admin = EXCLUDED.is_admin,
+       is_watcher = EXCLUDED.is_watcher,
+       updated_at = NOW()
+     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at`,
+		{
+			username: generatedUsername,
+			voterId,
+			firstName,
+			lastName,
+			isAdmin: finalIsAdmin,
+			isWatcher: finalIsWatcher,
+		},
+	);
+
+	const {
+		rows: [row],
+	} = result;
+	const user: User = {
+		id: row.id,
+		username: row.username,
+		voterId: row.voter_id,
+		firstName: row.first_name,
+		lastName: row.last_name,
+		isAdmin: row.is_admin,
+		isWatcher: row.is_watcher,
+		isDisabled: row.is_disabled,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+
+	// Associate user with pools if provided
+	if (poolKeys !== undefined && poolKeys.length > EMPTY_ARRAY_LENGTH) {
+		await setUserPools(user.id, poolKeys);
+	}
+
+	return user;
+}
+
+/**
  * Get user by ID
  */
 export async function getUserById(userId: string): Promise<User | null> {
