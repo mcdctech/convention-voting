@@ -134,6 +134,46 @@ export async function createPool(request: CreatePoolRequest): Promise<Pool> {
 }
 
 /**
+ * Upsert a single pool (insert or update on conflict)
+ * Used for idempotent CSV uploads - if pool_key exists, updates the pool instead of erroring
+ */
+export async function upsertPool(request: CreatePoolRequest): Promise<Pool> {
+	const { poolKey, poolName, description } = request;
+
+	const result = await db.query<{
+		id: number;
+		pool_key: string;
+		pool_name: string;
+		description: string | null;
+		is_disabled: boolean;
+		created_at: Date;
+		updated_at: Date;
+	}>(
+		`INSERT INTO pools (pool_key, pool_name, description)
+     VALUES (:poolKey, :poolName, :description)
+     ON CONFLICT (pool_key) DO UPDATE SET
+       pool_name = EXCLUDED.pool_name,
+       description = EXCLUDED.description,
+       updated_at = NOW()
+     RETURNING *`,
+		{ poolKey, poolName, description: description ?? null },
+	);
+
+	const {
+		rows: [row],
+	} = result;
+	return {
+		id: row.id,
+		poolKey: row.pool_key,
+		poolName: row.pool_name,
+		description: row.description,
+		isDisabled: row.is_disabled,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+/**
  * List pools with pagination
  */
 export async function listPools(
