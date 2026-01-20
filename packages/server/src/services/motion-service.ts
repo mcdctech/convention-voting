@@ -23,7 +23,7 @@ interface OpenMotionRow {
 	meeting_id: number;
 	meeting_name: string;
 	end_override: Date | null;
-	updated_at: Date;
+	voting_started_at: Date;
 }
 
 /**
@@ -51,7 +51,7 @@ export async function getOpenMotionsForUser(
 			mt.id as meeting_id,
 			mt.name as meeting_name,
 			m.end_override,
-			m.updated_at
+			m.voting_started_at
 		 FROM motions m
 		 INNER JOIN meetings mt ON m.meeting_id = mt.id
 		 LEFT JOIN pools p ON m.voting_pool_id = p.id
@@ -64,18 +64,18 @@ export async function getOpenMotionsForUser(
 		       WHERE v.motion_id = m.id
 		         AND v.user_id = :userId
 		   )
-		 ORDER BY m.updated_at ASC`,
+		 ORDER BY m.voting_started_at ASC`,
 		{ status: MotionStatus.VotingActive, userId },
 	);
 
 	return result.rows.map((row) => {
 		// Calculate voting end time:
 		// - Use endOverride if set
-		// - Otherwise: updatedAt + plannedDuration minutes
+		// - Otherwise: votingStartedAt + plannedDuration minutes
 		const votingEndsAt =
 			row.end_override ??
 			new Date(
-				row.updated_at.getTime() +
+				row.voting_started_at.getTime() +
 					row.planned_duration * MILLISECONDS_PER_MINUTE,
 			);
 
@@ -89,7 +89,7 @@ export async function getOpenMotionsForUser(
 			meetingId: row.meeting_id,
 			meetingName: row.meeting_name,
 			votingEndsAt,
-			votingStartedAt: row.updated_at,
+			votingStartedAt: row.voting_started_at,
 		};
 	});
 }

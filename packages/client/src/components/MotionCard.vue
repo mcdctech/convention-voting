@@ -10,7 +10,10 @@ const emit = defineEmits<(e: "click", motionId: number) => void>();
 
 // Use countdown timer composable
 const { remainingTimeString, isTimeUrgent, isExpired } = useCountdownTimer({
-	getVotingEndsAt: () => new Date(props.motion.votingEndsAt),
+	getVotingEndsAt: () =>
+		props.motion.votingEndsAt === null
+			? null
+			: new Date(props.motion.votingEndsAt),
 });
 
 // Alias for template

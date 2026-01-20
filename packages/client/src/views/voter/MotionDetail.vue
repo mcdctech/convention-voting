@@ -47,10 +47,11 @@ let intervalId: ReturnType<typeof setInterval> | null = null;
 
 // Computed remaining time in milliseconds
 const remainingMs = computed((): number => {
-	if (motion.value === null) {
+	const votingEndsAt = motion.value?.votingEndsAt;
+	if (votingEndsAt === null || votingEndsAt === undefined) {
 		return ZERO;
 	}
-	const endTime = new Date(motion.value.votingEndsAt).getTime();
+	const endTime = new Date(votingEndsAt).getTime();
 	const remaining = endTime - now.value.getTime();
 	return remaining > ZERO ? remaining : ZERO;
 });

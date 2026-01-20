@@ -33,7 +33,7 @@ interface MotionRow {
 	meeting_id: number;
 	meeting_name: string;
 	end_override: Date | null;
-	updated_at: Date;
+	voting_started_at: Date | null;
 	status: string;
 }
 
@@ -118,7 +118,7 @@ export async function getMotionForVoting(
 			mt.id as meeting_id,
 			mt.name as meeting_name,
 			m.end_override,
-			m.updated_at
+			m.voting_started_at
 		 FROM motions m
 		 INNER JOIN meetings mt ON m.meeting_id = mt.id
 		 LEFT JOIN pools p ON m.voting_pool_id = p.id
@@ -157,17 +157,22 @@ export async function getMotionForVoting(
 	// Check if user is in voting pool
 	const userInPool = await isUserInVotingPool(userId, motionId);
 
-	// Calculate voting end time
+	// Calculate voting end time using voting_started_at
+	// votingStartedAt is set when motion transitions to voting_active
+	// Both values are null if voting has not yet started
+	const { voting_started_at: votingStartedAt } = motionRow;
 	const votingEndsAt =
 		motionRow.end_override ??
-		new Date(
-			motionRow.updated_at.getTime() +
-				motionRow.planned_duration * MILLISECONDS_PER_MINUTE,
-		);
+		(votingStartedAt === null
+			? null
+			: new Date(
+					votingStartedAt.getTime() +
+						motionRow.planned_duration * MILLISECONDS_PER_MINUTE,
+				));
 
 	// Determine if voting is still open
 	const now = new Date();
-	const votingTimeExpired = now >= votingEndsAt;
+	const votingTimeExpired = votingEndsAt !== null && now >= votingEndsAt;
 	const isVotingActive = motionRow.status === "voting_active";
 
 	// Determine voting eligibility and reason
@@ -198,7 +203,7 @@ export async function getMotionForVoting(
 		meetingId: motionRow.meeting_id,
 		meetingName: motionRow.meeting_name,
 		votingEndsAt,
-		votingStartedAt: motionRow.updated_at,
+		votingStartedAt,
 		choices,
 		hasVoted: userHasVoted,
 		canVote,
