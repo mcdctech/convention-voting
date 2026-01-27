@@ -45,7 +45,7 @@ const DECIMAL_RADIX = 10;
 const now = ref(new Date());
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
-// Computed remaining time in milliseconds
+// Computed remaining time in milliseconds (clamped to 0)
 const remainingMs = computed((): number => {
 	const votingEndsAt = motion.value?.votingEndsAt;
 	if (votingEndsAt === null || votingEndsAt === undefined) {
@@ -56,23 +56,53 @@ const remainingMs = computed((): number => {
 	return remaining > ZERO ? remaining : ZERO;
 });
 
-// Format remaining time as human-readable string
-const remainingTimeString = computed((): string => {
-	if (remainingMs.value === ZERO) {
-		return "Voting ended";
+// Computed overtime in milliseconds (0 when not overtime)
+const overtimeMs = computed((): number => {
+	const votingEndsAt = motion.value?.votingEndsAt;
+	if (votingEndsAt === null || votingEndsAt === undefined) {
+		return ZERO;
 	}
+	const endTime = new Date(votingEndsAt).getTime();
+	const diff = endTime - now.value.getTime();
+	return diff < ZERO ? Math.abs(diff) : ZERO;
+});
 
-	const totalSeconds = Math.floor(remainingMs.value / MS_PER_SECOND);
+// Whether planned duration has been exceeded
+const isOvertime = computed((): boolean => overtimeMs.value > ZERO);
+
+/**
+ * Format milliseconds as human-readable duration string
+ */
+function formatDuration(ms: number): string {
+	const totalSeconds = Math.floor(ms / MS_PER_SECOND);
 	const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
 	const seconds = totalSeconds % SECONDS_PER_MINUTE;
 
 	if (minutes >= MINUTES_PER_HOUR) {
 		const hours = Math.floor(minutes / MINUTES_PER_HOUR);
 		const remainingMinutes = minutes % MINUTES_PER_HOUR;
-		return `${String(hours)}h ${String(remainingMinutes)}m ${String(seconds)}s remaining`;
+		return `${String(hours)}h ${String(remainingMinutes)}m ${String(seconds)}s`;
 	}
 
-	return `${String(minutes)}m ${String(seconds)}s remaining`;
+	return `${String(minutes)}m ${String(seconds)}s`;
+}
+
+// Format remaining time as human-readable string
+const remainingTimeString = computed((): string => {
+	const votingEndsAt = motion.value?.votingEndsAt;
+	if (votingEndsAt === null || votingEndsAt === undefined) {
+		return "";
+	}
+
+	if (overtimeMs.value > ZERO) {
+		return `Over by ${formatDuration(overtimeMs.value)}`;
+	}
+
+	if (remainingMs.value === ZERO) {
+		return "Over by 0m 0s";
+	}
+
+	return `${formatDuration(remainingMs.value)} remaining`;
 });
 
 // Check if user can select more choices
@@ -280,9 +310,14 @@ onUnmounted((): void => {
 		<div v-else-if="motion !== null" class="motion-content">
 			<div class="motion-header">
 				<h2>{{ motion.name }}</h2>
-				<span class="time-badge" :class="{ urgent: remainingMs < 300000 }">{{
-					remainingTimeString
-				}}</span>
+				<span
+					class="time-badge"
+					:class="{
+						urgent: remainingMs > 0 && remainingMs < 300000,
+						overtime: isOvertime,
+					}"
+					>{{ remainingTimeString }}</span
+				>
 			</div>
 
 			<div v-if="motion.description" class="motion-description">
@@ -538,6 +573,11 @@ onUnmounted((): void => {
 .time-badge.urgent {
 	color: #dc3545;
 	background: #ffebee;
+}
+
+.time-badge.overtime {
+	color: #e65100;
+	background: #fff3e0;
 }
 
 .motion-description {
