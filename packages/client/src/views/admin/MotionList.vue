@@ -234,37 +234,21 @@ function getVotingEndsAt(motion: MotionWithPool): Date | null {
 		return new Date(motion.endOverride);
 	}
 
-	// Calculate from updatedAt + plannedDuration
-	const startTime = new Date(motion.updatedAt);
+	// Calculate from votingStartedAt + plannedDuration
+	if (motion.votingStartedAt === null) {
+		return null;
+	}
+	const startTime = new Date(motion.votingStartedAt);
 	const durationMs =
 		motion.plannedDuration * SECONDS_PER_MINUTE * MS_PER_SECOND;
 	return new Date(startTime.getTime() + durationMs);
 }
 
 /**
- * Get remaining time for a motion in milliseconds
+ * Format milliseconds as human-readable duration string
  */
-function getRemainingMs(motion: MotionWithPool): number {
-	const endsAt = getVotingEndsAt(motion);
-	if (endsAt === null) {
-		return ZERO;
-	}
-
-	const remaining = endsAt.getTime() - now.value.getTime();
-	return remaining > ZERO ? remaining : ZERO;
-}
-
-/**
- * Format remaining time as human-readable string
- */
-function formatRemainingTime(motion: MotionWithPool): string {
-	const remainingMs = getRemainingMs(motion);
-
-	if (remainingMs === ZERO) {
-		return "Exceeded";
-	}
-
-	const totalSeconds = Math.floor(remainingMs / MS_PER_SECOND);
+function formatDuration(ms: number): string {
+	const totalSeconds = Math.floor(ms / MS_PER_SECOND);
 	const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
 	const seconds = totalSeconds % SECONDS_PER_MINUTE;
 
@@ -278,6 +262,38 @@ function formatRemainingTime(motion: MotionWithPool): string {
 }
 
 /**
+ * Get remaining time for a motion in milliseconds (clamped to 0)
+ */
+function getRemainingMs(motion: MotionWithPool): number {
+	const endsAt = getVotingEndsAt(motion);
+	if (endsAt === null) {
+		return ZERO;
+	}
+
+	const remaining = endsAt.getTime() - now.value.getTime();
+	return remaining > ZERO ? remaining : ZERO;
+}
+
+/**
+ * Format remaining time as human-readable string (shows overtime when exceeded)
+ */
+function formatRemainingTime(motion: MotionWithPool): string {
+	const endsAt = getVotingEndsAt(motion);
+	if (endsAt === null) {
+		return "";
+	}
+
+	const diff = endsAt.getTime() - now.value.getTime();
+
+	if (diff <= ZERO) {
+		const overtime = Math.abs(diff);
+		return `Over by ${formatDuration(overtime)}`;
+	}
+
+	return formatDuration(diff);
+}
+
+/**
  * Check if time is running out (less than 5 minutes)
  */
 function isTimeUrgent(motion: MotionWithPool): boolean {
@@ -285,6 +301,17 @@ function isTimeUrgent(motion: MotionWithPool): boolean {
 	const urgentThresholdMs =
 		URGENT_THRESHOLD_MINUTES * SECONDS_PER_MINUTE * MS_PER_SECOND;
 	return remainingMs > ZERO && remainingMs < urgentThresholdMs;
+}
+
+/**
+ * Check if planned duration has been exceeded
+ */
+function isOvertime(motion: MotionWithPool): boolean {
+	const endsAt = getVotingEndsAt(motion);
+	if (endsAt === null) {
+		return false;
+	}
+	return endsAt.getTime() < now.value.getTime();
 }
 
 /**
@@ -447,7 +474,10 @@ watch(currentPage, () => {
 								<div class="time-remaining-row">
 									<span
 										class="time-remaining"
-										:class="{ urgent: isTimeUrgent(motion) }"
+										:class="{
+											urgent: isTimeUrgent(motion),
+											overtime: isOvertime(motion),
+										}"
 									>
 										{{ formatRemainingTime(motion) }}
 									</span>
@@ -840,6 +870,11 @@ watch(currentPage, () => {
 
 .time-remaining.urgent {
 	color: #f44336;
+	font-weight: 600;
+}
+
+.time-remaining.overtime {
+	color: #e65100;
 	font-weight: 600;
 }
 

@@ -21,9 +21,14 @@ export interface CountdownTimerOptions {
 
 export interface CountdownTimer {
 	/**
-	 * Remaining time in milliseconds
+	 * Remaining time in milliseconds (0 when overtime)
 	 */
 	remainingMs: Ref<number>;
+
+	/**
+	 * Overtime in milliseconds (0 when not overtime)
+	 */
+	overtimeMs: Ref<number>;
 
 	/**
 	 * Human-readable remaining time string
@@ -36,9 +41,26 @@ export interface CountdownTimer {
 	isTimeUrgent: Ref<boolean>;
 
 	/**
-	 * Whether voting has ended
+	 * Whether planned duration has been exceeded
 	 */
-	isExpired: Ref<boolean>;
+	isOvertime: Ref<boolean>;
+}
+
+/**
+ * Format milliseconds as human-readable time string
+ */
+function formatDuration(ms: number): string {
+	const totalSeconds = Math.floor(ms / MS_PER_SECOND);
+	const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
+	const seconds = totalSeconds % SECONDS_PER_MINUTE;
+
+	if (minutes >= MINUTES_PER_HOUR) {
+		const hours = Math.floor(minutes / MINUTES_PER_HOUR);
+		const remainingMinutes = minutes % MINUTES_PER_HOUR;
+		return `${String(hours)}h ${String(remainingMinutes)}m ${String(seconds)}s`;
+	}
+
+	return `${String(minutes)}m ${String(seconds)}s`;
 }
 
 /**
@@ -52,34 +74,46 @@ export function useCountdownTimer(
 	const now = ref(new Date());
 	let intervalId: ReturnType<typeof setInterval> | null = null;
 
-	// Computed remaining time in milliseconds
-	const remainingMs = computed((): number => {
+	// Raw difference in milliseconds (negative when overtime)
+	const rawDiffMs = computed((): number => {
 		const endsAt = getVotingEndsAt();
 		if (endsAt === null) {
 			return ZERO;
 		}
 
-		const remaining = endsAt.getTime() - now.value.getTime();
-		return remaining > ZERO ? remaining : ZERO;
+		return endsAt.getTime() - now.value.getTime();
+	});
+
+	// Computed remaining time in milliseconds (clamped to 0)
+	const remainingMs = computed((): number =>
+		rawDiffMs.value > ZERO ? rawDiffMs.value : ZERO,
+	);
+
+	// Computed overtime in milliseconds (0 when not overtime)
+	const overtimeMs = computed((): number => {
+		const endsAt = getVotingEndsAt();
+		if (endsAt === null) {
+			return ZERO;
+		}
+		return rawDiffMs.value < ZERO ? Math.abs(rawDiffMs.value) : ZERO;
 	});
 
 	// Format remaining time as human-readable string
 	const remainingTimeString = computed((): string => {
+		const endsAt = getVotingEndsAt();
+		if (endsAt === null) {
+			return "";
+		}
+
+		if (overtimeMs.value > ZERO) {
+			return `Over by ${formatDuration(overtimeMs.value)}`;
+		}
+
 		if (remainingMs.value === ZERO) {
-			return "Duration exceeded";
+			return "Over by 0m 0s";
 		}
 
-		const totalSeconds = Math.floor(remainingMs.value / MS_PER_SECOND);
-		const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
-		const seconds = totalSeconds % SECONDS_PER_MINUTE;
-
-		if (minutes >= MINUTES_PER_HOUR) {
-			const hours = Math.floor(minutes / MINUTES_PER_HOUR);
-			const remainingMinutes = minutes % MINUTES_PER_HOUR;
-			return `${String(hours)}h ${String(remainingMinutes)}m ${String(seconds)}s`;
-		}
-
-		return `${String(minutes)}m ${String(seconds)}s`;
+		return formatDuration(remainingMs.value);
 	});
 
 	// Check if time is running out (less than 5 minutes)
@@ -89,8 +123,8 @@ export function useCountdownTimer(
 		return remainingMs.value > ZERO && remainingMs.value < urgentThresholdMs;
 	});
 
-	// Check if voting has ended
-	const isExpired = computed((): boolean => remainingMs.value === ZERO);
+	// Check if planned duration has been exceeded
+	const isOvertime = computed((): boolean => overtimeMs.value > ZERO);
 
 	onMounted((): void => {
 		intervalId = setInterval((): void => {
@@ -106,8 +140,9 @@ export function useCountdownTimer(
 
 	return {
 		remainingMs,
+		overtimeMs,
 		remainingTimeString,
 		isTimeUrgent,
-		isExpired,
+		isOvertime,
 	};
 }

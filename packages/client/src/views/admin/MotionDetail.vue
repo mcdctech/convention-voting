@@ -95,7 +95,7 @@ const canEdit = computed(() => {
 });
 
 // Use countdown timer composable
-const { remainingTimeString, isTimeUrgent } = useCountdownTimer({
+const { remainingTimeString, isTimeUrgent, isOvertime } = useCountdownTimer({
 	getVotingEndsAt: () => {
 		if (motion.value?.status !== MotionStatus.VotingActive) {
 			return null;
@@ -105,7 +105,10 @@ const { remainingTimeString, isTimeUrgent } = useCountdownTimer({
 			return new Date(motion.value.endOverride);
 		}
 
-		const startTime = new Date(motion.value.updatedAt);
+		if (motion.value.votingStartedAt === null) {
+			return null;
+		}
+		const startTime = new Date(motion.value.votingStartedAt);
 		const durationMs =
 			motion.value.plannedDuration * SECONDS_PER_MINUTE * MS_PER_SECOND;
 		return new Date(startTime.getTime() + durationMs);
@@ -668,7 +671,7 @@ watch(
 						<span
 							v-if="motion.status === MotionStatus.VotingActive"
 							class="time-remaining-badge"
-							:class="{ urgent: isTimeUrgent }"
+							:class="{ urgent: isTimeUrgent, overtime: isOvertime }"
 						>
 							{{ remainingTimeString }}
 						</span>
@@ -1447,6 +1450,10 @@ watch(
 .time-remaining-badge.urgent {
 	background: #f44336;
 	animation: pulse 1s infinite;
+}
+
+.time-remaining-badge.overtime {
+	background: #ff9800;
 }
 
 @keyframes pulse {

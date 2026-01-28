@@ -9,7 +9,7 @@ const props = defineProps<{
 const emit = defineEmits<(e: "click", motionId: number) => void>();
 
 // Use countdown timer composable
-const { remainingTimeString, isTimeUrgent, isExpired } = useCountdownTimer({
+const { remainingTimeString, isTimeUrgent, isOvertime } = useCountdownTimer({
 	getVotingEndsAt: () =>
 		props.motion.votingEndsAt === null
 			? null
@@ -27,7 +27,7 @@ function handleClick(): void {
 <template>
 	<div
 		class="motion-card"
-		:class="{ urgent: isUrgent, expired: isExpired }"
+		:class="{ urgent: isUrgent, overtime: isOvertime }"
 		@click="handleClick"
 	>
 		<div class="motion-header">
@@ -78,10 +78,9 @@ function handleClick(): void {
 	border-color: #e0a800;
 }
 
-.motion-card.expired {
-	opacity: 0.7;
-	border-color: #dc3545;
-	background: #fff5f5;
+.motion-card.overtime {
+	border-color: #e65100;
+	background: #fff3e0;
 }
 
 .motion-header {
@@ -150,11 +149,7 @@ function handleClick(): void {
 	font-size: 0.9rem;
 }
 
-.motion-card.expired .vote-prompt {
-	color: #dc3545;
-}
-
-.motion-card.expired .vote-prompt::before {
-	content: "Voting closed - ";
+.motion-card.overtime .vote-prompt {
+	color: #e65100;
 }
 </style>

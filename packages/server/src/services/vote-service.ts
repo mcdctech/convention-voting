@@ -170,9 +170,9 @@ export async function getMotionForVoting(
 						motionRow.planned_duration * MILLISECONDS_PER_MINUTE,
 				));
 
-	// Determine if voting is still open
-	const now = new Date();
-	const votingTimeExpired = votingEndsAt !== null && now >= votingEndsAt;
+	// Determine if voting is still open based on motion status
+	// Note: votingEndsAt is informational (planned duration) - voting remains
+	// open until an admin explicitly changes the status to voting_complete
 	const isVotingActive = motionRow.status === "voting_active";
 
 	// Determine voting eligibility and reason
@@ -188,9 +188,6 @@ export async function getMotionForVoting(
 	} else if (!isVotingActive) {
 		canVote = false;
 		votingEndedReason = "not_active";
-	} else if (votingTimeExpired) {
-		canVote = false;
-		votingEndedReason = "voting_ended";
 	}
 
 	return {
@@ -271,9 +268,8 @@ function validateVoteChoices(
  * 1. Motion exists and is voting_active
  * 2. User hasn't already voted
  * 3. User is in the voting pool
- * 4. Voting time hasn't expired
- * 5. Choice count doesn't exceed seat_count (unless abstaining)
- * 6. All choice IDs belong to this motion
+ * 4. Choice count doesn't exceed seat_count (unless abstaining)
+ * 5. All choice IDs belong to this motion
  */
 export async function castVote(
 	userId: string,
