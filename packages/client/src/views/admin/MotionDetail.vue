@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, onBeforeRouteLeave } from "vue-router";
 import { MotionStatus } from "@mcdc-convention-voting/shared";
 import { useCountdownTimer } from "../../composables/useCountdownTimer";
 import {
@@ -79,6 +79,14 @@ const formData = ref({
 	votingPoolId: EMPTY_STRING,
 });
 
+const savedFormData = ref({
+	name: EMPTY_STRING,
+	description: EMPTY_STRING,
+	plannedDuration: DEFAULT_DURATION,
+	seatCount: DEFAULT_SEAT_COUNT,
+	votingPoolId: EMPTY_STRING,
+});
+
 const newChoiceName = ref(EMPTY_STRING);
 
 const loading = ref(false);
@@ -92,6 +100,19 @@ const canEdit = computed(() => {
 		return false;
 	}
 	return motion.value.status === MotionStatus.NotYetStarted;
+});
+
+const isDirty = computed((): boolean => {
+	if (!canEdit.value) {
+		return false;
+	}
+	return (
+		formData.value.name !== savedFormData.value.name ||
+		formData.value.description !== savedFormData.value.description ||
+		formData.value.plannedDuration !== savedFormData.value.plannedDuration ||
+		formData.value.seatCount !== savedFormData.value.seatCount ||
+		formData.value.votingPoolId !== savedFormData.value.votingPoolId
+	);
 });
 
 // Use countdown timer composable
@@ -151,6 +172,7 @@ async function loadMotion(): Promise<void> {
 				votingPoolId:
 					data.votingPoolId === null ? EMPTY_STRING : String(data.votingPoolId),
 			};
+			savedFormData.value = { ...formData.value };
 		}
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to load motion";
@@ -438,14 +460,6 @@ async function loadDetailedResults(): Promise<void> {
 }
 
 /**
- * Request to start voting (opens confirmation modal)
- */
-function requestStartVoting(): void {
-	pendingStatus.value = MotionStatus.VotingActive;
-	showStatusModal.value = true;
-}
-
-/**
  * Request to end voting (opens confirmation modal)
  */
 function requestEndVoting(): void {
@@ -592,6 +606,25 @@ async function saveTitle(): Promise<void> {
 	}
 }
 
+function handleBeforeUnload(e: BeforeUnloadEvent): void {
+	if (isDirty.value) {
+		e.preventDefault();
+	}
+}
+
+onBeforeRouteLeave(() => {
+	if (isDirty.value) {
+		// eslint-disable-next-line no-alert -- User-facing confirmation for unsaved changes
+		const answer = window.confirm(
+			"You have unsaved changes. Are you sure you want to leave?",
+		);
+		if (!answer) {
+			return false;
+		}
+	}
+	return true;
+});
+
 onMounted(() => {
 	void loadPools();
 	void loadMotion().then(() => {
@@ -599,10 +632,12 @@ onMounted(() => {
 		void loadDetailedResults(); // For voting_complete
 	});
 	void loadChoices();
+	window.addEventListener("beforeunload", handleBeforeUnload);
 });
 
 onUnmounted(() => {
 	stopStatsPolling();
+	window.removeEventListener("beforeunload", handleBeforeUnload);
 });
 
 watch(
@@ -695,24 +730,6 @@ watch(
 							@click="requestEndVoting"
 						>
 							End Voting
-						</button>
-					</div>
-				</div>
-			</div>
-
-			<!-- State Management Section -->
-			<div
-				v-if="motion && motion.status === MotionStatus.NotYetStarted"
-				class="state-management-section"
-			>
-				<h3>Motion Status</h3>
-				<div class="status-row">
-					<span class="status-badge" :class="getStatusClass(motion.status)">
-						{{ getStatusLabel(motion.status) }}
-					</span>
-					<div class="status-actions">
-						<button class="btn btn-primary" @click="requestStartVoting">
-							Start Voting
 						</button>
 					</div>
 				</div>
@@ -1061,49 +1078,22 @@ watch(
 			</template>
 		</template>
 
-		<!-- Status Change Confirmation Modal -->
+		<!-- End Voting Confirmation Modal -->
 		<div
 			v-if="showStatusModal"
 			class="modal-overlay"
 			@click="cancelStatusChange"
 		>
 			<div class="modal-content" @click.stop>
-				<h3>
-					{{
-						pendingStatus === MotionStatus.VotingActive
-							? "Confirm Start Voting"
-							: "Confirm End Voting"
-					}}
-				</h3>
-				<p
-					v-if="pendingStatus === MotionStatus.VotingActive"
-					class="modal-message"
-				>
-					Are you sure you want to start voting on this motion?
-					<strong>Once started, the motion cannot be edited.</strong>
-				</p>
-				<p
-					v-else-if="pendingStatus === MotionStatus.VotingComplete"
-					class="modal-message"
-				>
+				<h3>Confirm End Voting</h3>
+				<p class="modal-message">
 					Are you sure you want to end voting on this motion?
 					<strong
 						>Once ended, voters will no longer be able to cast ballots.</strong
 					>
 				</p>
 				<div class="modal-actions">
-					<button
-						v-if="pendingStatus === MotionStatus.VotingActive"
-						class="btn btn-primary"
-						@click="handleStatusChange"
-					>
-						Yes, Start Voting
-					</button>
-					<button
-						v-if="pendingStatus === MotionStatus.VotingComplete"
-						class="btn btn-warning"
-						@click="handleStatusChange"
-					>
+					<button class="btn btn-warning" @click="handleStatusChange">
 						Yes, End Voting
 					</button>
 					<button class="btn btn-secondary" @click="cancelStatusChange">
@@ -1685,26 +1675,6 @@ watch(
 	background: linear-gradient(90deg, #4caf50 0%, #81c784 100%);
 }
 
-/* State management section */
-.state-management-section {
-	background: white;
-	border-radius: 8px;
-	padding: 1.5rem;
-	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-	margin-bottom: 2rem;
-}
-
-.state-management-section h3 {
-	margin: 0 0 1rem 0;
-	color: #2c3e50;
-}
-
-.status-row {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-}
-
 .status-badge {
 	padding: 0.5rem 1rem;
 	border-radius: 4px;
@@ -1727,11 +1697,6 @@ watch(
 .status-complete {
 	background: #e8f5e9;
 	color: #2e7d32;
-}
-
-.status-actions {
-	display: flex;
-	gap: 0.75rem;
 }
 
 /* Modal styles */
