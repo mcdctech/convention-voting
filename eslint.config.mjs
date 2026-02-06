@@ -239,6 +239,7 @@ export default [
       "*.config.mjs",
       "packages/*/dist/**",
       "packages/*/build/**",
+      "packages/server/k6/**",
     ],
   },
   // Prettier must be last to disable all conflicting rules

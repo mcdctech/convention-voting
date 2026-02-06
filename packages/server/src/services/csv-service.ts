@@ -25,8 +25,8 @@ const STRING_START_INDEX = 0;
 const VOTER_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 // Names: ASCII letters, spaces, hyphens, apostrophes
 const NAME_PATTERN = /^[A-Za-z\s'-]+$/;
-// Pool key: lowercase alphanumeric, hyphens, underscores
-const POOL_KEY_PATTERN = /^[a-z0-9_-]+$/;
+// Pool key: letters (case-sensitive), numbers, hyphens, underscores, spaces
+const POOL_KEY_PATTERN = /^[A-Za-z0-9_\- ]+$/;
 // Printable ASCII: characters from space (32) to tilde (126)
 const PRINTABLE_ASCII_PATTERN = /^[\x20-\x7E]*$/;
 
@@ -105,7 +105,7 @@ function validatePoolKey(value: string): ValidationResult {
 	if (!POOL_KEY_PATTERN.test(value)) {
 		return {
 			isValid: false,
-			error: `pool_key contains invalid characters (got: "${truncateValue(value)}"). Only lowercase letters, numbers, hyphens, and underscores allowed.`,
+			error: `pool_key contains invalid characters (got: "${truncateValue(value)}"). Only letters, numbers, hyphens, underscores, and spaces allowed.`,
 		};
 	}
 	return { isValid: true };
