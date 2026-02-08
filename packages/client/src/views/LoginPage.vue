@@ -11,6 +11,7 @@ const { isKioskMode } = useKioskMode();
 
 const username = ref("");
 const password = ref("");
+const showPassword = ref(false);
 const error = ref<string | null>(null);
 
 async function handleSubmit(): Promise<void> {
@@ -58,11 +59,22 @@ async function handleSubmit(): Promise<void> {
 					<input
 						id="password"
 						v-model="password"
-						type="password"
+						:type="showPassword ? 'text' : 'password'"
 						placeholder="Enter your password"
 						:disabled="isLoading"
 						autocomplete="current-password"
 					/>
+				</div>
+
+				<div class="form-group show-password-group">
+					<label class="checkbox-label">
+						<input
+							v-model="showPassword"
+							type="checkbox"
+							:disabled="isLoading"
+						/>
+						Show password
+					</label>
 				</div>
 
 				<button type="submit" class="btn btn-primary" :disabled="isLoading">
@@ -70,6 +82,10 @@ async function handleSubmit(): Promise<void> {
 					<span v-else>Sign In</span>
 				</button>
 			</form>
+
+			<p class="case-sensitive-note">
+				Note: Username and password are case-sensitive.
+			</p>
 		</div>
 
 		<!-- Kiosk mode indicator -->
@@ -175,5 +191,33 @@ async function handleSubmit(): Promise<void> {
 .btn:disabled {
 	opacity: 0.7;
 	cursor: not-allowed;
+}
+
+.show-password-group {
+	margin-bottom: 1.5rem;
+}
+
+.checkbox-label {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-weight: normal;
+	color: #555;
+	cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+	width: auto;
+	margin: 0;
+	cursor: pointer;
+}
+
+.case-sensitive-note {
+	margin-top: 1.5rem;
+	padding-top: 1rem;
+	border-top: 1px solid #eee;
+	font-size: 0.8125rem;
+	color: #666;
+	text-align: center;
 }
 </style>
