@@ -1,0 +1,11 @@
+# Build artifacts
+dist/
+build/
+packages/*/dist/
+packages/*/build/
+
+# Dependencies
+node_modules/
+
+# k6 load testing scripts (external tool, not part of main project)
+packages/server/k6/

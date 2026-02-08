@@ -98,6 +98,24 @@ function isEmptyString(value: unknown): boolean {
 // Pagination defaults
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 50;
+
+// Pool key validation: letters (case-sensitive), numbers, hyphens, underscores, spaces
+const POOL_KEY_PATTERN = /^[A-Za-z0-9_\- ]+$/;
+const MAX_POOL_KEY_LENGTH = 255;
+
+/**
+ * Validate pool key format
+ * @returns error message if invalid, undefined if valid
+ */
+function validatePoolKeyFormat(poolKey: string): string | undefined {
+	if (poolKey.length > MAX_POOL_KEY_LENGTH) {
+		return `poolKey exceeds maximum length of ${MAX_POOL_KEY_LENGTH} characters`;
+	}
+	if (!POOL_KEY_PATTERN.test(poolKey)) {
+		return "poolKey contains invalid characters. Only letters, numbers, hyphens, underscores, and spaces allowed.";
+	}
+	return undefined;
+}
 const DECIMAL_RADIX = 10;
 
 // File upload limits
@@ -506,6 +524,15 @@ adminRouter.post("/pools", async (req: Request, res: Response) => {
 			poolName: request.poolName.trim(),
 		};
 
+		// Validate pool key format
+		const poolKeyError = validatePoolKeyFormat(trimmedRequest.poolKey);
+		if (poolKeyError !== undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+				error: poolKeyError,
+			});
+			return;
+		}
+
 		const pool = await createPool(trimmedRequest);
 		res
 			.status(HTTP_STATUS.SUCCESSFUL.CREATED)
@@ -552,6 +579,20 @@ adminRouter.put("/pools/:id", async (req: Request, res: Response) => {
 		const poolId = parseInt(req.params.id, 10);
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
 		const updates: UpdatePoolRequest = req.body;
+
+		// Validate pool key format if being updated
+		if (updates.poolKey !== undefined) {
+			const trimmedPoolKey = updates.poolKey.trim();
+			const poolKeyError = validatePoolKeyFormat(trimmedPoolKey);
+			if (poolKeyError !== undefined) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: poolKeyError,
+				});
+				return;
+			}
+			updates.poolKey = trimmedPoolKey;
+		}
+
 		const pool = await updatePool(poolId, updates);
 		res.json({ success: true, data: pool });
 	} catch (error) {
