@@ -3,13 +3,14 @@ import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import {
 	getUsers,
+	getPools,
 	disableUser,
 	enableUser,
 	resetUserPassword,
 } from "../../services/api";
 import TablePagination from "../../components/TablePagination.vue";
 import { useAuth } from "../../composables/useAuth";
-import type { User } from "@mcdc-convention-voting/shared";
+import type { User, Pool } from "@mcdc-convention-voting/shared";
 
 const router = useRouter();
 const { currentUser } = useAuth();
@@ -18,6 +19,7 @@ const { currentUser } = useAuth();
 const USERS_PER_PAGE = 50;
 const INITIAL_PAGE = 1;
 const INITIAL_TOTAL = 0;
+const MAX_POOLS = 1000;
 
 const users = ref<User[]>([]);
 const loading = ref(false);
@@ -25,6 +27,14 @@ const error = ref<string | null>(null);
 const currentPage = ref(INITIAL_PAGE);
 const totalUsers = ref(INITIAL_TOTAL);
 const searchQuery = ref("");
+
+// Pool filter state
+// Special values: "none" = show no users, "all" = show all users, number = filter by pool
+const POOL_FILTER_NONE = "none";
+const POOL_FILTER_ALL = "all";
+const pools = ref<Pool[]>([]);
+const loadingPools = ref(false);
+const selectedPoolFilter = ref<string>(POOL_FILTER_NONE);
 
 const generatedPassword = ref<{
 	username: string;
@@ -38,17 +48,47 @@ const userToResetPassword = ref<string | null>(null);
 
 const totalPages = computed(() => Math.ceil(totalUsers.value / USERS_PER_PAGE));
 
+// Whether users should be displayed (not "none")
+const shouldShowUsers = computed(
+	() => selectedPoolFilter.value !== POOL_FILTER_NONE,
+);
+
+async function loadPools(): Promise<void> {
+	loadingPools.value = true;
+	try {
+		const response = await getPools(INITIAL_PAGE, MAX_POOLS);
+		pools.value = response.data;
+	} catch {
+		// Silently fail - dropdown will be empty
+	} finally {
+		loadingPools.value = false;
+	}
+}
+
 async function loadUsers(): Promise<void> {
+	// Don't load users if "none" is selected
+	if (selectedPoolFilter.value === POOL_FILTER_NONE) {
+		users.value = [];
+		totalUsers.value = INITIAL_TOTAL;
+		return;
+	}
+
 	loading.value = true;
 	error.value = null;
 
 	try {
 		const search = searchQuery.value.trim();
 		const searchParam = search === "" ? undefined : search;
+		// "all" means no pool filter, otherwise parse the pool ID
+		const poolId =
+			selectedPoolFilter.value === POOL_FILTER_ALL
+				? undefined
+				: parseInt(selectedPoolFilter.value, 10);
 		const response = await getUsers(
 			currentPage.value,
 			USERS_PER_PAGE,
 			searchParam,
+			poolId,
 		);
 		const { data, pagination } = response;
 		users.value = data;
@@ -61,6 +101,12 @@ async function loadUsers(): Promise<void> {
 }
 
 function handleSearch(): void {
+	currentPage.value = INITIAL_PAGE;
+	void loadUsers();
+}
+
+function handlePoolChange(): void {
+	searchQuery.value = "";
 	currentPage.value = INITIAL_PAGE;
 	void loadUsers();
 }
@@ -157,7 +203,8 @@ function closePasswordModal(): void {
 }
 
 onMounted(() => {
-	void loadUsers();
+	void loadPools();
+	// Don't load users on mount - wait for pool selection
 });
 </script>
 
@@ -183,26 +230,61 @@ onMounted(() => {
 
 		<div v-if="!loading && !error" class="table-container">
 			<div class="table-header">
-				<div class="search-box">
-					<input
-						v-model="searchQuery"
-						type="text"
-						placeholder="Search by name, username, or voter ID..."
-						class="search-input"
-						@keyup.enter="handleSearch"
-					/>
-					<button class="btn btn-small" @click="handleSearch">Search</button>
-					<button
-						v-if="searchQuery"
-						class="btn btn-small btn-secondary"
-						@click="clearSearch"
-					>
-						Clear
-					</button>
+				<div class="filter-row">
+					<div class="pool-filter">
+						<label for="pool-select">Filter by Pool:</label>
+						<select
+							id="pool-select"
+							v-model="selectedPoolFilter"
+							:disabled="loading || loadingPools"
+							@change="handlePoolChange"
+						>
+							<option value="all">All Users</option>
+							<option
+								v-for="pool in pools"
+								:key="pool.id"
+								:value="String(pool.id)"
+							>
+								{{ pool.poolName }}
+							</option>
+							<option value="none">None</option>
+						</select>
+					</div>
+					<div class="search-box">
+						<input
+							v-model="searchQuery"
+							type="text"
+							placeholder="Search by name, username, or voter ID..."
+							class="search-input"
+							:disabled="!shouldShowUsers"
+							@keyup.enter="handleSearch"
+						/>
+						<button
+							class="btn btn-small"
+							:disabled="!shouldShowUsers"
+							@click="handleSearch"
+						>
+							Search
+						</button>
+						<button
+							v-if="searchQuery"
+							class="btn btn-small btn-secondary"
+							@click="clearSearch"
+						>
+							Clear
+						</button>
+						<span v-if="shouldShowUsers" class="search-hint">
+							Searches within selected filter
+						</span>
+					</div>
 				</div>
 			</div>
 
-			<table class="users-table">
+			<div v-if="!shouldShowUsers" class="select-pool-message">
+				Select a pool to view users.
+			</div>
+
+			<table v-if="shouldShowUsers" class="users-table">
 				<thead>
 					<tr>
 						<th>Username</th>
@@ -277,6 +359,7 @@ onMounted(() => {
 			</table>
 
 			<TablePagination
+				v-if="shouldShowUsers"
 				:current-page="currentPage"
 				:total-pages="totalPages"
 				:total-items="totalUsers"
@@ -393,10 +476,61 @@ onMounted(() => {
 	border-bottom: 1px solid #dee2e6;
 }
 
+.filter-row {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.pool-filter {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.pool-filter label {
+	font-weight: 500;
+	color: #2c3e50;
+}
+
+.pool-filter select {
+	padding: 0.5rem 0.75rem;
+	border: 1px solid #dee2e6;
+	border-radius: 4px;
+	font-size: 0.875rem;
+	min-width: 200px;
+	background-color: white;
+}
+
+.pool-filter select:focus {
+	outline: none;
+	border-color: #1976d2;
+	box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+.pool-filter select:disabled {
+	background-color: #f5f5f5;
+	cursor: not-allowed;
+}
+
+.select-pool-message {
+	padding: 2rem;
+	text-align: center;
+	color: #666;
+	font-style: italic;
+}
+
 .search-box {
 	display: flex;
 	gap: 0.5rem;
 	align-items: center;
+	flex-wrap: wrap;
+}
+
+.search-hint {
+	font-size: 0.8rem;
+	color: #666;
+	font-style: italic;
 }
 
 .search-input {

@@ -276,33 +276,68 @@ export async function getUserById(userId: string): Promise<User | null> {
 }
 
 /**
- * List users with pagination and optional search
+ * Build query clauses and parameters for user listing
+ */
+function buildUserListQueryParts(
+	search?: string,
+	poolId?: number,
+): {
+	whereClause: string;
+	poolJoin: string;
+	params: Record<string, unknown>;
+} {
+	const searchTerm =
+		search === undefined || search.trim() === "" ? null : search.trim();
+	const hasSearch = searchTerm !== null;
+	const hasPoolFilter = poolId !== undefined;
+
+	const whereConditions: string[] = [];
+	const params: Record<string, unknown> = {};
+
+	if (hasSearch) {
+		whereConditions.push(
+			"(u.first_name ILIKE :search_pattern OR u.last_name ILIKE :search_pattern OR (u.first_name || ' ' || u.last_name) ILIKE :search_pattern OR u.username ILIKE :search_pattern OR u.voter_id ILIKE :search_pattern)",
+		);
+		params.search_pattern = `%${searchTerm}%`;
+	}
+	if (hasPoolFilter) {
+		whereConditions.push("filter_up.pool_id = :pool_id");
+		params.pool_id = poolId;
+	}
+
+	const whereClause =
+		whereConditions.length > EMPTY_ARRAY_LENGTH
+			? `WHERE ${whereConditions.join(" AND ")}`
+			: "";
+
+	const poolJoin = hasPoolFilter
+		? "INNER JOIN user_pools filter_up ON u.id = filter_up.user_id"
+		: "";
+
+	return { whereClause, poolJoin, params };
+}
+
+/**
+ * List users with pagination and optional search/pool filter
  */
 export async function listUsers(
 	page = DEFAULT_PAGE,
 	limit = DEFAULT_LIMIT,
 	search?: string,
+	poolId?: number,
 ): Promise<{ users: User[]; total: number }> {
 	const offset = (page - PAGE_OFFSET_ADJUSTMENT) * limit;
-
-	// Build WHERE clause for search (searches name, username, and voter ID)
-	const searchTerm =
-		search === undefined || search.trim() === "" ? null : search.trim();
-	const hasSearch = searchTerm !== null;
-	const whereClause = hasSearch
-		? "WHERE u.first_name ILIKE :search_pattern OR u.last_name ILIKE :search_pattern OR (u.first_name || ' ' || u.last_name) ILIKE :search_pattern OR u.username ILIKE :search_pattern OR u.voter_id ILIKE :search_pattern"
-		: "";
-	const searchPattern = hasSearch ? `%${searchTerm}%` : "";
-
-	// Get total count (with optional search filter)
-	const countQuery = hasSearch
-		? `SELECT COUNT(*) as count FROM users u ${whereClause}`
-		: "SELECT COUNT(*) as count FROM users";
-
-	const countResult = await db.query<{ count: string }>(
-		countQuery,
-		hasSearch ? { search_pattern: searchPattern } : {},
+	const { whereClause, poolJoin, params } = buildUserListQueryParts(
+		search,
+		poolId,
 	);
+
+	// Add pagination params
+	const queryParams = { ...params, limit, offset };
+
+	// Get total count (with optional filters)
+	const countQuery = `SELECT COUNT(DISTINCT u.id) as count FROM users u ${poolJoin} ${whereClause}`;
+	const countResult = await db.query<{ count: string }>(countQuery, params);
 	const total = parseInt(countResult.rows[FIRST_ROW].count, 10);
 
 	// Get paginated users with pool names
@@ -324,15 +359,14 @@ export async function listUsers(
        u.is_admin, u.is_watcher, u.is_disabled, u.created_at, u.updated_at,
        array_agg(p.pool_name ORDER BY p.pool_name) FILTER (WHERE p.pool_name IS NOT NULL) as pool_names
      FROM users u
+     ${poolJoin}
      LEFT JOIN user_pools up ON u.id = up.user_id
      LEFT JOIN pools p ON up.pool_id = p.id
      ${whereClause}
      GROUP BY u.id
      ORDER BY u.created_at DESC
      LIMIT :limit OFFSET :offset`,
-		hasSearch
-			? { limit, offset, search_pattern: searchPattern }
-			: { limit, offset },
+		queryParams,
 	);
 
 	const users = result.rows.map((row) => ({

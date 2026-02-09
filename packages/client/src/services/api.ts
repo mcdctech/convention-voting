@@ -231,12 +231,13 @@ export async function uploadUsersCSV(
 }
 
 /**
- * Get paginated list of users with optional search
+ * Get paginated list of users with optional search and pool filter
  */
 export async function getUsers(
 	page = DEFAULT_PAGE,
 	limit = DEFAULT_PAGE_LIMIT,
 	search?: string,
+	poolId?: number,
 ): Promise<PaginatedResponse<User>> {
 	const params = new URLSearchParams({
 		page: String(page),
@@ -244,6 +245,9 @@ export async function getUsers(
 	});
 	if (search !== undefined && search.trim() !== "") {
 		params.set("search", search.trim());
+	}
+	if (poolId !== undefined) {
+		params.set("poolId", String(poolId));
 	}
 	return await apiRequest<PaginatedResponse<User>>(
 		`${API_PREFIX}/admin/users?${params.toString()}`,
