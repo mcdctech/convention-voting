@@ -65,6 +65,7 @@ import type {
 	UserListResponse,
 	BulkPasswordResponse,
 	PasswordResetResponse,
+	GeneratePasswordsRequest,
 	CreatePoolRequest,
 	UpdatePoolRequest,
 	PoolListResponse,
@@ -355,13 +356,26 @@ adminRouter.post(
 
 /**
  * POST /api/admin/users/generate-passwords
- * Generate passwords for all users without passwords
+ * Generate passwords for users with optional filtering
+ * Body: { poolId?: number, onlyNullPasswords?: boolean }
  */
 adminRouter.post(
 	"/users/generate-passwords",
 	async (req: Request, res: Response) => {
 		try {
-			const results = await generatePasswordsForUsers();
+			// Extract optional filter parameters from request body
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const body: GeneratePasswordsRequest = req.body;
+			const poolId = typeof body.poolId === "number" ? body.poolId : undefined;
+			const onlyNullPasswords =
+				typeof body.onlyNullPasswords === "boolean"
+					? body.onlyNullPasswords
+					: undefined;
+
+			const results = await generatePasswordsForUsers({
+				poolId,
+				onlyNullPasswords,
+			});
 
 			const response: BulkPasswordResponse = {
 				results,

@@ -144,6 +144,14 @@ export interface BulkPasswordResponse {
 }
 
 /**
+ * Request for bulk password generation with optional filters
+ */
+export interface GeneratePasswordsRequest {
+	poolId?: number; // Only generate for users in this pool
+	onlyNullPasswords?: boolean; // Only generate for users without existing passwords
+}
+
+/**
  * Response from password reset operation
  */
 export interface PasswordResetResponse {

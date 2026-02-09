@@ -6,6 +6,7 @@ import type {
 	CreateUserRequest,
 	BulkPasswordResponse,
 	PasswordGenerationResult,
+	GeneratePasswordsRequest,
 	Pool,
 	CreatePoolRequest,
 	UpdatePoolRequest,
@@ -309,15 +310,20 @@ export async function enableUser(id: string): Promise<ApiResponse<User>> {
 }
 
 /**
- * Generate passwords for all users without passwords
+ * Generate passwords for users with optional filtering
+ * @param options - Optional filters (poolId, onlyNullPasswords)
  */
-export async function generatePasswords(): Promise<
-	ApiResponse<BulkPasswordResponse>
-> {
+export async function generatePasswords(
+	options?: GeneratePasswordsRequest,
+): Promise<ApiResponse<BulkPasswordResponse>> {
 	return await apiRequest<ApiResponse<BulkPasswordResponse>>(
 		`${API_PREFIX}/admin/users/generate-passwords`,
 		{
 			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify(options ?? {}),
 		},
 	);
 }

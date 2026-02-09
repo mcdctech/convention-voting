@@ -11,6 +11,7 @@ import type {
 	UpdateUserRequest,
 	PasswordGenerationResult,
 	SystemSettings,
+	GeneratePasswordsRequest,
 } from "@mcdc-convention-voting/shared";
 
 // Array index constants
@@ -562,18 +563,47 @@ export async function enableUser(userId: string): Promise<User> {
 }
 
 /**
- * Generate passwords for all non-admin users
- * Admin users are excluded to prevent accidental credential changes
+ * Generate passwords for users with optional filtering
+ * Admin users are always excluded to prevent accidental credential changes
+ *
+ * @param options - Optional filters
+ * @param options.poolId - Only generate for users in this pool
+ * @param options.onlyNullPasswords - Only generate for users without existing passwords
  */
-export async function generatePasswordsForUsers(): Promise<
-	PasswordGenerationResult[]
-> {
-	// Get all non-admin users
+export async function generatePasswordsForUsers(
+	options?: GeneratePasswordsRequest,
+): Promise<PasswordGenerationResult[]> {
+	const poolId = options?.poolId;
+	const onlyNullPasswords = options?.onlyNullPasswords ?? false;
+
+	// Build query with optional filters
+	let query = `
+		SELECT DISTINCT u.id, u.username, u.voter_id
+		FROM users u
+	`;
+
+	// Join with user_pools if filtering by pool
+	if (poolId === undefined) {
+		query += `
+		WHERE u.is_admin = FALSE
+		`;
+	} else {
+		query += `
+		INNER JOIN user_pools up ON u.id = up.user_id
+		WHERE up.pool_id = :poolId AND u.is_admin = FALSE
+		`;
+	}
+
+	// Add password filter if requested
+	if (onlyNullPasswords) {
+		query += ` AND u.password_hash IS NULL`;
+	}
+
 	const usersResult = await db.query<{
 		id: string;
 		username: string;
 		voter_id: string | null;
-	}>("SELECT id, username, voter_id FROM users WHERE is_admin = FALSE");
+	}>(query, { poolId: poolId ?? null });
 
 	const results: PasswordGenerationResult[] = [];
 
