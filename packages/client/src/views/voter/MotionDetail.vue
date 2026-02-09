@@ -391,6 +391,11 @@ onUnmounted((): void => {
 						</span>
 						<span class="choice-name">Abstain</span>
 					</div>
+					<p class="abstain-note">
+						Selecting Abstain will be treated the same as if you did not vote on
+						the motion, and will only impact the participation records and
+						statistics.
+					</p>
 				</div>
 
 				<!-- Selection summary -->
@@ -724,6 +729,13 @@ onUnmounted((): void => {
 .abstain-item.selected .choice-checkbox {
 	background: #ff9800;
 	border-color: #ff9800;
+}
+
+.abstain-note {
+	margin: 0.5rem 0 0 0;
+	font-size: 0.8125rem;
+	color: #666;
+	font-style: italic;
 }
 
 .selection-summary {

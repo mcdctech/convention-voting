@@ -267,6 +267,10 @@ onMounted(() => {
 						<div class="stat-value">{{ participationPercentage }}%</div>
 						<div class="stat-label">Participation Rate</div>
 					</div>
+					<div v-if="motion.totalAbstentions !== null" class="stat-card">
+						<div class="stat-value">{{ motion.totalAbstentions }}</div>
+						<div class="stat-label">Abstentions</div>
+					</div>
 				</div>
 
 				<!-- Choice Results -->

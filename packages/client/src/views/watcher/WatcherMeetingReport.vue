@@ -138,6 +138,7 @@ onMounted(() => {
 								<th>Status</th>
 								<th>Voting Pool</th>
 								<th>Votes Cast</th>
+								<th>Abstentions</th>
 								<th>Started</th>
 								<th>Ended</th>
 								<th>Results</th>
@@ -160,6 +161,13 @@ onMounted(() => {
 								</td>
 								<td>{{ motion.votingPoolName || "—" }}</td>
 								<td>{{ motion.totalVotesCast }}</td>
+								<td>
+									{{
+										motion.status === MotionStatus.VotingComplete
+											? motion.totalAbstentions
+											: ""
+									}}
+								</td>
 								<td>{{ formatDate(motion.votingStartedAt) }}</td>
 								<td>{{ formatDate(motion.votingEndedAt) }}</td>
 								<td class="results-cell">
