@@ -247,7 +247,7 @@ onUnmounted(() => {
 					min="1"
 				/>
 				<p class="field-description">
-					Number of seats to elect (for elections) or 1 for yes/no votes
+					Number of selections allowed (or 1 for yes/no votes)
 				</p>
 			</div>
 

@@ -188,7 +188,7 @@ onMounted(() => {
 						}}</span>
 					</div>
 					<div class="detail-item">
-						<span class="detail-label">Seats to Elect</span>
+						<span class="detail-label">Selections</span>
 						<span class="detail-value">{{ motion.seatCount }}</span>
 					</div>
 					<div class="detail-item">

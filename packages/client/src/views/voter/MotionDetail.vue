@@ -343,7 +343,7 @@ onUnmounted((): void => {
 					<span class="info-value">{{ motion.meetingName }}</span>
 				</div>
 				<div class="info-item">
-					<span class="info-label">Seats</span>
+					<span class="info-label">Selections</span>
 					<span class="info-value">{{ motion.seatCount }}</span>
 				</div>
 				<div class="info-item">

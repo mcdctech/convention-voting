@@ -41,7 +41,7 @@ function handleClick(): void {
 		</div>
 		<div class="motion-meta">
 			<span class="meeting-name">{{ motion.meetingName }}</span>
-			<span class="seat-count">{{ motion.seatCount }} seat(s)</span>
+			<span class="seat-count">{{ motion.seatCount }} selection(s)</span>
 		</div>
 		<div class="motion-action">
 			<span class="vote-prompt">Click to vote</span>

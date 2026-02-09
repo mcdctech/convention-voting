@@ -426,7 +426,7 @@ watch(currentPage, () => {
 						<th>Name</th>
 						<th>Description</th>
 						<th>Duration</th>
-						<th>Seats</th>
+						<th>Selections</th>
 						<th>Pool</th>
 						<th>Status</th>
 						<th>Votes</th>
