@@ -131,6 +131,19 @@ const selectedChoices = computed((): Choice[] => {
 	);
 });
 
+// Check if user is under-voting (selecting fewer than allowed when more are available)
+const isUnderVoting = computed((): boolean => {
+	if (motion.value === null || isAbstaining.value) {
+		return false;
+	}
+	const selectedCount = selectedChoiceIds.value.length;
+	const maxAllowed = motion.value.seatCount;
+	const totalChoices = motion.value.choices.length;
+
+	// Under-voting if: selected < max allowed AND selected < total available choices
+	return selectedCount < maxAllowed && selectedCount < totalChoices;
+});
+
 // Get reason message for why user cannot vote
 const cannotVoteMessage = computed((): string => {
 	if (motion.value === null) {
@@ -436,6 +449,17 @@ onUnmounted((): void => {
 							{{ choice.name }}
 						</li>
 					</ul>
+					<div
+						v-if="isUnderVoting && motion !== null"
+						class="under-vote-warning"
+					>
+						<p>
+							<strong>Note:</strong> You have selected
+							{{ selectedChoiceIds.length }} choice(s), but you may select up to
+							{{ Math.min(motion.seatCount, motion.choices.length) }}. To change
+							your selections, click Cancel.
+						</p>
+					</div>
 					<p class="warning-text">
 						This action cannot be undone. Your vote is final.
 					</p>
@@ -807,6 +831,20 @@ onUnmounted((): void => {
 	color: #ff9800;
 	font-size: 0.9rem;
 	font-style: italic;
+}
+
+.under-vote-warning {
+	margin: 1rem 0;
+	padding: 0.75rem 1rem;
+	background: #fff3e0;
+	border-left: 4px solid #ff9800;
+	border-radius: 4px;
+}
+
+.under-vote-warning p {
+	margin: 0;
+	color: #e65100;
+	font-size: 0.9rem;
 }
 
 .submit-error {
