@@ -1,13 +1,41 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { generatePasswords } from "../../services/api";
-import type { PasswordGenerationResult } from "@mcdc-convention-voting/shared";
+import { ref, onMounted } from "vue";
+import { generatePasswords, getPools } from "../../services/api";
+import type {
+	PasswordGenerationResult,
+	Pool,
+} from "@mcdc-convention-voting/shared";
+
+const ALL_POOLS_LIMIT = 1000;
+const INITIAL_PAGE = 1;
 
 const generating = ref(false);
 const error = ref<string | null>(null);
 const results = ref<PasswordGenerationResult[] | null>(null);
 
+// Pool selection
+const pools = ref<Pool[]>([]);
+const loadingPools = ref(false);
+const selectedPoolId = ref<number | null>(null);
+const onlyNullPasswords = ref(false);
+
 const showConfirmModal = ref(false);
+
+async function loadPools(): Promise<void> {
+	loadingPools.value = true;
+	try {
+		const response = await getPools(INITIAL_PAGE, ALL_POOLS_LIMIT);
+		pools.value = response.data;
+	} catch (err) {
+		// Silently fail - pools dropdown will just be empty
+	} finally {
+		loadingPools.value = false;
+	}
+}
+
+onMounted(() => {
+	void loadPools();
+});
 
 function requestGenerate(): void {
 	showConfirmModal.value = true;
@@ -25,7 +53,10 @@ async function handleGenerate(): Promise<void> {
 	results.value = null;
 
 	try {
-		const response = await generatePasswords();
+		const response = await generatePasswords({
+			poolId: selectedPoolId.value ?? undefined,
+			onlyNullPasswords: onlyNullPasswords.value || undefined,
+		});
 		if (response.data !== undefined) {
 			const { data } = response;
 			const { results: generatedResults } = data;
@@ -57,6 +88,20 @@ function downloadCSV(): void {
 	link.click();
 	window.URL.revokeObjectURL(url);
 }
+
+function getConfirmationMessage(): string {
+	const poolFilter =
+		selectedPoolId.value === null
+			? "all pools"
+			: (pools.value.find((p) => p.id === selectedPoolId.value)?.poolName ??
+				"selected pool");
+
+	const passwordFilter = onlyNullPasswords.value
+		? "users without existing passwords"
+		: "all users";
+
+	return `This will generate passwords for ${passwordFilter} in ${poolFilter}. Admin accounts will not be affected.`;
+}
 </script>
 
 <template>
@@ -64,16 +109,14 @@ function downloadCSV(): void {
 		<h2>Generate Passwords</h2>
 
 		<div class="warning-box">
-			<h3>⚠️ Important Information</h3>
+			<h3>Important Information</h3>
 			<p>
 				<strong>
-					This will generate NEW passwords for all voters and watchers.
+					This will generate passwords for selected voters and watchers.
 				</strong>
 			</p>
 			<p class="note">Admin accounts are not affected by this operation.</p>
 			<ul>
-				<li>All voter and watcher passwords will be reset</li>
-				<li>Passwords are generated once and cannot be retrieved again</li>
 				<li>Each password consists of a 5-letter word followed by 3 digits</li>
 				<li>Passwords are immediately hashed after generation</li>
 				<li>
@@ -88,6 +131,38 @@ function downloadCSV(): void {
 		</div>
 
 		<div class="generation-section">
+			<!-- Filter Options -->
+			<div class="filter-options">
+				<div class="filter-group">
+					<label for="pool-select">Filter by Pool:</label>
+					<select
+						id="pool-select"
+						v-model="selectedPoolId"
+						:disabled="generating || results !== null || loadingPools"
+					>
+						<option :value="null">All Pools</option>
+						<option v-for="pool in pools" :key="pool.id" :value="pool.id">
+							{{ pool.poolName }}
+						</option>
+					</select>
+				</div>
+
+				<div class="filter-group checkbox-group">
+					<label class="checkbox-label">
+						<input
+							v-model="onlyNullPasswords"
+							type="checkbox"
+							:disabled="generating || results !== null"
+						/>
+						Only users without existing passwords
+					</label>
+					<span class="filter-hint">
+						Check this to preserve existing passwords and only generate for new
+						users
+					</span>
+				</div>
+			</div>
+
 			<button
 				class="btn btn-primary btn-large"
 				:disabled="generating || results !== null"
@@ -101,13 +176,14 @@ function downloadCSV(): void {
 			<div class="modal-content" @click.stop>
 				<h3>Confirm Password Generation</h3>
 				<p>
-					Are you sure you want to generate NEW passwords for all voters and
-					watchers? This will reset their existing passwords and cannot be
-					undone. Admin accounts will not be affected.
+					{{ getConfirmationMessage() }}
+				</p>
+				<p v-if="!onlyNullPasswords" class="warning-text">
+					Existing passwords will be reset and cannot be recovered.
 				</p>
 				<div class="modal-actions">
 					<button class="btn btn-primary" @click="handleGenerate">
-						Yes, Reset Passwords
+						Yes, Generate Passwords
 					</button>
 					<button class="btn btn-secondary" @click="cancelGenerate">
 						Cancel
@@ -124,33 +200,39 @@ function downloadCSV(): void {
 				</button>
 			</div>
 
-			<div class="warning-box">
-				<p>
-					<strong>⚠️ SAVE THESE PASSWORDS NOW!</strong> They will not be shown
-					again.
-				</p>
+			<div v-if="results.length === 0" class="no-results">
+				<p>No users matched the selected filters.</p>
 			</div>
 
-			<table class="results-table">
-				<thead>
-					<tr>
-						<th>Username</th>
-						<th>Password</th>
-						<th>Voter ID</th>
-					</tr>
-				</thead>
-				<tbody>
-					<tr v-for="result in results" :key="result.voterId">
-						<td>{{ result.username }}</td>
-						<td class="password">
-							{{ result.password }}
-						</td>
-						<td class="voter-id">
-							{{ result.voterId }}
-						</td>
-					</tr>
-				</tbody>
-			</table>
+			<template v-else>
+				<div class="warning-box">
+					<p>
+						<strong>SAVE THESE PASSWORDS NOW!</strong> They will not be shown
+						again.
+					</p>
+				</div>
+
+				<table class="results-table">
+					<thead>
+						<tr>
+							<th>Username</th>
+							<th>Password</th>
+							<th>Voter ID</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-for="result in results" :key="result.voterId">
+							<td>{{ result.username }}</td>
+							<td class="password">
+								{{ result.password }}
+							</td>
+							<td class="voter-id">
+								{{ result.voterId }}
+							</td>
+						</tr>
+					</tbody>
+				</table>
+			</template>
 		</div>
 	</div>
 </template>
@@ -206,7 +288,61 @@ h2 {
 	padding: 2rem;
 	margin-bottom: 2rem;
 	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-	text-align: center;
+}
+
+.filter-options {
+	margin-bottom: 2rem;
+}
+
+.filter-group {
+	margin-bottom: 1.5rem;
+}
+
+.filter-group label {
+	display: block;
+	margin-bottom: 0.5rem;
+	font-weight: 500;
+	color: #333;
+}
+
+.filter-group select {
+	width: 100%;
+	max-width: 400px;
+	padding: 0.75rem;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+	font-size: 1rem;
+}
+
+.filter-group select:disabled {
+	background-color: #f5f5f5;
+	cursor: not-allowed;
+}
+
+.checkbox-group {
+	display: flex;
+	flex-direction: column;
+}
+
+.checkbox-label {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	cursor: pointer;
+	font-weight: normal;
+}
+
+.checkbox-label input[type="checkbox"] {
+	width: 18px;
+	height: 18px;
+	cursor: pointer;
+}
+
+.filter-hint {
+	font-size: 0.8125rem;
+	color: #666;
+	margin-top: 0.25rem;
+	margin-left: 1.625rem;
 }
 
 .btn {
@@ -226,6 +362,8 @@ h2 {
 .btn-large {
 	padding: 1rem 2rem;
 	font-size: 1.125rem;
+	display: block;
+	margin: 0 auto;
 }
 
 .btn-primary {
@@ -263,6 +401,12 @@ h2 {
 .results-header h3 {
 	margin: 0;
 	color: #2c3e50;
+}
+
+.no-results {
+	padding: 2rem;
+	text-align: center;
+	color: #666;
 }
 
 .results-table {
@@ -327,6 +471,11 @@ h2 {
 	margin-top: 0;
 	margin-bottom: 1rem;
 	color: #2c3e50;
+}
+
+.warning-text {
+	color: #c62828;
+	font-weight: 500;
 }
 
 .modal-actions {
