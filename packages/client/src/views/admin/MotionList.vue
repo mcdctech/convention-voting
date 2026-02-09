@@ -526,6 +526,13 @@ watch(currentPage, () => {
 									End Voting
 								</button>
 								<button
+									v-if="motion.status === MotionStatus.VotingComplete"
+									class="btn btn-small btn-info"
+									@click="editMotion(motion.id)"
+								>
+									View Results
+								</button>
+								<button
 									v-if="canStartVoting(motion.status)"
 									class="btn btn-small btn-danger"
 									@click="requestDelete(motion.id)"
@@ -785,6 +792,15 @@ watch(currentPage, () => {
 
 .btn-danger:hover {
 	background-color: #c82333;
+}
+
+.btn-info {
+	background-color: #17a2b8;
+	color: white;
+}
+
+.btn-info:hover {
+	background-color: #138496;
 }
 
 .btn:disabled {
