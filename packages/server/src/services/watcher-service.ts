@@ -388,15 +388,27 @@ export async function getWatcherMotionDetail(
 	// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 	const status = motion.status as MotionStatus;
 
-	// Get vote count if voting has started
+	// Get vote count and abstention count if voting has started
 	let totalVotesCast: number | null = null;
+	let totalAbstentions: number | null = null;
 	if (status !== MotionStatus.NotYetStarted) {
-		const voteCountResult = await db.query<{ count: string }>(
-			"SELECT COUNT(*) as count FROM votes WHERE motion_id = :motionId",
+		const voteCountResult = await db.query<{
+			count: string;
+			abstention_count: string;
+		}>(
+			`SELECT
+				COUNT(*) as count,
+				COUNT(*) FILTER (WHERE is_abstain = true) as abstention_count
+			 FROM votes
+			 WHERE motion_id = :motionId`,
 			{ motionId },
 		);
 		totalVotesCast = parseInt(
 			voteCountResult.rows[FIRST_ROW].count,
+			DECIMAL_RADIX,
+		);
+		totalAbstentions = parseInt(
+			voteCountResult.rows[FIRST_ROW].abstention_count,
 			DECIMAL_RADIX,
 		);
 	}
@@ -435,6 +447,7 @@ export async function getWatcherMotionDetail(
 		votingEndedAt: motion.voting_ended_at,
 		endOverride: motion.end_override,
 		totalVotesCast,
+		totalAbstentions,
 		result,
 	};
 }

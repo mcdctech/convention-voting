@@ -1031,6 +1031,15 @@ watch(
 									{{ detailedResults.participationRate.toFixed(1) }}%
 								</span>
 							</div>
+
+							<div class="summary-stat">
+								<span class="stat-label">Abstentions:</span>
+								<span class="stat-value">
+									{{ detailedResults.abstentionCount }} ({{
+										detailedResults.abstentionPercentage.toFixed(1)
+									}}%)
+								</span>
+							</div>
 						</div>
 
 						<!-- Choice Results -->

@@ -845,6 +845,7 @@ export interface WatcherMotionDetail {
 	endOverride: Date | null;
 	// Vote counts (null if not yet started)
 	totalVotesCast: number | null;
+	totalAbstentions: number | null;
 	// Results (only for completed motions)
 	result: WatcherMotionResult | null;
 }
