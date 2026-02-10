@@ -35,6 +35,7 @@ import type {
 	WatcherMotionDetail,
 	WatcherMotionVoter,
 	WatcherMotionResult,
+	CSVImportResult,
 } from "@mcdc-convention-voting/shared";
 
 // Constants

@@ -1,7 +1,7 @@
 /**
  * User management service
  */
-import { db } from "../database/db.js";
+import { db, withTransaction } from "../database/db.js";
 import { generatePassword, hashPassword } from "../utils/password-generator.js";
 import { generateUniqueUsername } from "../utils/username-generator.js";
 import { setUserPools } from "./pool-service.js";
@@ -232,6 +232,200 @@ export async function upsertUser(request: CreateUserRequest): Promise<User> {
 	}
 
 	return user;
+}
+
+// Batch size for bulk user operations
+const USER_BATCH_SIZE = 100;
+
+/**
+ * Data structure for batch user upsert
+ */
+export interface BatchUserData {
+	voterId: string;
+	firstName: string;
+	lastName: string;
+	isAdmin: boolean;
+	isWatcher: boolean;
+	isDisabled: boolean;
+	poolKeys?: string[];
+}
+
+/**
+ * Result of a batch user upsert operation
+ */
+export interface BatchUpsertResult {
+	success: number;
+	failed: number;
+	errors: Array<{ voterId: string; error: string }>;
+}
+
+/**
+ * Get all existing usernames from the database
+ * Used for batch username generation without individual queries
+ */
+async function getAllExistingUsernames(): Promise<Set<string>> {
+	const result = await db.query<{ username: string }>(
+		"SELECT username FROM users",
+	);
+	return new Set(result.rows.map((row) => row.username));
+}
+
+/**
+ * Generate a unique username without database queries
+ * Uses pre-fetched set of existing usernames and tracks new ones being created
+ */
+function generateUsernameFromSet(
+	firstName: string,
+	lastName: string,
+	existingUsernames: Set<string>,
+	newUsernames: Set<string>,
+): string {
+	const firstInitial = firstName.charAt(FIRST_ROW).toLowerCase();
+	const normalizedLastName = lastName.toLowerCase().replace(/[^a-z]/g, "");
+	const baseUsername = `${firstInitial}${normalizedLastName}`;
+	const INITIAL_COUNTER = 2;
+	const COUNTER_STEP = 1;
+
+	let candidate = baseUsername;
+	let counter = INITIAL_COUNTER;
+
+	// Check both existing and new usernames being created in this batch
+	while (existingUsernames.has(candidate) || newUsernames.has(candidate)) {
+		candidate = `${baseUsername}${counter}`;
+		counter += COUNTER_STEP;
+	}
+
+	// Track this username as being used
+	newUsernames.add(candidate);
+
+	return candidate;
+}
+
+/**
+ * Batch upsert users with optimized database operations
+ * Uses batch inserts and transactions for improved performance
+ */
+export async function batchUpsertUsers(
+	users: BatchUserData[],
+): Promise<BatchUpsertResult> {
+	const result: BatchUpsertResult = {
+		success: 0,
+		failed: 0,
+		errors: [],
+	};
+
+	if (users.length === EMPTY_ARRAY_LENGTH) {
+		return result;
+	}
+
+	// Pre-fetch all existing usernames for batch username generation
+	const existingUsernames = await getAllExistingUsernames();
+	const newUsernames = new Set<string>();
+
+	// Pre-fetch existing voter IDs to identify new vs existing users
+	const voterIds = users.map((u) => u.voterId);
+	const existingVoterIdsResult = await db.query<{ voter_id: string }>(
+		"SELECT voter_id FROM users WHERE voter_id = ANY(:voterIds)",
+		{ voterIds },
+	);
+	const existingVoterIds = new Set(
+		existingVoterIdsResult.rows.map((r) => r.voter_id),
+	);
+
+	// Prepare data with generated usernames
+	const preparedUsers: Array<{
+		data: BatchUserData;
+		username: string;
+	}> = [];
+
+	for (const user of users) {
+		// Only generate username for new users (existing users keep their username)
+		const needsUsername = !existingVoterIds.has(user.voterId);
+		const username = needsUsername
+			? generateUsernameFromSet(
+					user.firstName,
+					user.lastName,
+					existingUsernames,
+					newUsernames,
+				)
+			: ""; // Will be ignored for existing users due to ON CONFLICT
+
+		preparedUsers.push({ data: user, username });
+	}
+
+	// Process in batches within a transaction
+	await withTransaction(async (tx) => {
+		for (let i = FIRST_ROW; i < preparedUsers.length; i += USER_BATCH_SIZE) {
+			const batch = preparedUsers.slice(i, i + USER_BATCH_SIZE);
+
+			// Extract arrays for UNNEST
+			const usernames = batch.map((u) => u.username);
+			const batchVoterIds = batch.map((u) => u.data.voterId);
+			const firstNames = batch.map((u) => u.data.firstName);
+			const lastNames = batch.map((u) => u.data.lastName);
+			const isAdmins = batch.map((u) => u.data.isAdmin);
+			const isWatchers = batch.map((u) => u.data.isWatcher);
+			const isDisableds = batch.map((u) => u.data.isDisabled);
+			// Create null password array in JS (avoids ARRAY_FILL parameter type issues)
+			const nullPasswords: null[] = batch.map(() => null);
+
+			// Batch upsert using UNNEST
+			// eslint-disable-next-line no-await-in-loop -- Sequential batches within transaction
+			const upsertResult = await tx.query<{ id: string; voter_id: string }>(
+				`INSERT INTO users (username, voter_id, first_name, last_name, password_hash, is_admin, is_watcher, is_disabled)
+				 SELECT * FROM UNNEST(
+				   :usernames::text[],
+				   :voterIds::text[],
+				   :firstNames::text[],
+				   :lastNames::text[],
+				   :nullPasswords::text[],
+				   :isAdmins::boolean[],
+				   :isWatchers::boolean[],
+				   :isDisableds::boolean[]
+				 )
+				 ON CONFLICT (voter_id) DO UPDATE SET
+				   first_name = EXCLUDED.first_name,
+				   last_name = EXCLUDED.last_name,
+				   is_admin = EXCLUDED.is_admin,
+				   is_watcher = EXCLUDED.is_watcher,
+				   is_disabled = EXCLUDED.is_disabled,
+				   updated_at = NOW()
+				 RETURNING id, voter_id`,
+				{
+					usernames,
+					voterIds: batchVoterIds,
+					firstNames,
+					lastNames,
+					nullPasswords,
+					isAdmins,
+					isWatchers,
+					isDisableds,
+				},
+			);
+
+			// Map voter_id to user_id for pool associations
+			const voterIdToUserId = new Map(
+				upsertResult.rows.map((r) => [r.voter_id, r.id]),
+			);
+
+			// Batch pool associations (pass transaction context to avoid nested transactions)
+			for (const { data } of batch) {
+				const userId = voterIdToUserId.get(data.voterId);
+				if (
+					userId !== undefined &&
+					data.poolKeys !== undefined &&
+					data.poolKeys.length > EMPTY_ARRAY_LENGTH
+				) {
+					// eslint-disable-next-line no-await-in-loop -- Sequential pool associations within transaction
+					await setUserPools(userId, data.poolKeys, tx);
+				}
+			}
+
+			result.success += batch.length;
+		}
+	});
+
+	return result;
 }
 
 /**
@@ -596,9 +790,13 @@ export async function enableUser(userId: string): Promise<User> {
 	};
 }
 
+// Batch size for password updates
+const PASSWORD_BATCH_SIZE = 100;
+
 /**
  * Generate passwords for users with optional filtering
  * Admin users are always excluded to prevent accidental credential changes
+ * Uses batch operations for improved performance
  *
  * @param options - Optional filters
  * @param options.poolId - Only generate for users in this pool
@@ -639,28 +837,62 @@ export async function generatePasswordsForUsers(
 		voter_id: string | null;
 	}>(query, { poolId: poolId ?? null });
 
-	const results: PasswordGenerationResult[] = [];
-
-	// Generate and set passwords for each user
-	for (const user of usersResult.rows) {
-		const password = generatePassword();
-		// eslint-disable-next-line no-await-in-loop -- Sequential password generation required for security
-		const hashedPassword = await hashPassword(password);
-
-		// eslint-disable-next-line no-await-in-loop -- Sequential database update required for password generation
-		await db.query(
-			"UPDATE users SET password_hash = :hashedPassword, updated_at = NOW() WHERE id = :userId",
-			{ hashedPassword, userId: user.id },
-		);
-
-		results.push({
-			voterId: user.voter_id ?? "N/A",
-			username: user.username,
-			password,
-		});
+	// If no users, return early
+	if (usersResult.rows.length === EMPTY_ARRAY_LENGTH) {
+		return [];
 	}
 
-	return results;
+	// Generate all passwords and prepare results in memory
+	const passwordsToHash: Array<{
+		userId: string;
+		username: string;
+		voterId: string | null;
+		password: string;
+	}> = usersResult.rows.map((user) => ({
+		userId: user.id,
+		username: user.username,
+		voterId: user.voter_id,
+		password: generatePassword(),
+	}));
+
+	// Hash all passwords in parallel for performance
+	const hashedData = await Promise.all(
+		passwordsToHash.map(async (item) => ({
+			...item,
+			hashedPassword: await hashPassword(item.password),
+		})),
+	);
+
+	// Batch update passwords in a transaction
+	await withTransaction(async (tx) => {
+		// Process in batches to avoid query size limits
+		for (let i = FIRST_ROW; i < hashedData.length; i += PASSWORD_BATCH_SIZE) {
+			const batch = hashedData.slice(i, i + PASSWORD_BATCH_SIZE);
+			const userIds = batch.map((item) => item.userId);
+			const hashedPasswords = batch.map((item) => item.hashedPassword);
+
+			// Use UNNEST for batch update
+			// eslint-disable-next-line no-await-in-loop -- Sequential batches within transaction
+			await tx.query(
+				`UPDATE users
+				 SET password_hash = data.password_hash,
+				     updated_at = NOW()
+				 FROM (
+				   SELECT unnest(:userIds::uuid[]) as id,
+				          unnest(:hashedPasswords::text[]) as password_hash
+				 ) as data
+				 WHERE users.id = data.id`,
+				{ userIds, hashedPasswords },
+			);
+		}
+	});
+
+	// Build results from in-memory data
+	return passwordsToHash.map((item) => ({
+		voterId: item.voterId ?? "N/A",
+		username: item.username,
+		password: item.password,
+	}));
 }
 
 /**

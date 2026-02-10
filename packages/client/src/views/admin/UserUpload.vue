@@ -7,7 +7,6 @@ const router = useRouter();
 
 // Constants
 const NO_FILES = 0;
-
 const NO_ERRORS = 0;
 
 const selectedFile = ref<File | null>(null);
@@ -19,6 +18,9 @@ const uploadResult = ref<{
 	errors: Array<{ row: number; voterId: string; error: string }>;
 } | null>(null);
 
+// Status message during upload
+const statusMessage = ref<string>("");
+
 function handleFileSelect(event: Event): void {
 	if (!(event.target instanceof HTMLInputElement)) {
 		return;
@@ -29,6 +31,7 @@ function handleFileSelect(event: Event): void {
 		const [file] = files;
 		selectedFile.value = file;
 		uploadResult.value = null;
+		statusMessage.value = "";
 	}
 }
 
@@ -40,15 +43,18 @@ async function handleUpload(): Promise<void> {
 	uploading.value = true;
 	uploadResult.value = null;
 	error.value = null;
+	statusMessage.value = "Processing CSV file...";
 
 	try {
 		const response = await uploadUsersCSV(selectedFile.value);
 		if (response.data !== undefined) {
 			const { data } = response;
 			uploadResult.value = data;
+			statusMessage.value = "";
 		}
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to upload CSV";
+		statusMessage.value = "";
 	} finally {
 		uploading.value = false;
 	}
@@ -150,6 +156,11 @@ function goToUsers(): void {
 			>
 				{{ uploading ? "Uploading..." : "Upload CSV" }}
 			</button>
+
+			<!-- Status Message -->
+			<div v-if="uploading && statusMessage" class="status-message">
+				{{ statusMessage }}
+			</div>
 		</div>
 
 		<div v-if="uploadResult" class="upload-result">
@@ -266,6 +277,15 @@ h2 {
 	background-color: #e3f2fd;
 	border-radius: 4px;
 	color: #1976d2;
+}
+
+.status-message {
+	margin-top: 1rem;
+	padding: 0.75rem 1rem;
+	background-color: #e3f2fd;
+	border-radius: 4px;
+	color: #1976d2;
+	font-size: 0.9rem;
 }
 
 .btn {
