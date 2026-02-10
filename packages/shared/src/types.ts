@@ -212,6 +212,34 @@ export interface PoolCSVRow {
 }
 
 /**
+ * CSV import result
+ */
+export interface CSVImportResult {
+	success: number;
+	failed: number;
+	errors: Array<{ row: number; voterId: string; error: string }>;
+}
+
+/**
+ * CSV import phases for progress tracking
+ */
+export type CSVImportPhase =
+	| "parsing"
+	| "validating"
+	| "importing"
+	| "complete";
+
+/**
+ * CSV import progress update (sent via SSE)
+ */
+export interface CSVImportProgress {
+	phase: CSVImportPhase;
+	current: number;
+	total: number;
+	message: string;
+}
+
+/**
  * Request to create a single pool
  */
 export interface CreatePoolRequest {

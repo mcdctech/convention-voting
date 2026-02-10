@@ -62,12 +62,30 @@ function getConnectionString(): string {
 
 const connectionString = getConnectionString();
 
+// Pool configuration for production performance
+const DEFAULT_POOL_MIN = 2;
+const DEFAULT_POOL_MAX = 20;
+const IDLE_TIMEOUT_MS = 30000;
+const CONNECTION_TIMEOUT_MS = 5000;
+
 /**
- * TinyPg database instance
+ * TinyPg database instance with connection pool configuration
+ *
+ * Pool settings:
+ * - min: Keep minimum connections warm for faster response
+ * - max: Allow more concurrent queries under load (default was ~10)
+ * - idleTimeoutMillis: Clean up unused connections after 30s
+ * - connectionTimeoutMillis: Fast-fail rather than hang on connection issues
  */
 export const db = new TinyPg({
 	connection_string: connectionString,
 	root_dir: join(DIRNAME, "queries"),
+	pool_options: {
+		min: DEFAULT_POOL_MIN,
+		max: DEFAULT_POOL_MAX,
+		idle_timeout_ms: IDLE_TIMEOUT_MS,
+		connection_timeout_ms: CONNECTION_TIMEOUT_MS,
+	},
 });
 
 /**
@@ -143,4 +161,26 @@ export async function testConnection(): Promise<boolean> {
 		logger.error({ error }, "Database connection failed");
 		return false;
 	}
+}
+
+/**
+ * Execute a function within a database transaction
+ *
+ * All queries executed using the provided db instance will be part of the same transaction.
+ * The transaction is automatically committed on success or rolled back on error.
+ *
+ * @param fn - Function to execute within the transaction
+ * @returns The result of the function
+ *
+ * @example
+ * const result = await withTransaction(async (tx) => {
+ *   await tx.query("INSERT INTO users ...", { ... });
+ *   await tx.query("INSERT INTO user_pools ...", { ... });
+ *   return userId;
+ * });
+ */
+export async function withTransaction<T>(
+	fn: (transactionDb: TinyPg) => Promise<T>,
+): Promise<T> {
+	return await db.transaction(fn);
 }

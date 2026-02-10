@@ -1,7 +1,8 @@
 /**
  * Pool management service
  */
-import { db } from "../database/db.js";
+import { db, withTransaction } from "../database/db.js";
+import type { TinyPg } from "tinypg";
 import type {
 	Pool,
 	CreatePoolRequest,
@@ -505,21 +506,56 @@ export async function removeUserFromPool(
 
 /**
  * Set user's pool associations (replaces all existing associations)
+ * Uses a transaction to ensure atomicity - either all associations update or none do
+ *
+ * @param userId - The user ID to set pools for
+ * @param poolKeys - Array of pool keys to associate with the user
+ * @param existingTx - Optional existing transaction context (reuses caller's transaction)
  */
 export async function setUserPools(
 	userId: string,
 	poolKeys: string[],
+	existingTx?: TinyPg,
 ): Promise<void> {
-	// Start by removing all existing associations
-	await db.query("DELETE FROM user_pools WHERE user_id = :userId", { userId });
+	// Helper function containing the actual logic
+	const doSetPools = async (tx: TinyPg): Promise<void> => {
+		// Remove all existing associations
+		await tx.query("DELETE FROM user_pools WHERE user_id = :userId", {
+			userId,
+		});
 
-	// Add new associations
-	for (const poolKey of poolKeys) {
-		// eslint-disable-next-line no-await-in-loop -- Sequential pool lookup required
-		const pool = await getPoolByKey(poolKey);
-		if (pool !== null) {
-			// eslint-disable-next-line no-await-in-loop -- Sequential pool association required
-			await addUserToPool(pool.id, userId);
+		// Skip if no new pools to add
+		if (poolKeys.length === EMPTY_ARRAY_LENGTH) {
+			return;
 		}
+
+		// Get all pool IDs in a single query
+		const poolResult = await tx.query<{ id: number; pool_key: string }>(
+			`SELECT id, pool_key FROM pools WHERE pool_key = ANY(:poolKeys)`,
+			{ poolKeys },
+		);
+
+		// Skip if no valid pools found
+		if (poolResult.rows.length === EMPTY_ARRAY_LENGTH) {
+			return;
+		}
+
+		// Build batch insert values
+		const poolIds = poolResult.rows.map((row) => row.id);
+
+		// Insert all associations in a single query using UNNEST
+		await tx.query(
+			`INSERT INTO user_pools (user_id, pool_id)
+       SELECT :userId, unnest(:poolIds::int[])
+       ON CONFLICT (user_id, pool_id) DO NOTHING`,
+			{ userId, poolIds },
+		);
+	};
+
+	// Use existing transaction if provided, otherwise create a new one
+	if (existingTx === undefined) {
+		await withTransaction(doSetPools);
+	} else {
+		await doSetPools(existingTx);
 	}
 }
