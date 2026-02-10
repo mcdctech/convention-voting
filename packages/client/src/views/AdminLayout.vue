@@ -43,6 +43,9 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 					<RouterLink to="/admin/passwords" class="dropdown-link">
 						Generate Passwords
 					</RouterLink>
+					<RouterLink to="/admin/users/cleanup" class="dropdown-link">
+						User Cleanup
+					</RouterLink>
 				</NavDropdown>
 				<NavDropdown label="Pools">
 					<RouterLink to="/admin/pools" class="dropdown-link">
@@ -98,6 +101,13 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 						@click="closeNav"
 					>
 						Generate Passwords
+					</RouterLink>
+					<RouterLink
+						to="/admin/users/cleanup"
+						class="mobile-nav-link"
+						@click="closeNav"
+					>
+						User Cleanup
 					</RouterLink>
 				</div>
 

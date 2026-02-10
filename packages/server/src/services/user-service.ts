@@ -257,6 +257,7 @@ export interface BatchUpsertResult {
 	success: number;
 	failed: number;
 	errors: Array<{ voterId: string; error: string }>;
+	warnings: Array<{ voterId: string; warning: string }>;
 }
 
 /**
@@ -312,6 +313,7 @@ export async function batchUpsertUsers(
 		success: 0,
 		failed: 0,
 		errors: [],
+		warnings: [],
 	};
 
 	if (users.length === EMPTY_ARRAY_LENGTH) {
@@ -417,7 +419,15 @@ export async function batchUpsertUsers(
 					data.poolKeys.length > EMPTY_ARRAY_LENGTH
 				) {
 					// eslint-disable-next-line no-await-in-loop -- Sequential pool associations within transaction
-					await setUserPools(userId, data.poolKeys, tx);
+					const poolResult = await setUserPools(userId, data.poolKeys, tx);
+
+					// Track invalid pool keys as warnings (user was still created/updated)
+					if (poolResult.invalidPoolKeys.length > EMPTY_ARRAY_LENGTH) {
+						result.warnings.push({
+							voterId: data.voterId,
+							warning: `Invalid pool keys (not found): ${poolResult.invalidPoolKeys.join(", ")}`,
+						});
+					}
 				}
 			}
 
@@ -997,4 +1007,145 @@ export async function ensureAdminUserFromEnvironment(): Promise<void> {
 			},
 		);
 	}
+}
+
+/**
+ * List users created within a date range
+ * Useful for identifying users from a specific CSV upload
+ */
+export async function listUsersByDateRange(
+	startDate: Date,
+	endDate: Date,
+	page = DEFAULT_PAGE,
+	limit = DEFAULT_LIMIT,
+): Promise<{ users: User[]; total: number }> {
+	const offset = (page - PAGE_OFFSET_ADJUSTMENT) * limit;
+
+	// Get total count
+	const countResult = await db.query<{ count: string }>(
+		`SELECT COUNT(*) as count FROM users
+     WHERE created_at >= :startDate AND created_at <= :endDate`,
+		{ startDate, endDate },
+	);
+	const total = parseInt(countResult.rows[FIRST_ROW].count, 10);
+
+	// Get paginated users
+	const result = await db.query<{
+		id: string;
+		username: string;
+		voter_id: string | null;
+		first_name: string;
+		last_name: string;
+		is_admin: boolean;
+		is_watcher: boolean;
+		is_disabled: boolean;
+		created_at: Date;
+		updated_at: Date;
+	}>(
+		`SELECT id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at
+     FROM users
+     WHERE created_at >= :startDate AND created_at <= :endDate
+     ORDER BY created_at DESC
+     LIMIT :limit OFFSET :offset`,
+		{ startDate, endDate, limit, offset },
+	);
+
+	const users = result.rows.map((row) => ({
+		id: row.id,
+		username: row.username,
+		voterId: row.voter_id,
+		firstName: row.first_name,
+		lastName: row.last_name,
+		isAdmin: row.is_admin,
+		isWatcher: row.is_watcher,
+		isDisabled: row.is_disabled,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	}));
+
+	return { users, total };
+}
+
+/**
+ * Bulk delete users by their IDs
+ * Admin users cannot be deleted through this endpoint for safety
+ * Returns the count of actually deleted users
+ */
+export async function bulkDeleteUsers(userIds: string[]): Promise<{
+	deleted: number;
+	skipped: number;
+	skippedAdmins: string[];
+}> {
+	if (userIds.length === EMPTY_ARRAY_LENGTH) {
+		return { deleted: 0, skipped: 0, skippedAdmins: [] };
+	}
+
+	// First, identify admin users to skip them
+	const adminCheck = await db.query<{ id: string; username: string }>(
+		`SELECT id, username FROM users WHERE id = ANY(:userIds) AND is_admin = TRUE`,
+		{ userIds },
+	);
+
+	const adminIds = new Set(adminCheck.rows.map((r) => r.id));
+	const skippedAdmins = adminCheck.rows.map((r) => r.username);
+	const nonAdminIds = userIds.filter((id) => !adminIds.has(id));
+
+	if (nonAdminIds.length === EMPTY_ARRAY_LENGTH) {
+		return {
+			deleted: 0,
+			skipped: adminIds.size,
+			skippedAdmins,
+		};
+	}
+
+	// Delete user_pools associations first (foreign key)
+	await db.query(`DELETE FROM user_pools WHERE user_id = ANY(:userIds)`, {
+		userIds: nonAdminIds,
+	});
+
+	// Delete votes by these users (if any)
+	await db.query(`DELETE FROM votes WHERE user_id = ANY(:userIds)`, {
+		userIds: nonAdminIds,
+	});
+
+	// Delete the users
+	const deleteResult = await db.query<{ id: string }>(
+		`DELETE FROM users WHERE id = ANY(:userIds) RETURNING id`,
+		{ userIds: nonAdminIds },
+	);
+
+	return {
+		deleted: deleteResult.rows.length,
+		skipped: adminIds.size,
+		skippedAdmins,
+	};
+}
+
+/**
+ * Delete a single user by ID
+ * Admin users cannot be deleted for safety
+ */
+export async function deleteUser(userId: string): Promise<void> {
+	// Check if user is admin
+	const userCheck = await db.query<{ is_admin: boolean }>(
+		`SELECT is_admin FROM users WHERE id = :userId`,
+		{ userId },
+	);
+
+	if (userCheck.rows.length === EMPTY_ARRAY_LENGTH) {
+		throw new Error(`User with ID ${userId} not found`);
+	}
+
+	if (userCheck.rows[FIRST_ROW].is_admin) {
+		throw new Error("Cannot delete admin users");
+	}
+
+	// Delete user_pools associations first
+	await db.query(`DELETE FROM user_pools WHERE user_id = :userId`, { userId });
+
+	// Delete votes by this user
+	await db.query(`DELETE FROM votes WHERE user_id = :userId`, { userId });
+
+	// Delete the user
+	await db.query(`DELETE FROM users WHERE id = :userId`, { userId });
 }

@@ -8,9 +8,12 @@ import {
 	createUser,
 	getUserById,
 	listUsers,
+	listUsersByDateRange,
 	updateUser,
 	disableUser,
 	enableUser,
+	deleteUser,
+	bulkDeleteUsers,
 	generatePasswordsForUsers,
 	resetUserPassword,
 	getSystemSettings,
@@ -118,6 +121,36 @@ function validatePoolKeyFormat(poolKey: string): string | undefined {
 	return undefined;
 }
 const DECIMAL_RADIX = 10;
+
+/**
+ * Parse date range parameters from query string
+ * @returns Date objects if valid, error message if invalid
+ */
+function parseDateRangeParams(query: Record<string, unknown>):
+	| {
+			success: true;
+			start: Date;
+			end: Date;
+	  }
+	| { success: false; error: string } {
+	const startDateParam =
+		typeof query.startDate === "string" ? query.startDate : undefined;
+	const endDateParam =
+		typeof query.endDate === "string" ? query.endDate : undefined;
+
+	if (startDateParam === undefined || endDateParam === undefined) {
+		return { success: false, error: "startDate and endDate are required" };
+	}
+
+	const start = new Date(startDateParam);
+	const end = new Date(endDateParam);
+
+	if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+		return { success: false, error: "Invalid date format. Use ISO format." };
+	}
+
+	return { success: true, start, end };
+}
 
 // File upload limits
 const BYTES_PER_KB = 1024;
@@ -258,6 +291,48 @@ adminRouter.post("/users", async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/admin/users/by-date-range
+ * List users created within a date range (for identifying imported users)
+ * Query params: startDate, endDate (ISO format), page, limit
+ * NOTE: This route MUST come before /users/:id to avoid being caught by the :id param
+ */
+adminRouter.get("/users/by-date-range", async (req: Request, res: Response) => {
+	try {
+		const dateParams = parseDateRangeParams(req.query);
+		if (!dateParams.success) {
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: dateParams.error });
+			return;
+		}
+
+		const pageParam =
+			typeof req.query.page === "string"
+				? req.query.page
+				: String(DEFAULT_PAGE);
+		const limitParam =
+			typeof req.query.limit === "string"
+				? req.query.limit
+				: String(DEFAULT_LIMIT);
+		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
+		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
+
+		const result = await listUsersByDateRange(
+			dateParams.start,
+			dateParams.end,
+			page,
+			limit,
+		);
+		res.json({ success: true, data: result.users, total: result.total });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+			.json({ error: `Failed to list users: ${message}` });
+	}
+});
+
+/**
  * GET /api/admin/users/:id
  * Get a single user by ID
  */
@@ -328,6 +403,57 @@ adminRouter.post("/users/:id/enable", async (req: Request, res: Response) => {
 		res
 			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
 			.json({ error: `Failed to enable user: ${message}` });
+	}
+});
+
+/**
+ * DELETE /api/admin/users/:id
+ * Delete a single user (cannot delete admins)
+ */
+adminRouter.delete("/users/:id", async (req: Request, res: Response) => {
+	try {
+		await deleteUser(req.params.id);
+		res.json({ success: true });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		const status = message.includes("not found")
+			? HTTP_STATUS.CLIENT_ERROR.NOT_FOUND
+			: HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST;
+		res.status(status).json({ error: `Failed to delete user: ${message}` });
+	}
+});
+
+/**
+ * POST /api/admin/users/bulk-delete
+ * Bulk delete users by IDs (cannot delete admins)
+ * Body: { userIds: string[] }
+ */
+adminRouter.post("/users/bulk-delete", async (req: Request, res: Response) => {
+	try {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+		const body: { userIds?: string[] } = req.body;
+
+		if (!Array.isArray(body.userIds)) {
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: "userIds must be an array" });
+			return;
+		}
+
+		const result = await bulkDeleteUsers(body.userIds);
+		res.json({
+			success: true,
+			data: {
+				deleted: result.deleted,
+				skipped: result.skipped,
+				skippedAdmins: result.skippedAdmins,
+			},
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+			.json({ error: `Failed to delete users: ${message}` });
 	}
 });
 
