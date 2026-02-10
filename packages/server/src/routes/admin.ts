@@ -167,7 +167,7 @@ adminRouter.post(
 
 /**
  * GET /api/admin/users
- * List all users with pagination and optional search
+ * List all users with pagination and optional search/pool filter
  */
 adminRouter.get("/users", async (req: Request, res: Response) => {
 	try {
@@ -181,10 +181,20 @@ adminRouter.get("/users", async (req: Request, res: Response) => {
 				: String(DEFAULT_LIMIT);
 		const searchParam =
 			typeof req.query.search === "string" ? req.query.search : undefined;
+		const poolIdParam =
+			typeof req.query.poolId === "string" ? req.query.poolId : undefined;
+		const poolIdParsed =
+			poolIdParam === undefined
+				? undefined
+				: parseInt(poolIdParam, DECIMAL_RADIX);
+		const poolId =
+			poolIdParsed === undefined || isNaN(poolIdParsed)
+				? undefined
+				: poolIdParsed;
 		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
 		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
 
-		const { users, total } = await listUsers(page, limit, searchParam);
+		const { users, total } = await listUsers(page, limit, searchParam, poolId);
 
 		const response: UserListResponse = {
 			data: users,
