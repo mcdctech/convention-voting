@@ -508,37 +508,51 @@ export async function removeUserFromPool(
  * Set user's pool associations (replaces all existing associations)
  * Uses a transaction to ensure atomicity - either all associations update or none do
  *
+ * IMPORTANT: This function validates pool keys BEFORE deleting existing associations
+ * to prevent data loss when invalid pool keys are provided.
+ *
  * @param userId - The user ID to set pools for
  * @param poolKeys - Array of pool keys to associate with the user
  * @param existingTx - Optional existing transaction context (reuses caller's transaction)
+ * @returns Object with validPoolCount and invalidPoolKeys for caller to handle warnings
  */
 export async function setUserPools(
 	userId: string,
 	poolKeys: string[],
 	existingTx?: TinyPg,
-): Promise<void> {
+): Promise<{ validPoolCount: number; invalidPoolKeys: string[] }> {
 	// Helper function containing the actual logic
-	const doSetPools = async (tx: TinyPg): Promise<void> => {
-		// Remove all existing associations
-		await tx.query("DELETE FROM user_pools WHERE user_id = :userId", {
-			userId,
-		});
-
-		// Skip if no new pools to add
+	const doSetPools = async (
+		tx: TinyPg,
+	): Promise<{ validPoolCount: number; invalidPoolKeys: string[] }> => {
+		// If no pools to add, just clear existing associations
 		if (poolKeys.length === EMPTY_ARRAY_LENGTH) {
-			return;
+			await tx.query("DELETE FROM user_pools WHERE user_id = :userId", {
+				userId,
+			});
+			return { validPoolCount: 0, invalidPoolKeys: [] };
 		}
 
-		// Get all pool IDs in a single query
+		// FIRST: Validate pool keys exist BEFORE deleting anything
 		const poolResult = await tx.query<{ id: number; pool_key: string }>(
 			`SELECT id, pool_key FROM pools WHERE pool_key = ANY(:poolKeys)`,
 			{ poolKeys },
 		);
 
-		// Skip if no valid pools found
+		// Identify which pool keys are invalid
+		const foundPoolKeys = new Set(poolResult.rows.map((row) => row.pool_key));
+		const invalidPoolKeys = poolKeys.filter((key) => !foundPoolKeys.has(key));
+
+		// If ALL pool keys are invalid, do NOT delete existing associations
+		// This prevents accidental data loss from typos or missing pools
 		if (poolResult.rows.length === EMPTY_ARRAY_LENGTH) {
-			return;
+			return { validPoolCount: 0, invalidPoolKeys };
 		}
+
+		// NOW it's safe to delete existing associations since we have valid pools to add
+		await tx.query("DELETE FROM user_pools WHERE user_id = :userId", {
+			userId,
+		});
 
 		// Build batch insert values
 		const poolIds = poolResult.rows.map((row) => row.id);
@@ -550,12 +564,13 @@ export async function setUserPools(
        ON CONFLICT (user_id, pool_id) DO NOTHING`,
 			{ userId, poolIds },
 		);
+
+		return { validPoolCount: poolIds.length, invalidPoolKeys };
 	};
 
 	// Use existing transaction if provided, otherwise create a new one
 	if (existingTx === undefined) {
-		await withTransaction(doSetPools);
-	} else {
-		await doSetPools(existingTx);
+		return await withTransaction(doSetPools);
 	}
+	return await doSetPools(existingTx);
 }

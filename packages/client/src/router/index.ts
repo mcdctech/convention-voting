@@ -11,6 +11,7 @@ import UserList from "../views/admin/UserList.vue";
 import UserUpload from "../views/admin/UserUpload.vue";
 import UserCreate from "../views/admin/UserCreate.vue";
 import UserEdit from "../views/admin/UserEdit.vue";
+import UserCleanup from "../views/admin/UserCleanup.vue";
 import PasswordGeneration from "../views/admin/PasswordGeneration.vue";
 import PoolList from "../views/admin/PoolList.vue";
 import PoolUpload from "../views/admin/PoolUpload.vue";
@@ -104,6 +105,11 @@ export const router = createRouter({
 					name: "UserEdit",
 					component: UserEdit,
 					props: true,
+				},
+				{
+					path: "users/cleanup",
+					name: "UserCleanup",
+					component: UserCleanup,
 				},
 				{
 					path: "passwords",

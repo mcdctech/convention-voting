@@ -344,6 +344,7 @@ interface BatchPhaseResult {
 	success: number;
 	failed: number;
 	errors: Array<{ row: number; voterId: string; error: string }>;
+	warnings: Array<{ voterId: string; warning: string }>;
 }
 
 /**
@@ -353,7 +354,7 @@ async function processBatchUpsert(
 	validatedUsers: ValidatedUserRow[],
 ): Promise<BatchPhaseResult> {
 	if (validatedUsers.length === EMPTY_ARRAY_LENGTH) {
-		return { success: 0, failed: 0, errors: [] };
+		return { success: 0, failed: 0, errors: [], warnings: [] };
 	}
 
 	try {
@@ -369,7 +370,11 @@ async function processBatchUpsert(
 		}));
 
 		logger.info(
-			{ success: batchResult.success, failed: batchResult.failed },
+			{
+				success: batchResult.success,
+				failed: batchResult.failed,
+				warnings: batchResult.warnings.length,
+			},
 			"Batch user import completed",
 		);
 
@@ -377,6 +382,7 @@ async function processBatchUpsert(
 			success: batchResult.success,
 			failed: batchResult.failed,
 			errors,
+			warnings: batchResult.warnings,
 		};
 	} catch (unknownError: unknown) {
 		// If batch operation fails entirely, mark all as failed
@@ -394,6 +400,7 @@ async function processBatchUpsert(
 					error: `Batch import failed: ${errorMessage}`,
 				},
 			],
+			warnings: [],
 		};
 	}
 }
@@ -488,6 +495,7 @@ export async function importUsersFromCSV(
 		success: 0,
 		failed: 0,
 		errors: [],
+		warnings: [],
 	};
 
 	// Helper to safely call progress callback
@@ -598,6 +606,7 @@ export async function importUsersFromCSV(
 			result.success += batchResult.success;
 			result.failed += batchResult.failed;
 			result.errors.push(...batchResult.errors);
+			result.warnings?.push(...batchResult.warnings);
 
 			emitProgress(
 				"complete",

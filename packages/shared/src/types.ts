@@ -218,6 +218,7 @@ export interface CSVImportResult {
 	success: number;
 	failed: number;
 	errors: Array<{ row: number; voterId: string; error: string }>;
+	warnings?: Array<{ voterId: string; warning: string }>;
 }
 
 /**

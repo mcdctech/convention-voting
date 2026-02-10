@@ -17,6 +17,12 @@ const PAGE_STEP = 1;
 const canGoPrevious = computed(() => props.currentPage > MIN_PAGE);
 const canGoNext = computed(() => props.currentPage < props.totalPages);
 
+function goToFirst(): void {
+	if (canGoPrevious.value) {
+		emit("pageChange", MIN_PAGE);
+	}
+}
+
 function goToPrevious(): void {
 	if (canGoPrevious.value) {
 		emit("pageChange", props.currentPage - PAGE_STEP);
@@ -28,23 +34,49 @@ function goToNext(): void {
 		emit("pageChange", props.currentPage + PAGE_STEP);
 	}
 }
+
+function goToLast(): void {
+	if (canGoNext.value) {
+		emit("pageChange", props.totalPages);
+	}
+}
 </script>
 
 <template>
 	<div class="table-pagination">
-		<button
-			class="pagination-btn"
-			:disabled="!canGoPrevious"
-			@click="goToPrevious"
-		>
-			Previous
-		</button>
+		<div class="pagination-buttons">
+			<button
+				class="pagination-btn"
+				:disabled="!canGoPrevious"
+				title="First page"
+				@click="goToFirst"
+			>
+				First
+			</button>
+			<button
+				class="pagination-btn"
+				:disabled="!canGoPrevious"
+				@click="goToPrevious"
+			>
+				Previous
+			</button>
+		</div>
 		<span class="page-info">
 			Page {{ currentPage }} of {{ totalPages }} ({{ totalItems }} total)
 		</span>
-		<button class="pagination-btn" :disabled="!canGoNext" @click="goToNext">
-			Next
-		</button>
+		<div class="pagination-buttons">
+			<button class="pagination-btn" :disabled="!canGoNext" @click="goToNext">
+				Next
+			</button>
+			<button
+				class="pagination-btn"
+				:disabled="!canGoNext"
+				title="Last page"
+				@click="goToLast"
+			>
+				Last
+			</button>
+		</div>
 	</div>
 </template>
 
@@ -56,6 +88,11 @@ function goToNext(): void {
 	padding: 1rem;
 	border-top: 1px solid #dee2e6;
 	background-color: #f8f9fa;
+}
+
+.pagination-buttons {
+	display: flex;
+	gap: 0.5rem;
 }
 
 .pagination-btn {

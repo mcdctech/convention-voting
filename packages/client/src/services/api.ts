@@ -998,3 +998,70 @@ export async function getWatcherMotionResult(
 		`${API_PREFIX}/watcher/motions/${motionId}/results`,
 	);
 }
+
+/**
+ * User Cleanup API Functions
+ */
+
+interface UsersByDateRangeResponse {
+	success: boolean;
+	data: User[];
+	total: number;
+}
+
+/**
+ * Get users created within a date range
+ */
+export async function getUsersByDateRange(
+	startDate: string,
+	endDate: string,
+	page = DEFAULT_PAGE,
+	limit = DEFAULT_PAGE_LIMIT,
+): Promise<UsersByDateRangeResponse> {
+	// Convert datetime-local format to ISO format for the API
+	const startISO = new Date(startDate).toISOString();
+	const endISO = new Date(endDate).toISOString();
+
+	const params = new URLSearchParams({
+		startDate: startISO,
+		endDate: endISO,
+		page: String(page),
+		limit: String(limit),
+	});
+	return await apiRequest<UsersByDateRangeResponse>(
+		`${API_PREFIX}/admin/users/by-date-range?${params.toString()}`,
+	);
+}
+
+interface BulkDeleteResult {
+	deleted: number;
+	skipped: number;
+	skippedAdmins: string[];
+}
+
+/**
+ * Bulk delete users by their IDs
+ */
+export async function bulkDeleteUsers(
+	userIds: string[],
+): Promise<ApiResponse<BulkDeleteResult>> {
+	return await apiRequest<ApiResponse<BulkDeleteResult>>(
+		`${API_PREFIX}/admin/users/bulk-delete`,
+		{
+			method: "POST",
+			body: JSON.stringify({ userIds }),
+		},
+	);
+}
+
+/**
+ * Delete a single user by ID
+ */
+export async function deleteUserById(id: string): Promise<ApiResponse<void>> {
+	return await apiRequest<ApiResponse<void>>(
+		`${API_PREFIX}/admin/users/${id}`,
+		{
+			method: "DELETE",
+		},
+	);
+}
