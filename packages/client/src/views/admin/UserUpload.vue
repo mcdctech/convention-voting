@@ -8,6 +8,7 @@ const router = useRouter();
 // Constants
 const NO_FILES = 0;
 const NO_ERRORS = 0;
+const NO_WARNINGS = 0;
 
 const selectedFile = ref<File | null>(null);
 const uploading = ref(false);
@@ -16,6 +17,7 @@ const uploadResult = ref<{
 	success: number;
 	failed: number;
 	errors: Array<{ row: number; voterId: string; error: string }>;
+	warnings?: Array<{ voterId: string; warning: string }>;
 } | null>(null);
 
 // Status message during upload
@@ -198,6 +200,37 @@ function goToUsers(): void {
 				</table>
 			</div>
 
+			<div
+				v-if="
+					uploadResult.warnings !== undefined &&
+					uploadResult.warnings.length > NO_WARNINGS
+				"
+				class="warning-list"
+			>
+				<h4>Warnings:</h4>
+				<p class="warning-description">
+					The following users were created but had issues with pool assignments.
+					Invalid pool keys were skipped.
+				</p>
+				<table class="warning-table">
+					<thead>
+						<tr>
+							<th>Voter ID</th>
+							<th>Warning</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr
+							v-for="(uploadWarning, index) in uploadResult.warnings"
+							:key="index"
+						>
+							<td>{{ uploadWarning.voterId }}</td>
+							<td>{{ uploadWarning.warning }}</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+
 			<button class="btn btn-secondary" @click="goToUsers">
 				Go to User List
 			</button>
@@ -374,6 +407,44 @@ h2 {
 	background-color: #f5f5f5;
 	font-weight: 600;
 	color: #2c3e50;
+}
+
+.warning-list {
+	margin: 1.5rem 0;
+}
+
+.warning-list h4 {
+	color: #f57c00;
+	margin-bottom: 0.5rem;
+}
+
+.warning-description {
+	color: #666;
+	font-size: 0.9rem;
+	margin-bottom: 1rem;
+}
+
+.warning-table {
+	width: 100%;
+	border-collapse: collapse;
+	margin-bottom: 1.5rem;
+}
+
+.warning-table th,
+.warning-table td {
+	padding: 0.75rem;
+	text-align: left;
+	border-bottom: 1px solid #ffe0b2;
+}
+
+.warning-table th {
+	background-color: #fff3e0;
+	font-weight: 600;
+	color: #e65100;
+}
+
+.warning-table tr:hover {
+	background-color: #fff8e1;
 }
 
 .download-template {

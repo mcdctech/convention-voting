@@ -2,6 +2,7 @@
  * Pool management service
  */
 import { db, withTransaction } from "../database/db.js";
+import { recordPendingPoolKeys } from "./pending-pool-service.js";
 import type { TinyPg } from "tinypg";
 import type {
 	Pool,
@@ -542,6 +543,11 @@ export async function setUserPools(
 		// Identify which pool keys are invalid
 		const foundPoolKeys = new Set(poolResult.rows.map((row) => row.pool_key));
 		const invalidPoolKeys = poolKeys.filter((key) => !foundPoolKeys.has(key));
+
+		// Record invalid pool keys as pending for later resolution
+		if (invalidPoolKeys.length > EMPTY_ARRAY_LENGTH) {
+			await recordPendingPoolKeys(userId, invalidPoolKeys, tx);
+		}
 
 		// If ALL pool keys are invalid, do NOT delete existing associations
 		// This prevents accidental data loss from typos or missing pools
