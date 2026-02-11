@@ -264,6 +264,62 @@ export interface UpdatePoolRequest {
 export type PoolListResponse = PaginatedResponse<Pool>;
 
 /**
+ * Pending Pool Key Types
+ * Used for tracking invalid pool keys from CSV imports
+ */
+
+/**
+ * Pending pool key summary for admin view
+ * Represents a pool key that was used in CSV import but doesn't exist
+ *
+ * Database schema (pending_pool_keys table):
+ * - id: SERIAL PRIMARY KEY
+ * - pool_key: VARCHAR(255) NOT NULL
+ * - user_id: UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+ * - created_at: TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+ * - UNIQUE (user_id, pool_key)
+ *
+ * This interface represents aggregated data from the table.
+ *
+ * IMPORTANT: Keep this type in sync with database migrations
+ */
+export interface PendingPoolKey {
+	poolKey: string;
+	userCount: number;
+	firstSeenAt: Date;
+}
+
+/**
+ * Request to resolve pending pool keys by creating a new pool
+ */
+export interface ResolvePendingPoolCreateRequest {
+	poolKey: string;
+	poolName: string;
+	description?: string;
+}
+
+/**
+ * Request to resolve pending pool keys by remapping users to existing pool
+ */
+export interface ResolvePendingPoolRemapRequest {
+	pendingPoolKey: string;
+	targetPoolId: number;
+}
+
+/**
+ * Response from resolve pending pool operation
+ */
+export interface ResolvePendingPoolResponse {
+	usersUpdated: number;
+	pool: Pool;
+}
+
+/**
+ * Paginated response for pending pool keys
+ */
+export type PendingPoolKeyListResponse = PaginatedResponse<PendingPoolKey>;
+
+/**
  * Meeting Management Types
  */
 

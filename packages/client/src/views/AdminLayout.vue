@@ -57,6 +57,9 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 					<RouterLink to="/admin/pools/create" class="dropdown-link">
 						Create Pool
 					</RouterLink>
+					<RouterLink to="/admin/pools/missing" class="dropdown-link">
+						Missing Pools
+					</RouterLink>
 				</NavDropdown>
 				<RouterLink to="/admin/meetings" class="nav-link">
 					Meetings
@@ -134,6 +137,13 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 						@click="closeNav"
 					>
 						Create Pool
+					</RouterLink>
+					<RouterLink
+						to="/admin/pools/missing"
+						class="mobile-nav-link"
+						@click="closeNav"
+					>
+						Missing Pools
 					</RouterLink>
 				</div>
 

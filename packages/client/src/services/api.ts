@@ -1065,3 +1065,87 @@ export async function deleteUserById(id: string): Promise<ApiResponse<void>> {
 		},
 	);
 }
+
+/**
+ * Pending Pool Key Management API Functions
+ */
+
+interface PendingPoolKey {
+	poolKey: string;
+	userCount: number;
+	firstSeenAt: Date;
+}
+
+interface PendingPoolKeyListResponse {
+	data: PendingPoolKey[];
+	pagination: {
+		page: number;
+		limit: number;
+		total: number;
+		totalPages: number;
+	};
+}
+
+interface ResolvePendingPoolResponse {
+	usersUpdated: number;
+	pool: Pool;
+}
+
+/**
+ * Get pending (missing) pool keys with user counts
+ */
+export async function getPendingPoolKeys(
+	page = DEFAULT_PAGE,
+	limit = DEFAULT_PAGE_LIMIT,
+): Promise<PendingPoolKeyListResponse> {
+	return await apiRequest<PendingPoolKeyListResponse>(
+		`${API_PREFIX}/admin/pools/pending?page=${page}&limit=${limit}`,
+	);
+}
+
+/**
+ * Resolve pending pool key by creating a new pool
+ */
+export async function resolvePendingPoolByCreating(request: {
+	poolKey: string;
+	poolName: string;
+	description?: string;
+}): Promise<ApiResponse<ResolvePendingPoolResponse>> {
+	return await apiRequest<ApiResponse<ResolvePendingPoolResponse>>(
+		`${API_PREFIX}/admin/pools/pending/create`,
+		{
+			method: "POST",
+			body: JSON.stringify(request),
+		},
+	);
+}
+
+/**
+ * Resolve pending pool key by remapping users to existing pool
+ */
+export async function resolvePendingPoolByRemapping(request: {
+	pendingPoolKey: string;
+	targetPoolId: number;
+}): Promise<ApiResponse<ResolvePendingPoolResponse>> {
+	return await apiRequest<ApiResponse<ResolvePendingPoolResponse>>(
+		`${API_PREFIX}/admin/pools/pending/remap`,
+		{
+			method: "POST",
+			body: JSON.stringify(request),
+		},
+	);
+}
+
+/**
+ * Delete pending pool key without resolving
+ */
+export async function deletePendingPoolKey(
+	poolKey: string,
+): Promise<ApiResponse<{ deletedCount: number }>> {
+	return await apiRequest<ApiResponse<{ deletedCount: number }>>(
+		`${API_PREFIX}/admin/pools/pending/${encodeURIComponent(poolKey)}`,
+		{
+			method: "DELETE",
+		},
+	);
+}

@@ -62,6 +62,12 @@ import {
 	callQuorum,
 	getActiveVotersForQuorum,
 } from "../services/quorum-service.js";
+import {
+	listPendingPoolKeys,
+	resolvePendingByCreatingPool,
+	resolvePendingByRemapping,
+	deletePendingPoolKey,
+} from "../services/pending-pool-service.js";
 import type {
 	CreateUserRequest,
 	UpdateUserRequest,
@@ -72,6 +78,9 @@ import type {
 	CreatePoolRequest,
 	UpdatePoolRequest,
 	PoolListResponse,
+	PendingPoolKeyListResponse,
+	ResolvePendingPoolCreateRequest,
+	ResolvePendingPoolRemapRequest,
 	CreateMeetingRequest,
 	UpdateMeetingRequest,
 	MeetingListResponse,
@@ -694,6 +703,159 @@ adminRouter.post("/pools", async (req: Request, res: Response) => {
 			.json({ error: `Failed to create pool: ${message}` });
 	}
 });
+
+/**
+ * GET /api/admin/pools/pending
+ * List pending (missing) pool keys with user counts
+ */
+adminRouter.get("/pools/pending", async (req: Request, res: Response) => {
+	try {
+		const pageParam =
+			typeof req.query.page === "string"
+				? req.query.page
+				: String(DEFAULT_PAGE);
+		const limitParam =
+			typeof req.query.limit === "string"
+				? req.query.limit
+				: String(DEFAULT_LIMIT);
+		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
+		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
+
+		const { pendingKeys, total } = await listPendingPoolKeys(page, limit);
+
+		const response: PendingPoolKeyListResponse = {
+			data: pendingKeys,
+			pagination: {
+				page,
+				limit,
+				total,
+				totalPages: Math.ceil(total / limit),
+			},
+		};
+
+		res.json(response);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+			.json({ error: `Failed to list pending pool keys: ${message}` });
+	}
+});
+
+/**
+ * POST /api/admin/pools/pending/create
+ * Resolve pending pool key by creating a new pool
+ */
+adminRouter.post(
+	"/pools/pending/create",
+	async (req: Request, res: Response) => {
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const request: ResolvePendingPoolCreateRequest = req.body;
+
+			// Validate required fields
+			if (isEmptyString(request.poolKey) || isEmptyString(request.poolName)) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "Missing required fields: poolKey, poolName",
+				});
+				return;
+			}
+
+			// Validate pool key format
+			const poolKeyError = validatePoolKeyFormat(request.poolKey.trim());
+			if (poolKeyError !== undefined) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: poolKeyError,
+				});
+				return;
+			}
+
+			const result = await resolvePendingByCreatingPool(
+				request.poolKey.trim(),
+				request.poolName.trim(),
+				request.description?.trim(),
+			);
+
+			res.status(HTTP_STATUS.SUCCESSFUL.CREATED).json({
+				success: true,
+				data: result,
+				message: `Created pool and associated ${result.usersUpdated} users`,
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to create pool from pending: ${message}` });
+		}
+	},
+);
+
+/**
+ * POST /api/admin/pools/pending/remap
+ * Resolve pending pool key by remapping users to existing pool
+ */
+adminRouter.post(
+	"/pools/pending/remap",
+	async (req: Request, res: Response) => {
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const request: ResolvePendingPoolRemapRequest = req.body;
+
+			// Validate required fields
+			if (
+				isEmptyString(request.pendingPoolKey) ||
+				typeof request.targetPoolId !== "number"
+			) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "Missing required fields: pendingPoolKey, targetPoolId",
+				});
+				return;
+			}
+
+			const result = await resolvePendingByRemapping(
+				request.pendingPoolKey.trim(),
+				request.targetPoolId,
+			);
+
+			res.json({
+				success: true,
+				data: result,
+				message: `Remapped ${result.usersUpdated} users to pool "${result.pool.poolName}"`,
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to remap pending pool key: ${message}` });
+		}
+	},
+);
+
+/**
+ * DELETE /api/admin/pools/pending/:poolKey
+ * Delete pending pool key records without resolving
+ */
+adminRouter.delete(
+	"/pools/pending/:poolKey",
+	async (req: Request, res: Response) => {
+		try {
+			// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Already using destructuring
+			const { poolKey } = req.params;
+			const deletedCount = await deletePendingPoolKey(poolKey);
+
+			res.json({
+				success: true,
+				data: { deletedCount },
+				message: `Deleted ${deletedCount} pending records for "${poolKey}"`,
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to delete pending pool key: ${message}` });
+		}
+	},
+);
 
 /**
  * GET /api/admin/pools/:id

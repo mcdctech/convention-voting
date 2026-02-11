@@ -18,6 +18,7 @@ import PoolUpload from "../views/admin/PoolUpload.vue";
 import PoolCreate from "../views/admin/PoolCreate.vue";
 import PoolEdit from "../views/admin/PoolEdit.vue";
 import PoolUsers from "../views/admin/PoolUsers.vue";
+import MissingPools from "../views/admin/MissingPools.vue";
 import MeetingList from "../views/admin/MeetingList.vue";
 import MeetingCreate from "../views/admin/MeetingCreate.vue";
 import MeetingEdit from "../views/admin/MeetingEdit.vue";
@@ -130,6 +131,11 @@ export const router = createRouter({
 					path: "pools/create",
 					name: "PoolCreate",
 					component: PoolCreate,
+				},
+				{
+					path: "pools/missing",
+					name: "MissingPools",
+					component: MissingPools,
 				},
 				{
 					path: "pools/:id/edit",
