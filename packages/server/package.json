@@ -25,6 +25,7 @@
 		"@pdc/http-status-codes": "^1.0.1",
 		"bcrypt": "^6.0.0",
 		"csv-parse": "^6.1.0",
+		"dotenv": "^17.4.1",
 		"express": "^4.21.2",
 		"jsonwebtoken": "^9.0.3",
 		"multer": "^2.0.2",

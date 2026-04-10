@@ -28,7 +28,7 @@ interface MotionRow {
 	name: string;
 	description: string | null;
 	planned_duration: number;
-	seat_count: number;
+	selection_count: number;
 	pool_name: string;
 	meeting_id: number;
 	meeting_name: string;
@@ -112,7 +112,7 @@ export async function getMotionForVoting(
 			m.name,
 			m.description,
 			m.planned_duration,
-			m.seat_count,
+			m.selection_count,
 			m.status,
 			COALESCE(p.pool_name, qp.pool_name) as pool_name,
 			mt.id as meeting_id,
@@ -195,7 +195,7 @@ export async function getMotionForVoting(
 		name: motionRow.name,
 		description: motionRow.description,
 		plannedDuration: motionRow.planned_duration,
-		seatCount: motionRow.seat_count,
+		selectionCount: motionRow.selection_count,
 		votingPoolName: motionRow.pool_name,
 		meetingId: motionRow.meeting_id,
 		meetingName: motionRow.meeting_name,
@@ -244,9 +244,9 @@ function validateVoteChoices(
 	}
 
 	// Validate choice count against seat count
-	if (!abstain && choiceIds.length > motion.seatCount) {
+	if (!abstain && choiceIds.length > motion.selectionCount) {
 		throw new Error(
-			`You can only select up to ${String(motion.seatCount)} choice(s)`,
+			`You can only select up to ${String(motion.selectionCount)} choice(s)`,
 		);
 	}
 
@@ -268,7 +268,7 @@ function validateVoteChoices(
  * 1. Motion exists and is voting_active
  * 2. User hasn't already voted
  * 3. User is in the voting pool
- * 4. Choice count doesn't exceed seat_count (unless abstaining)
+ * 4. Choice count doesn't exceed selection_count (unless abstaining)
  * 5. All choice IDs belong to this motion
  */
 export async function castVote(

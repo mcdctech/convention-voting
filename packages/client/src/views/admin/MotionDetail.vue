@@ -37,9 +37,9 @@ const DECIMAL_RADIX = 10;
 const FIRST_INDEX = 0;
 const ADJACENT_OFFSET = 1;
 const MIN_DURATION = 1;
-const MIN_SEAT_COUNT = 1;
+const MIN_SELECTION_COUNT = 1;
 const DEFAULT_DURATION = 5;
-const DEFAULT_SEAT_COUNT = 1;
+const DEFAULT_SELECTION_COUNT = 1;
 const STATS_POLL_INTERVAL_MS = 30000; // 30 seconds
 const MS_PER_SECOND = 1000;
 const SECONDS_PER_MINUTE = 60;
@@ -75,7 +75,7 @@ const formData = ref({
 	name: EMPTY_STRING,
 	description: EMPTY_STRING,
 	plannedDuration: DEFAULT_DURATION,
-	seatCount: DEFAULT_SEAT_COUNT,
+	selectionCount: DEFAULT_SELECTION_COUNT,
 	votingPoolId: EMPTY_STRING,
 });
 
@@ -83,7 +83,7 @@ const savedFormData = ref({
 	name: EMPTY_STRING,
 	description: EMPTY_STRING,
 	plannedDuration: DEFAULT_DURATION,
-	seatCount: DEFAULT_SEAT_COUNT,
+	selectionCount: DEFAULT_SELECTION_COUNT,
 	votingPoolId: EMPTY_STRING,
 });
 
@@ -110,7 +110,7 @@ const isDirty = computed((): boolean => {
 		formData.value.name !== savedFormData.value.name ||
 		formData.value.description !== savedFormData.value.description ||
 		formData.value.plannedDuration !== savedFormData.value.plannedDuration ||
-		formData.value.seatCount !== savedFormData.value.seatCount ||
+		formData.value.selectionCount !== savedFormData.value.selectionCount ||
 		formData.value.votingPoolId !== savedFormData.value.votingPoolId
 	);
 });
@@ -168,7 +168,7 @@ async function loadMotion(): Promise<void> {
 				name: data.name,
 				description: data.description ?? EMPTY_STRING,
 				plannedDuration: data.plannedDuration,
-				seatCount: data.seatCount,
+				selectionCount: data.selectionCount,
 				votingPoolId:
 					data.votingPoolId === null ? EMPTY_STRING : String(data.votingPoolId),
 			};
@@ -213,7 +213,7 @@ async function handleSubmit(): Promise<void> {
 		return;
 	}
 
-	if (formData.value.seatCount < MIN_SEAT_COUNT) {
+	if (formData.value.selectionCount < MIN_SELECTION_COUNT) {
 		error.value = "Selection count must be at least 1.";
 		return;
 	}
@@ -225,7 +225,7 @@ async function handleSubmit(): Promise<void> {
 		const trimmedDescription = formData.value.description.trim();
 		const motionData = {
 			plannedDuration: formData.value.plannedDuration,
-			seatCount: formData.value.seatCount,
+			selectionCount: formData.value.selectionCount,
 			description:
 				trimmedDescription === EMPTY_STRING ? undefined : trimmedDescription,
 			votingPoolId:
@@ -591,7 +591,7 @@ async function saveTitle(): Promise<void> {
 		await updateMotion(motionId, {
 			name: tempTitle.value.trim(),
 			plannedDuration: motion.value.plannedDuration,
-			seatCount: motion.value.seatCount,
+			selectionCount: motion.value.selectionCount,
 			description: motion.value.description ?? undefined,
 			votingPoolId: motion.value.votingPoolId ?? undefined,
 		});
@@ -768,10 +768,10 @@ watch(
 					</div>
 
 					<div class="form-group">
-						<label for="seatCount"> Selection Count </label>
+						<label for="selectionCount"> Selection Count </label>
 						<input
-							id="seatCount"
-							v-model.number="formData.seatCount"
+							id="selectionCount"
+							v-model.number="formData.selectionCount"
 							type="number"
 							min="1"
 							:disabled="!canEdit"
@@ -894,7 +894,7 @@ watch(
 					</div>
 					<div class="info-row">
 						<span class="info-label">Selection Count:</span>
-						<span class="info-value">{{ motion.seatCount }}</span>
+						<span class="info-value">{{ motion.selectionCount }}</span>
 					</div>
 					<div class="info-row">
 						<span class="info-label">Duration:</span>
@@ -974,7 +974,7 @@ watch(
 					</div>
 					<div class="info-row">
 						<span class="info-label">Selection Count:</span>
-						<span class="info-value">{{ motion.seatCount }}</span>
+						<span class="info-value">{{ motion.selectionCount }}</span>
 					</div>
 					<div class="info-row">
 						<span class="info-label">Duration:</span>
@@ -1046,8 +1046,11 @@ watch(
 						<div class="choice-results">
 							<h4>
 								Vote Distribution
-								<span v-if="detailedResults.seatCount > 1" class="seats-info">
-									(Top {{ detailedResults.seatCount }} win)
+								<span
+									v-if="detailedResults.selectionCount > 1"
+									class="seats-info"
+								>
+									(Top {{ detailedResults.selectionCount }} win)
 								</span>
 							</h4>
 

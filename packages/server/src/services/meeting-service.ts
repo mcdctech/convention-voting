@@ -34,7 +34,7 @@ const PAGE_OFFSET_ADJUSTMENT = 1;
 const DECIMAL_RADIX = 10;
 
 // Motion defaults
-const DEFAULT_SEAT_COUNT = 1;
+const DEFAULT_SELECTION_COUNT = 1;
 const INITIAL_SORT_ORDER = 0;
 const SORT_ORDER_INCREMENT = 1;
 
@@ -331,7 +331,7 @@ export async function createMotion(
 		name,
 		description,
 		plannedDuration,
-		seatCount,
+		selectionCount,
 		votingPoolId,
 	} = request;
 
@@ -361,7 +361,7 @@ export async function createMotion(
 		name: string;
 		description: string | null;
 		planned_duration: number;
-		seat_count: number;
+		selection_count: number;
 		voting_pool_id: number | null;
 		status: string;
 		end_override: Date | null;
@@ -370,15 +370,15 @@ export async function createMotion(
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`INSERT INTO motions (meeting_id, name, description, planned_duration, seat_count, voting_pool_id)
-		 VALUES (:meetingId, :name, :description, :plannedDuration, :seatCount, :votingPoolId)
+		`INSERT INTO motions (meeting_id, name, description, planned_duration, selection_count, voting_pool_id)
+		 VALUES (:meetingId, :name, :description, :plannedDuration, :selectionCount, :votingPoolId)
 		 RETURNING *`,
 		{
 			meetingId,
 			name,
 			description: description ?? null,
 			plannedDuration,
-			seatCount: seatCount ?? DEFAULT_SEAT_COUNT,
+			selectionCount: selectionCount ?? DEFAULT_SELECTION_COUNT,
 			votingPoolId: votingPoolId ?? null,
 		},
 	);
@@ -392,7 +392,7 @@ export async function createMotion(
 		name: row.name,
 		description: row.description,
 		plannedDuration: row.planned_duration,
-		seatCount: row.seat_count,
+		selectionCount: row.selection_count,
 		votingPoolId: row.voting_pool_id,
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 		status: row.status as MotionStatus,
@@ -416,7 +416,7 @@ export async function getMotionById(
 		name: string;
 		description: string | null;
 		planned_duration: number;
-		seat_count: number;
+		selection_count: number;
 		voting_pool_id: number | null;
 		status: string;
 		end_override: Date | null;
@@ -446,7 +446,7 @@ export async function getMotionById(
 		name: row.name,
 		description: row.description,
 		plannedDuration: row.planned_duration,
-		seatCount: row.seat_count,
+		selectionCount: row.selection_count,
 		votingPoolId: row.voting_pool_id,
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 		status: row.status as MotionStatus,
@@ -483,7 +483,7 @@ export async function listMotionsForMeeting(
 		name: string;
 		description: string | null;
 		planned_duration: number;
-		seat_count: number;
+		selection_count: number;
 		voting_pool_id: number | null;
 		status: string;
 		end_override: Date | null;
@@ -508,7 +508,7 @@ export async function listMotionsForMeeting(
 		name: row.name,
 		description: row.description,
 		plannedDuration: row.planned_duration,
-		seatCount: row.seat_count,
+		selectionCount: row.selection_count,
 		votingPoolId: row.voting_pool_id,
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 		status: row.status as MotionStatus,
@@ -530,7 +530,7 @@ export async function updateMotion(
 	motionId: number,
 	updates: UpdateMotionRequest,
 ): Promise<Motion> {
-	const { name, description, plannedDuration, seatCount, votingPoolId } =
+	const { name, description, plannedDuration, selectionCount, votingPoolId } =
 		updates;
 
 	// Build dynamic update query
@@ -552,9 +552,9 @@ export async function updateMotion(
 		values.plannedDuration = plannedDuration;
 	}
 
-	if (seatCount !== undefined) {
-		setClauses.push(`seat_count = :seatCount`);
-		values.seatCount = seatCount;
+	if (selectionCount !== undefined) {
+		setClauses.push(`selection_count = :selectionCount`);
+		values.selectionCount = selectionCount;
 	}
 
 	if (votingPoolId !== undefined) {
@@ -583,7 +583,7 @@ export async function updateMotion(
 		name: string;
 		description: string | null;
 		planned_duration: number;
-		seat_count: number;
+		selection_count: number;
 		voting_pool_id: number | null;
 		status: string;
 		end_override: Date | null;
@@ -612,7 +612,7 @@ export async function updateMotion(
 		name: row.name,
 		description: row.description,
 		plannedDuration: row.planned_duration,
-		seatCount: row.seat_count,
+		selectionCount: row.selection_count,
 		votingPoolId: row.voting_pool_id,
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 		status: row.status as MotionStatus,
@@ -672,7 +672,7 @@ export async function updateMotionStatus(
 		name: string;
 		description: string | null;
 		planned_duration: number;
-		seat_count: number;
+		selection_count: number;
 		voting_pool_id: number | null;
 		status: string;
 		end_override: Date | null;
@@ -713,7 +713,7 @@ export async function updateMotionStatus(
 		name: row.name,
 		description: row.description,
 		plannedDuration: row.planned_duration,
-		seatCount: row.seat_count,
+		selectionCount: row.selection_count,
 		votingPoolId: row.voting_pool_id,
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 		status: row.status as MotionStatus,
@@ -761,7 +761,7 @@ export async function setMotionEndOverride(
 		name: string;
 		description: string | null;
 		planned_duration: number;
-		seat_count: number;
+		selection_count: number;
 		voting_pool_id: number | null;
 		status: string;
 		end_override: Date | null;
@@ -786,7 +786,7 @@ export async function setMotionEndOverride(
 		name: row.name,
 		description: row.description,
 		plannedDuration: row.planned_duration,
-		seatCount: row.seat_count,
+		selectionCount: row.selection_count,
 		votingPoolId: row.voting_pool_id,
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Database enum returns as string
 		status: row.status as MotionStatus,
@@ -1235,8 +1235,8 @@ export async function getMotionDetailedResults(
 					? (voteCount / totalVotesForChoices) * PERCENTAGE_MULTIPLIER
 					: ZERO_VOTES;
 
-			// Winner determination: top seat_count choices by vote count
-			const isWinner = index < motion.seatCount;
+			// Winner determination: top selection_count choices by vote count
+			const isWinner = index < motion.selectionCount;
 
 			return {
 				choiceId: row.choice_id,
@@ -1264,7 +1264,7 @@ export async function getMotionDetailedResults(
 	return {
 		motionId: motion.id,
 		motionName: motion.name,
-		seatCount: motion.seatCount,
+		selectionCount: motion.selectionCount,
 		totalVotesIncludingAbstentions,
 		totalVotesForChoices,
 		abstentionCount,

@@ -18,7 +18,7 @@ interface OpenMotionRow {
 	name: string;
 	description: string | null;
 	planned_duration: number;
-	seat_count: number;
+	selection_count: number;
 	pool_name: string;
 	meeting_id: number;
 	meeting_name: string;
@@ -46,7 +46,7 @@ export async function getOpenMotionsForUser(
 			m.name,
 			m.description,
 			m.planned_duration,
-			m.seat_count,
+			m.selection_count,
 			COALESCE(p.pool_name, qp.pool_name) as pool_name,
 			mt.id as meeting_id,
 			mt.name as meeting_name,
@@ -84,7 +84,7 @@ export async function getOpenMotionsForUser(
 			name: row.name,
 			description: row.description,
 			plannedDuration: row.planned_duration,
-			seatCount: row.seat_count,
+			selectionCount: row.selection_count,
 			votingPoolName: row.pool_name,
 			meetingId: row.meeting_id,
 			meetingName: row.meeting_name,

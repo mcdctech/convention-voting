@@ -110,7 +110,7 @@ const canSelectMore = computed((): boolean => {
 	if (motion.value === null || isAbstaining.value) {
 		return false;
 	}
-	return selectedChoiceIds.value.length < motion.value.seatCount;
+	return selectedChoiceIds.value.length < motion.value.selectionCount;
 });
 
 // Check if vote is ready to submit
@@ -137,7 +137,7 @@ const isUnderVoting = computed((): boolean => {
 		return false;
 	}
 	const selectedCount = selectedChoiceIds.value.length;
-	const maxAllowed = motion.value.seatCount;
+	const maxAllowed = motion.value.selectionCount;
 	const totalChoices = motion.value.choices.length;
 
 	// Under-voting if: selected < max allowed AND selected < total available choices
@@ -344,7 +344,7 @@ onUnmounted((): void => {
 				</div>
 				<div class="info-item">
 					<span class="info-label">Selections</span>
-					<span class="info-value">{{ motion.seatCount }}</span>
+					<span class="info-value">{{ motion.selectionCount }}</span>
 				</div>
 				<div class="info-item">
 					<span class="info-label">Voting Pool</span>
@@ -364,7 +364,8 @@ onUnmounted((): void => {
 			<div v-else class="voting-section">
 				<h3>Cast Your Vote</h3>
 				<p class="vote-instructions">
-					Select up to {{ motion.seatCount }} choice(s), or choose to abstain.
+					Select up to {{ motion.selectionCount }} choice(s), or choose to
+					abstain.
 				</p>
 
 				<!-- Choices list -->
@@ -414,7 +415,9 @@ onUnmounted((): void => {
 				<!-- Selection summary -->
 				<div v-if="selectedChoiceIds.length > 0" class="selection-summary">
 					<p>
-						Selected ({{ selectedChoiceIds.length }}/{{ motion.seatCount }}):
+						Selected ({{ selectedChoiceIds.length }}/{{
+							motion.selectionCount
+						}}):
 						{{ selectedChoices.map((c) => c.name).join(", ") }}
 					</p>
 				</div>
@@ -456,8 +459,8 @@ onUnmounted((): void => {
 						<p>
 							<strong>Note:</strong> You have selected
 							{{ selectedChoiceIds.length }} choice(s), but you may select up to
-							{{ Math.min(motion.seatCount, motion.choices.length) }}. To change
-							your selections, click Cancel.
+							{{ Math.min(motion.selectionCount, motion.choices.length) }}. To
+							change your selections, click Cancel.
 						</p>
 					</div>
 					<p class="warning-text">

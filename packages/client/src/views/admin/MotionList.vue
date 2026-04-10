@@ -448,7 +448,7 @@ watch(currentPage, () => {
 							{{ motion.description || "—" }}
 						</td>
 						<td>{{ motion.plannedDuration }} min</td>
-						<td>{{ motion.seatCount }}</td>
+						<td>{{ motion.selectionCount }}</td>
 						<td>{{ motion.votingPoolName || "—" }}</td>
 						<td>
 							<span class="status-badge" :class="getStatusClass(motion.status)">

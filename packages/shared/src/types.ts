@@ -384,7 +384,7 @@ export interface MeetingWithPool extends Meeting {
  * - name: VARCHAR(255) NOT NULL
  * - description: TEXT (nullable)
  * - planned_duration: INTEGER NOT NULL (minutes)
- * - seat_count: INTEGER NOT NULL DEFAULT 1
+ * - selection_count: INTEGER NOT NULL DEFAULT 1
  * - voting_pool_id: INTEGER REFERENCES pools(id) ON DELETE RESTRICT (nullable)
  * - status: motion_status NOT NULL DEFAULT 'not_yet_started'
  * - end_override: TIMESTAMP WITH TIME ZONE (nullable, only when status='voting_active')
@@ -401,7 +401,7 @@ export interface Motion {
 	name: string;
 	description: string | null;
 	plannedDuration: number;
-	seatCount: number;
+	selectionCount: number;
 	votingPoolId: number | null;
 	status: MotionStatus;
 	endOverride: Date | null;
@@ -470,7 +470,7 @@ export interface CreateMotionRequest {
 	name: string;
 	description?: string;
 	plannedDuration: number;
-	seatCount?: number; // Defaults to 1
+	selectionCount?: number; // Defaults to 1
 	votingPoolId?: number;
 }
 
@@ -481,7 +481,7 @@ export interface UpdateMotionRequest {
 	name?: string;
 	description?: string;
 	plannedDuration?: number;
-	seatCount?: number;
+	selectionCount?: number;
 	votingPoolId?: number;
 }
 
@@ -569,7 +569,7 @@ export interface ChoiceResult {
 	choiceName: string;
 	voteCount: number; // Number of votes for this choice
 	percentage: number; // Percentage of total votes cast (excluding abstentions)
-	isWinner: boolean; // True if this choice won (top seat_count choices)
+	isWinner: boolean; // True if this choice won (top selection_count choices)
 }
 
 /**
@@ -584,7 +584,7 @@ export interface ChoiceResult {
 export interface MotionDetailedResults {
 	motionId: number;
 	motionName: string;
-	seatCount: number; // Number of seats/winners
+	selectionCount: number; // Number of seats/winners
 	totalVotesIncludingAbstentions: number; // Total ballots cast
 	totalVotesForChoices: number; // Votes cast for choices (excluding abstentions)
 	abstentionCount: number; // Number of abstentions
@@ -666,7 +666,7 @@ export enum LoginErrorCode {
  *
  * This type is returned by the voter API, not directly mapped to a database table.
  * It joins data from:
- * - motions table (id, name, description, planned_duration, seat_count, voting_started_at, end_override)
+ * - motions table (id, name, description, planned_duration, selection_count, voting_started_at, end_override)
  * - meetings table (meeting_id, meeting_name)
  * - pools table (voting_pool_name via motion's voting_pool_id or meeting's quorum_voting_pool_id)
  *
@@ -682,7 +682,7 @@ export interface OpenMotionForVoter {
 	name: string;
 	description: string | null;
 	plannedDuration: number;
-	seatCount: number;
+	selectionCount: number;
 	votingPoolName: string;
 	meetingId: number;
 	meetingName: string;
@@ -852,7 +852,7 @@ export interface WatcherChoiceTally {
  * Shows tallies but NOT who voted for what
  */
 export interface WatcherMotionResult {
-	seatCount: number;
+	selectionCount: number;
 	choiceTallies: WatcherChoiceTally[];
 }
 
@@ -924,7 +924,7 @@ export interface WatcherMotionDetail {
 	motionName: string;
 	description: string | null;
 	status: MotionStatus;
-	seatCount: number;
+	selectionCount: number;
 	// Meeting info for navigation
 	meetingId: number;
 	meetingName: string;
