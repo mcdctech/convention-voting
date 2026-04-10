@@ -15,10 +15,10 @@ const EMPTY_STRING = "";
 const ALL_POOLS_LIMIT = 1000;
 const INITIAL_PAGE = 1;
 const DECIMAL_RADIX = 10;
-const DEFAULT_SEAT_COUNT = 1;
+const DEFAULT_SELECTION_COUNT = 1;
 const DEFAULT_DURATION = 5;
 const MIN_DURATION = 1;
-const MIN_SEAT_COUNT = 1;
+const MIN_SELECTION_COUNT = 1;
 const FIRST_INDEX = 0;
 const ADJACENT_OFFSET = 1;
 const EMPTY_ARRAY_LENGTH = 0;
@@ -30,7 +30,7 @@ const formData = ref({
 	name: EMPTY_STRING,
 	description: EMPTY_STRING,
 	plannedDuration: DEFAULT_DURATION,
-	seatCount: DEFAULT_SEAT_COUNT,
+	selectionCount: DEFAULT_SELECTION_COUNT,
 	votingPoolId: EMPTY_STRING,
 });
 
@@ -50,7 +50,7 @@ const isDirty = computed((): boolean => {
 		formData.value.name !== EMPTY_STRING ||
 		formData.value.description !== EMPTY_STRING ||
 		formData.value.plannedDuration !== DEFAULT_DURATION ||
-		formData.value.seatCount !== DEFAULT_SEAT_COUNT ||
+		formData.value.selectionCount !== DEFAULT_SELECTION_COUNT ||
 		formData.value.votingPoolId !== EMPTY_STRING ||
 		pendingChoices.value.length > EMPTY_ARRAY_LENGTH
 	);
@@ -114,7 +114,7 @@ async function handleSubmit(): Promise<void> {
 		return;
 	}
 
-	if (formData.value.seatCount < MIN_SEAT_COUNT) {
+	if (formData.value.selectionCount < MIN_SELECTION_COUNT) {
 		error.value = "Selection count must be at least 1.";
 		return;
 	}
@@ -127,7 +127,7 @@ async function handleSubmit(): Promise<void> {
 			meetingId: meetingIdNum,
 			name: formData.value.name.trim(),
 			plannedDuration: formData.value.plannedDuration,
-			seatCount: formData.value.seatCount,
+			selectionCount: formData.value.selectionCount,
 			...(formData.value.description.trim() !== EMPTY_STRING && {
 				description: formData.value.description.trim(),
 			}),
@@ -236,13 +236,13 @@ onUnmounted(() => {
 			</div>
 
 			<div class="form-group">
-				<label for="seatCount">
+				<label for="selectionCount">
 					Selection Count
 					<span class="optional">(default: 1)</span>
 				</label>
 				<input
-					id="seatCount"
-					v-model.number="formData.seatCount"
+					id="selectionCount"
+					v-model.number="formData.selectionCount"
 					type="number"
 					min="1"
 				/>

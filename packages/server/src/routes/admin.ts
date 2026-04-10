@@ -1241,7 +1241,7 @@ adminRouter.post(
 				name: body.name,
 				plannedDuration: body.plannedDuration,
 				description: body.description,
-				seatCount: body.seatCount,
+				selectionCount: body.selectionCount,
 				votingPoolId: body.votingPoolId,
 			};
 

@@ -144,7 +144,7 @@ async function getMotionSummariesForMeeting(
 		id: number;
 		name: string;
 		status: string;
-		seat_count: number;
+		selection_count: number;
 		voting_started_at: Date | null;
 		voting_ended_at: Date | null;
 		voting_pool_name: string | null;
@@ -152,7 +152,7 @@ async function getMotionSummariesForMeeting(
 		total_abstentions: string;
 	}>(
 		`SELECT
-			m.id, m.name, m.status, m.seat_count,
+			m.id, m.name, m.status, m.selection_count,
 			m.voting_started_at, m.voting_ended_at,
 			p.pool_name as voting_pool_name,
 			COALESCE(v.total_votes, 0) as total_votes,
@@ -182,7 +182,7 @@ async function getMotionSummariesForMeeting(
 			// eslint-disable-next-line no-await-in-loop -- Sequential motion processing for results
 			result = await getWatcherMotionResultInternal(
 				motion.id,
-				motion.seat_count,
+				motion.selection_count,
 			);
 		}
 
@@ -278,17 +278,19 @@ export async function getWatcherMotionResult(
 	motionId: number,
 ): Promise<WatcherMotionResult> {
 	// Verify motion exists and is completed
-	const motionResult = await db.query<{ status: string; seat_count: number }>(
-		"SELECT status, seat_count FROM motions WHERE id = :motionId",
-		{ motionId },
-	);
+	const motionResult = await db.query<{
+		status: string;
+		selection_count: number;
+	}>("SELECT status, selection_count FROM motions WHERE id = :motionId", {
+		motionId,
+	});
 
 	if (motionResult.rows.length === EMPTY_ARRAY_LENGTH) {
 		throw new Error(`Motion with ID ${String(motionId)} not found`);
 	}
 
 	const {
-		rows: [{ status, seat_count: seatCount }],
+		rows: [{ status, selection_count: selectionCount }],
 	} = motionResult;
 	// eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison -- Database enum returns as string
 	if (status !== MotionStatus.VotingComplete) {
@@ -297,7 +299,7 @@ export async function getWatcherMotionResult(
 		);
 	}
 
-	return await getWatcherMotionResultInternal(motionId, seatCount);
+	return await getWatcherMotionResultInternal(motionId, selectionCount);
 }
 
 /**
@@ -305,7 +307,7 @@ export async function getWatcherMotionResult(
  */
 async function getWatcherMotionResultInternal(
 	motionId: number,
-	seatCount: number,
+	selectionCount: number,
 ): Promise<WatcherMotionResult> {
 	// Get vote counts per choice
 	const choiceResultsQuery = await db.query<{
@@ -326,18 +328,18 @@ async function getWatcherMotionResultInternal(
 		{ motionId },
 	);
 
-	// Determine winners (top seat_count choices by vote count)
+	// Determine winners (top selection_count choices by vote count)
 	const choiceTallies: WatcherChoiceTally[] = choiceResultsQuery.rows.map(
 		(row, index) => ({
 			choiceId: row.choice_id,
 			choiceName: row.choice_name,
 			voteCount: parseInt(row.vote_count, DECIMAL_RADIX),
-			isWinner: index < seatCount,
+			isWinner: index < selectionCount,
 		}),
 	);
 
 	return {
-		seatCount,
+		selectionCount,
 		choiceTallies,
 	};
 }
@@ -354,7 +356,7 @@ export async function getWatcherMotionDetail(
 		name: string;
 		description: string | null;
 		status: string;
-		seat_count: number;
+		selection_count: number;
 		planned_duration: number;
 		voting_started_at: Date | null;
 		voting_ended_at: Date | null;
@@ -365,7 +367,7 @@ export async function getWatcherMotionDetail(
 		voting_pool_id: number | null;
 	}>(
 		`SELECT
-			m.id, m.name, m.description, m.status, m.seat_count,
+			m.id, m.name, m.description, m.status, m.selection_count,
 			m.planned_duration, m.voting_started_at, m.voting_ended_at,
 			m.end_override, m.meeting_id,
 			mt.name as meeting_name,
@@ -429,7 +431,10 @@ export async function getWatcherMotionDetail(
 	// Get result if motion is completed
 	let result: WatcherMotionResult | null = null;
 	if (status === MotionStatus.VotingComplete) {
-		result = await getWatcherMotionResultInternal(motionId, motion.seat_count);
+		result = await getWatcherMotionResultInternal(
+			motionId,
+			motion.selection_count,
+		);
 	}
 
 	return {
@@ -437,7 +442,7 @@ export async function getWatcherMotionDetail(
 		motionName: motion.name,
 		description: motion.description,
 		status,
-		seatCount: motion.seat_count,
+		selectionCount: motion.selection_count,
 		meetingId: motion.meeting_id,
 		meetingName: motion.meeting_name,
 		votingPoolName: motion.voting_pool_name,

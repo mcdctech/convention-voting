@@ -189,7 +189,7 @@ onMounted(() => {
 					</div>
 					<div class="detail-item">
 						<span class="detail-label">Selections</span>
-						<span class="detail-value">{{ motion.seatCount }}</span>
+						<span class="detail-value">{{ motion.selectionCount }}</span>
 					</div>
 					<div class="detail-item">
 						<span class="detail-label">Planned Duration</span>

@@ -1,6 +1,7 @@
 /**
  * Server entry point
  */
+import "dotenv/config";
 import pino from "pino";
 import { createApp } from "./app.js";
 import { testConnection, initializeDatabase } from "./database/index.js";
