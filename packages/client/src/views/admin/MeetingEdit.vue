@@ -2,6 +2,7 @@
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { getMeeting, updateMeeting, getPools } from "../../services/api";
+import { useAuth } from "../../composables/useAuth";
 import type { Pool } from "@mcdc-convention-voting/shared";
 
 const props = defineProps<{
@@ -9,6 +10,7 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
+const { isAdmin } = useAuth();
 
 // Constants
 const EMPTY_STRING = "";
@@ -28,6 +30,8 @@ const formData = ref({
 	startDate: EMPTY_STRING,
 	endDate: EMPTY_STRING,
 	quorumVotingPoolId: EMPTY_STRING,
+	watcherPoolId: EMPTY_STRING,
+	adminPoolId: EMPTY_STRING,
 });
 
 const loading = ref(false);
@@ -81,6 +85,14 @@ async function loadMeeting(): Promise<void> {
 				startDate: formatDateForInput(meeting.startDate),
 				endDate: formatDateForInput(meeting.endDate),
 				quorumVotingPoolId: String(meeting.quorumVotingPoolId),
+				watcherPoolId:
+					meeting.watcherPoolId === null
+						? EMPTY_STRING
+						: String(meeting.watcherPoolId),
+				adminPoolId:
+					meeting.adminPoolId === null
+						? EMPTY_STRING
+						: String(meeting.adminPoolId),
 			};
 		}
 	} catch (err) {
@@ -90,36 +102,48 @@ async function loadMeeting(): Promise<void> {
 	}
 }
 
+interface FormDataType {
+	name: string;
+	description: string;
+	startDate: string;
+	endDate: string;
+	quorumVotingPoolId: string;
+	watcherPoolId: string;
+	adminPoolId: string;
+}
+
+function validateFormData(data: FormDataType): string | null {
+	if (data.name.trim() === EMPTY_STRING) {
+		return "Name is required.";
+	}
+	if (data.startDate === EMPTY_STRING) {
+		return "Start date is required.";
+	}
+	if (data.endDate === EMPTY_STRING) {
+		return "End date is required.";
+	}
+	if (data.quorumVotingPoolId === EMPTY_STRING) {
+		return "Quorum voting pool is required.";
+	}
+	const startDate = new Date(data.startDate);
+	const endDate = new Date(data.endDate);
+	if (endDate <= startDate) {
+		return "End date must be after start date.";
+	}
+	return null;
+}
+
 async function handleSubmit(): Promise<void> {
 	error.value = null;
 
-	if (formData.value.name.trim() === EMPTY_STRING) {
-		error.value = "Name is required.";
-		return;
-	}
-
-	if (formData.value.startDate === EMPTY_STRING) {
-		error.value = "Start date is required.";
-		return;
-	}
-
-	if (formData.value.endDate === EMPTY_STRING) {
-		error.value = "End date is required.";
-		return;
-	}
-
-	if (formData.value.quorumVotingPoolId === EMPTY_STRING) {
-		error.value = "Quorum voting pool is required.";
+	const validationError = validateFormData(formData.value);
+	if (validationError !== null) {
+		error.value = validationError;
 		return;
 	}
 
 	const startDate = new Date(formData.value.startDate);
 	const endDate = new Date(formData.value.endDate);
-
-	if (endDate <= startDate) {
-		error.value = "End date must be after start date.";
-		return;
-	}
 
 	saving.value = true;
 
@@ -136,6 +160,14 @@ async function handleSubmit(): Promise<void> {
 			),
 			description:
 				trimmedDescription === EMPTY_STRING ? undefined : trimmedDescription,
+			watcherPoolId:
+				formData.value.watcherPoolId === EMPTY_STRING
+					? null
+					: Number.parseInt(formData.value.watcherPoolId, DECIMAL_RADIX),
+			adminPoolId:
+				formData.value.adminPoolId === EMPTY_STRING
+					? null
+					: Number.parseInt(formData.value.adminPoolId, DECIMAL_RADIX),
 		};
 
 		await updateMeeting(meetingId, meetingData);
@@ -221,6 +253,54 @@ onMounted(() => {
 						{{ pool.poolName }}
 					</option>
 				</select>
+			</div>
+
+			<div class="form-group">
+				<label for="watcherPoolId">
+					Watcher Pool
+					<span class="optional">(optional)</span>
+				</label>
+				<select
+					id="watcherPoolId"
+					v-model="formData.watcherPoolId"
+					:disabled="loadingPools"
+				>
+					<option value="">
+						{{ loadingPools ? "Loading pools..." : "No watcher pool" }}
+					</option>
+					<option v-for="pool in pools" :key="pool.id" :value="pool.id">
+						{{ pool.poolName }}
+					</option>
+				</select>
+				<p class="field-description">
+					Optional pool of users who can observe this meeting as watchers
+				</p>
+			</div>
+
+			<div class="form-group">
+				<label for="adminPoolId">
+					Admin Pool
+					<span class="optional">(optional)</span>
+				</label>
+				<select
+					id="adminPoolId"
+					v-model="formData.adminPoolId"
+					:disabled="loadingPools || !isAdmin"
+				>
+					<option value="">
+						{{ loadingPools ? "Loading pools..." : "No admin pool" }}
+					</option>
+					<option v-for="pool in pools" :key="pool.id" :value="pool.id">
+						{{ pool.poolName }}
+					</option>
+				</select>
+				<p class="field-description">
+					Optional pool of users who can administer this meeting (global admins
+					always have access)
+				</p>
+				<p v-if="!isAdmin" class="field-restriction">
+					Only global administrators can change the Admin Pool.
+				</p>
 			</div>
 
 			<div class="form-actions">
@@ -341,5 +421,18 @@ h2 {
 
 .btn-secondary:hover:not(:disabled) {
 	background-color: #616161;
+}
+
+.field-description {
+	margin: 0.5rem 0 0 0;
+	font-size: 0.875rem;
+	color: #666;
+}
+
+.field-restriction {
+	margin: 0.5rem 0 0 0;
+	font-size: 0.875rem;
+	color: #e65100;
+	font-style: italic;
 }
 </style>

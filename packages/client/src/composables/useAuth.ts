@@ -26,6 +26,7 @@ export function useAuth(): {
 	isAuthenticated: ReturnType<typeof computed<boolean>>;
 	isAdmin: ReturnType<typeof computed<boolean>>;
 	isWatcher: ReturnType<typeof computed<boolean>>;
+	isMeetingAdmin: ReturnType<typeof computed<boolean>>;
 	isLoading: typeof isLoading;
 	isInitialized: typeof isInitialized;
 	login: (username: string, password: string) => Promise<void>;
@@ -37,6 +38,9 @@ export function useAuth(): {
 	const isAuthenticated = computed(() => currentUser.value !== null);
 	const isAdmin = computed(() => currentUser.value?.isAdmin ?? false);
 	const isWatcher = computed(() => currentUser.value?.isWatcher ?? false);
+	const isMeetingAdmin = computed(
+		() => currentUser.value?.isMeetingAdmin ?? false,
+	);
 
 	/**
 	 * Login with username and password
@@ -113,6 +117,7 @@ export function useAuth(): {
 		isAuthenticated,
 		isAdmin,
 		isWatcher,
+		isMeetingAdmin,
 		isLoading,
 		isInitialized,
 		login,

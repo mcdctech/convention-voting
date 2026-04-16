@@ -35,7 +35,9 @@ import type {
 	WatcherMotionDetail,
 	WatcherMotionVoter,
 	WatcherMotionResult,
-	CSVImportResult,
+	JoinableMeeting,
+	CurrentMeetingInfo,
+	MeetingParticipant,
 } from "@mcdc-convention-voting/shared";
 
 // Constants
@@ -871,6 +873,79 @@ export async function getMyPools(): Promise<ApiResponse<Pool[]>> {
 }
 
 /**
+ * Meeting Participation API Functions
+ */
+
+interface JoinableMeetingsData {
+	data: JoinableMeeting[];
+}
+
+interface CurrentMeetingData {
+	data: CurrentMeetingInfo | null;
+}
+
+interface JoinMeetingData {
+	data: {
+		participant: MeetingParticipant;
+		meeting: MeetingWithPool;
+	};
+}
+
+interface LeaveMeetingData {
+	data: {
+		success: boolean;
+	};
+}
+
+/**
+ * Get list of active meetings the user can join as a voter
+ */
+export async function getJoinableMeetings(): Promise<
+	ApiResponse<JoinableMeetingsData>
+> {
+	return await apiRequest<ApiResponse<JoinableMeetingsData>>(
+		`${API_PREFIX}/voter/meetings/joinable`,
+	);
+}
+
+/**
+ * Get the user's current active meeting
+ */
+export async function getCurrentMeeting(): Promise<
+	ApiResponse<CurrentMeetingData>
+> {
+	return await apiRequest<ApiResponse<CurrentMeetingData>>(
+		`${API_PREFIX}/voter/meetings/current`,
+	);
+}
+
+/**
+ * Join a meeting as a voter
+ */
+export async function joinMeeting(
+	meetingId: number,
+): Promise<ApiResponse<JoinMeetingData>> {
+	return await apiRequest<ApiResponse<JoinMeetingData>>(
+		`${API_PREFIX}/voter/meetings/${meetingId}/join`,
+		{
+			method: "POST",
+		},
+	);
+}
+
+/**
+ * Leave the current meeting
+ */
+export async function leaveMeeting(): Promise<ApiResponse<LeaveMeetingData>> {
+	return await apiRequest<ApiResponse<LeaveMeetingData>>(
+		`${API_PREFIX}/voter/meetings/leave`,
+		{
+			method: "POST",
+		},
+	);
+}
+
+/**
  * Quorum Management API Functions
  */
 
@@ -996,6 +1071,115 @@ export async function getWatcherMotionResult(
 ): Promise<ApiResponse<WatcherMotionResult>> {
 	return await apiRequest<ApiResponse<WatcherMotionResult>>(
 		`${API_PREFIX}/watcher/motions/${motionId}/results`,
+	);
+}
+
+/**
+ * Watcher Meeting Participation API Functions
+ */
+
+/**
+ * Get list of active meetings the user can join as a watcher
+ */
+export async function getJoinableMeetingsForWatcher(): Promise<
+	ApiResponse<JoinableMeetingsData>
+> {
+	return await apiRequest<ApiResponse<JoinableMeetingsData>>(
+		`${API_PREFIX}/watcher/meetings/joinable`,
+	);
+}
+
+/**
+ * Get the watcher's current active meeting
+ */
+export async function getCurrentMeetingForWatcher(): Promise<
+	ApiResponse<CurrentMeetingData>
+> {
+	return await apiRequest<ApiResponse<CurrentMeetingData>>(
+		`${API_PREFIX}/watcher/meetings/current`,
+	);
+}
+
+/**
+ * Join a meeting as a watcher
+ */
+export async function joinMeetingAsWatcher(
+	meetingId: number,
+): Promise<ApiResponse<JoinMeetingData>> {
+	return await apiRequest<ApiResponse<JoinMeetingData>>(
+		`${API_PREFIX}/watcher/meetings/${meetingId}/join`,
+		{
+			method: "POST",
+		},
+	);
+}
+
+/**
+ * Leave the current meeting as a watcher
+ */
+export async function leaveMeetingAsWatcher(): Promise<
+	ApiResponse<LeaveMeetingData>
+> {
+	return await apiRequest<ApiResponse<LeaveMeetingData>>(
+		`${API_PREFIX}/watcher/meetings/leave`,
+		{
+			method: "POST",
+		},
+	);
+}
+
+/**
+ * Meeting Admin API Functions
+ * For users who are meeting admins (not global admins)
+ */
+
+/**
+ * Get meetings the current user can administer
+ */
+export async function getJoinableMeetingsForAdmin(): Promise<
+	ApiResponse<{ data: JoinableMeeting[] }>
+> {
+	return await apiRequest<ApiResponse<{ data: JoinableMeeting[] }>>(
+		`${API_PREFIX}/admin/meetings/joinable`,
+	);
+}
+
+/**
+ * Get current meeting for meeting admin
+ */
+export async function getCurrentMeetingForAdmin(): Promise<
+	ApiResponse<CurrentMeetingInfo | null>
+> {
+	return await apiRequest<ApiResponse<CurrentMeetingInfo | null>>(
+		`${API_PREFIX}/admin/meetings/current`,
+	);
+}
+
+/**
+ * Join a meeting as meeting admin
+ */
+export async function joinMeetingAsAdmin(
+	meetingId: number,
+): Promise<ApiResponse<JoinMeetingData>> {
+	return await apiRequest<ApiResponse<JoinMeetingData>>(
+		`${API_PREFIX}/admin/meetings/${meetingId}/join`,
+		{
+			method: "POST",
+		},
+	);
+}
+
+/**
+ * Leave the current meeting as meeting admin
+ */
+export async function leaveMeetingAsAdmin(): Promise<
+	ApiResponse<LeaveMeetingData>
+> {
+	return await apiRequest<ApiResponse<LeaveMeetingData>>(
+		`${API_PREFIX}/admin/meetings/leave`,
+		{
+			method: "POST",
+		},
 	);
 }
 

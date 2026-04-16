@@ -143,8 +143,9 @@ export function requireVoter(
 		return;
 	}
 
-	// Watchers and admins cannot vote
-	if (req.user.isWatcher || req.user.isAdmin) {
+	// Watchers, admins, and meeting admins cannot vote
+	// Only regular voters (users who are in a quorum voting pool) can vote
+	if (req.user.isWatcher || req.user.isAdmin || req.user.isMeetingAdmin) {
 		res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
 			success: false,
 			error: "Voting privileges required",

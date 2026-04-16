@@ -333,7 +333,7 @@ onMounted(() => {
 								Edit
 							</button>
 							<button
-								v-if="!user.isDisabled"
+								v-if="!user.isDisabled && user.id !== currentUser?.id"
 								class="btn btn-small btn-warning"
 								@click="requestDisable(user.id)"
 							>

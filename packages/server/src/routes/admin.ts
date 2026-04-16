@@ -5,6 +5,32 @@ import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { HTTP_STATUS } from "@pdc/http-status-codes";
 import {
+	ParticipantRole,
+	type CreateUserRequest,
+	type UpdateUserRequest,
+	type UserListResponse,
+	type BulkPasswordResponse,
+	type PasswordResetResponse,
+	type GeneratePasswordsRequest,
+	type CreatePoolRequest,
+	type UpdatePoolRequest,
+	type PoolListResponse,
+	type PendingPoolKeyListResponse,
+	type ResolvePendingPoolCreateRequest,
+	type ResolvePendingPoolRemapRequest,
+	type CreateMeetingRequest,
+	type UpdateMeetingRequest,
+	type MeetingListResponse,
+	type CreateMotionRequest,
+	type UpdateMotionRequest,
+	type UpdateMotionStatusRequest,
+	type MotionListResponse,
+	type CreateChoiceRequest,
+	type UpdateChoiceRequest,
+	type ReorderChoicesRequest,
+	type ChoiceListResponse,
+} from "@mcdc-convention-voting/shared";
+import {
 	createUser,
 	getUserById,
 	listUsers,
@@ -35,6 +61,7 @@ import {
 	createMeeting,
 	getMeetingById,
 	listMeetings,
+	listMeetingsForMeetingAdmin,
 	updateMeeting,
 	deleteMeeting,
 	createMotion,
@@ -68,31 +95,13 @@ import {
 	resolvePendingByRemapping,
 	deletePendingPoolKey,
 } from "../services/pending-pool-service.js";
-import type {
-	CreateUserRequest,
-	UpdateUserRequest,
-	UserListResponse,
-	BulkPasswordResponse,
-	PasswordResetResponse,
-	GeneratePasswordsRequest,
-	CreatePoolRequest,
-	UpdatePoolRequest,
-	PoolListResponse,
-	PendingPoolKeyListResponse,
-	ResolvePendingPoolCreateRequest,
-	ResolvePendingPoolRemapRequest,
-	CreateMeetingRequest,
-	UpdateMeetingRequest,
-	MeetingListResponse,
-	CreateMotionRequest,
-	UpdateMotionRequest,
-	UpdateMotionStatusRequest,
-	MotionListResponse,
-	CreateChoiceRequest,
-	UpdateChoiceRequest,
-	ReorderChoicesRequest,
-	ChoiceListResponse,
-} from "@mcdc-convention-voting/shared";
+import {
+	getJoinableMeetingsForAdmin,
+	getAllActiveMeetings,
+	joinMeetingAsAdmin,
+	leaveCurrentMeeting,
+	getCurrentMeetingInfo,
+} from "../services/meeting-participant-service.js";
 
 export const adminRouter = Router();
 
@@ -389,6 +398,15 @@ adminRouter.put("/users/:id", async (req: Request, res: Response) => {
  */
 adminRouter.post("/users/:id/disable", async (req: Request, res: Response) => {
 	try {
+		// Prevent users from disabling themselves
+		if (req.params.id === req.user?.id) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+				success: false,
+				error: "Cannot disable your own account",
+			});
+			return;
+		}
+
 		const user = await disableUser(req.params.id);
 		res.json({ success: true, data: user });
 	} catch (error) {
@@ -1025,6 +1043,23 @@ adminRouter.delete(
 			} = req;
 			const poolId = parseInt(id, 10);
 
+			// Check if user is removing themselves from their joined meeting's admin pool
+			if (userId === req.user?.id) {
+				const currentMeeting = await getCurrentMeetingInfo(userId);
+				if (
+					currentMeeting !== null &&
+					currentMeeting.participant.role === ParticipantRole.MeetingAdmin &&
+					currentMeeting.meeting.adminPoolId === poolId
+				) {
+					res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+						success: false,
+						error:
+							"Cannot remove yourself from the admin pool of your current meeting",
+					});
+					return;
+				}
+			}
+
 			await removeUserFromPool(poolId, userId);
 			res.json({
 				success: true,
@@ -1094,6 +1129,8 @@ adminRouter.post("/meetings", async (req: Request, res: Response) => {
 			startDate: request.startDate,
 			endDate: request.endDate,
 			quorumVotingPoolId: request.quorumVotingPoolId,
+			watcherPoolId: request.watcherPoolId,
+			adminPoolId: request.adminPoolId,
 			description: request.description,
 		};
 
@@ -1111,10 +1148,20 @@ adminRouter.post("/meetings", async (req: Request, res: Response) => {
 
 /**
  * GET /api/admin/meetings
- * List all meetings with pagination
+ * List meetings with pagination
+ * For global admins: returns all meetings
+ * For meeting admins: returns only meetings where user is in admin pool
  */
 adminRouter.get("/meetings", async (req: Request, res: Response) => {
 	try {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
 		const pageParam =
 			typeof req.query.page === "string"
 				? req.query.page
@@ -1126,7 +1173,10 @@ adminRouter.get("/meetings", async (req: Request, res: Response) => {
 		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
 		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
 
-		const { meetings, total } = await listMeetings(page, limit);
+		// Global admins see all meetings; meeting admins only see their authorized meetings
+		const { meetings, total } = req.user.isAdmin
+			? await listMeetings(page, limit)
+			: await listMeetingsForMeetingAdmin(req.user.id, page, limit);
 
 		const response: MeetingListResponse = {
 			data: meetings,
@@ -1144,6 +1194,99 @@ adminRouter.get("/meetings", async (req: Request, res: Response) => {
 		res
 			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
 			.json({ error: `Failed to list meetings: ${message}` });
+	}
+});
+
+// ============================================================================
+// Meeting Admin Selection Routes
+// These routes allow non-global admins who are meeting admins to select and
+// manage the meetings they are authorized to administer
+// IMPORTANT: These routes must be defined before /meetings/:id routes
+// ============================================================================
+
+/**
+ * GET /api/admin/meetings/joinable
+ * Get list of meetings the current user can administer
+ * For global admins, this returns all active meetings
+ * For meeting admins, this returns meetings where they are in the admin pool
+ */
+adminRouter.get("/meetings/joinable", async (req: Request, res: Response) => {
+	try {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		// Global admins can join any active meeting
+		// Meeting admins can only join meetings where they are in the admin pool
+		const meetings = req.user.isAdmin
+			? await getAllActiveMeetings()
+			: await getJoinableMeetingsForAdmin(req.user.id);
+		res.json({ success: true, data: { data: meetings } });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+			.json({ success: false, error: `Failed to get meetings: ${message}` });
+	}
+});
+
+/**
+ * GET /api/admin/meetings/current
+ * Get current meeting for meeting admin
+ */
+adminRouter.get("/meetings/current", async (req: Request, res: Response) => {
+	try {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		const meetingInfo = await getCurrentMeetingInfo(req.user.id);
+		res.json({ success: true, data: meetingInfo });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+			success: false,
+			error: `Failed to get current meeting: ${message}`,
+		});
+	}
+});
+
+/**
+ * POST /api/admin/meetings/leave
+ * Leave current meeting as meeting admin
+ */
+adminRouter.post("/meetings/leave", async (req: Request, res: Response) => {
+	try {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		const success = await leaveCurrentMeeting(req.user.id);
+		if (success) {
+			res.json({ success: true, data: { left: true } });
+		} else {
+			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+				success: false,
+				error: "Not currently in a meeting",
+			});
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+			.json({ success: false, error: `Failed to leave meeting: ${message}` });
 	}
 });
 
@@ -1205,6 +1348,43 @@ adminRouter.delete("/meetings/:id", async (req: Request, res: Response) => {
 		res
 			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
 			.json({ error: `Failed to delete meeting: ${message}` });
+	}
+});
+
+/**
+ * POST /api/admin/meetings/:id/join
+ * Join a meeting as meeting admin
+ */
+adminRouter.post("/meetings/:id/join", async (req: Request, res: Response) => {
+	try {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+		if (Number.isNaN(meetingId)) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+				success: false,
+				error: "Invalid meeting ID",
+			});
+			return;
+		}
+
+		const result = await joinMeetingAsAdmin(
+			req.user.id,
+			meetingId,
+			req.user.isAdmin,
+		);
+		res.json({ success: true, data: result });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+			.json({ success: false, error: `Failed to join meeting: ${message}` });
 	}
 });
 

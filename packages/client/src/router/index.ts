@@ -23,16 +23,19 @@ import MeetingList from "../views/admin/MeetingList.vue";
 import MeetingCreate from "../views/admin/MeetingCreate.vue";
 import MeetingEdit from "../views/admin/MeetingEdit.vue";
 import MeetingQuorum from "../views/admin/MeetingQuorum.vue";
+import MeetingAdminSelection from "../views/admin/MeetingAdminSelection.vue";
 import MotionList from "../views/admin/MotionList.vue";
 import MotionCreate from "../views/admin/MotionCreate.vue";
 import AdminMotionDetail from "../views/admin/MotionDetail.vue";
 import VoterDashboard from "../views/voter/VoterDashboard.vue";
 import VoterMotionDetail from "../views/voter/MotionDetail.vue";
 import MyPools from "../views/voter/MyPools.vue";
+import MeetingSelection from "../views/voter/MeetingSelection.vue";
 import WatcherLayout from "../views/WatcherLayout.vue";
 import WatcherDashboard from "../views/watcher/WatcherDashboard.vue";
 import WatcherMeetingList from "../views/watcher/WatcherMeetingList.vue";
 import WatcherMeetingReport from "../views/watcher/WatcherMeetingReport.vue";
+import WatcherMeetingSelection from "../views/watcher/WatcherMeetingSelection.vue";
 import WatcherMotionReport from "../views/watcher/WatcherMotionReport.vue";
 import WatcherQuorumReport from "../views/watcher/WatcherQuorumReport.vue";
 
@@ -63,6 +66,11 @@ export const router = createRouter({
 					path: "",
 					name: "VoterDashboard",
 					component: VoterDashboard,
+				},
+				{
+					path: "meetings",
+					name: "MeetingSelection",
+					component: MeetingSelection,
 				},
 				{
 					path: "motion/:id",
@@ -160,6 +168,11 @@ export const router = createRouter({
 					component: MeetingCreate,
 				},
 				{
+					path: "meetings/select",
+					name: "MeetingAdminSelection",
+					component: MeetingAdminSelection,
+				},
+				{
 					path: "meetings/:id/edit",
 					name: "MeetingEdit",
 					component: MeetingEdit,
@@ -202,6 +215,11 @@ export const router = createRouter({
 					component: WatcherDashboard,
 				},
 				{
+					path: "meeting-selection",
+					name: "WatcherMeetingSelection",
+					component: WatcherMeetingSelection,
+				},
+				{
 					path: "meetings",
 					name: "WatcherMeetingList",
 					component: WatcherMeetingList,
@@ -233,18 +251,19 @@ export const router = createRouter({
 let kioskModeInitialized = false;
 
 /**
- * Check if admin user should be redirected away from a voter-only route
+ * Check if admin or meeting admin user should be redirected away from a voter-only route
  */
 function shouldRedirectAdminFromVoterRoute(
 	path: string,
 	authenticated: boolean,
 	admin: boolean,
+	meetingAdmin: boolean,
 ): boolean {
-	if (!authenticated || !admin) {
+	if (!authenticated || (!admin && !meetingAdmin)) {
 		return false;
 	}
 	// Admin routes are /admin, watcher routes are /watcher, login is /login
-	// Admins should be redirected away from voter routes (/ and its children)
+	// Admins and meeting admins should be redirected away from voter routes (/ and its children)
 	return (
 		!path.startsWith("/admin") &&
 		!path.startsWith("/watcher") &&
@@ -283,9 +302,16 @@ function initializeKioskModeOnce(): void {
 /**
  * Get the appropriate home path for a user based on their role
  */
-function getHomePath(admin: boolean, watcher: boolean): string {
+function getHomePath(
+	admin: boolean,
+	watcher: boolean,
+	meetingAdmin: boolean,
+): string {
 	if (admin) {
 		return "/admin";
+	}
+	if (meetingAdmin) {
+		return "/admin/meetings/select";
 	}
 	if (watcher) {
 		return "/watcher";
@@ -297,6 +323,7 @@ interface AuthState {
 	authenticated: boolean;
 	admin: boolean;
 	watcher: boolean;
+	meetingAdmin: boolean;
 }
 
 interface RouteQuery {
@@ -317,11 +344,11 @@ function checkMetaRequirements(
 	toMeta: RouteMeta,
 	authState: AuthState,
 ): string | null {
-	const { authenticated, admin, watcher } = authState;
+	const { authenticated, admin, watcher, meetingAdmin } = authState;
 
 	// Guest-only routes (like login) - redirect authenticated users
 	if (toMeta.guestOnly === true && authenticated) {
-		return getHomePath(admin, watcher);
+		return getHomePath(admin, watcher, meetingAdmin);
 	}
 
 	// Protected routes - redirect unauthenticated users to login
@@ -329,14 +356,14 @@ function checkMetaRequirements(
 		return "/login";
 	}
 
-	// Admin-only routes - redirect non-admins
-	if (toMeta.requiresAdmin === true && !admin) {
-		return getHomePath(admin, watcher);
+	// Admin-only routes - allow global admins and meeting admins
+	if (toMeta.requiresAdmin === true && !admin && !meetingAdmin) {
+		return getHomePath(admin, watcher, meetingAdmin);
 	}
 
 	// Watcher-only routes - redirect non-watchers
 	if (toMeta.requiresWatcher === true && !watcher) {
-		return getHomePath(admin, watcher);
+		return getHomePath(admin, watcher, meetingAdmin);
 	}
 
 	return null;
@@ -349,16 +376,23 @@ function checkPathBasedRedirects(
 	toPath: string,
 	authState: AuthState,
 ): string | null {
-	const { authenticated, admin, watcher } = authState;
+	const { authenticated, admin, watcher, meetingAdmin } = authState;
 
 	// Redirect watcher users away from non-watcher routes
 	if (shouldRedirectWatcherFromOtherRoute(toPath, authenticated, watcher)) {
 		return "/watcher";
 	}
 
-	// Redirect admin users away from voter-only routes to admin panel
-	if (shouldRedirectAdminFromVoterRoute(toPath, authenticated, admin)) {
-		return "/admin";
+	// Redirect admin/meeting admin users away from voter-only routes
+	if (
+		shouldRedirectAdminFromVoterRoute(
+			toPath,
+			authenticated,
+			admin,
+			meetingAdmin,
+		)
+	) {
+		return getHomePath(admin, watcher, meetingAdmin);
 	}
 
 	return null;
@@ -368,8 +402,14 @@ function checkPathBasedRedirects(
  * Navigation guard for authentication and authorization
  */
 router.beforeEach(async (to) => {
-	const { isAuthenticated, isAdmin, isWatcher, isInitialized, checkAuth } =
-		useAuth();
+	const {
+		isAuthenticated,
+		isAdmin,
+		isWatcher,
+		isMeetingAdmin,
+		isInitialized,
+		checkAuth,
+	} = useAuth();
 	const { getKioskModeQueryParam } = useKioskMode();
 
 	initializeKioskModeOnce();
@@ -386,6 +426,7 @@ router.beforeEach(async (to) => {
 		authenticated: isAuthenticated.value,
 		admin: isAdmin.value,
 		watcher: isWatcher.value,
+		meetingAdmin: isMeetingAdmin.value,
 	};
 
 	// Check route meta requirements first

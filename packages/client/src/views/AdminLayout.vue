@@ -1,13 +1,47 @@
 <script setup lang="ts">
+import { computed, onMounted } from "vue";
 import { RouterLink } from "vue-router";
 import { useAuth } from "../composables/useAuth";
+import { useAdminMeeting } from "../composables/useAdminMeeting";
 import { useMobileNav } from "../composables/useMobileNav";
 import NavDropdown from "../components/NavDropdown.vue";
 import NavHamburger from "../components/NavHamburger.vue";
 import MobileNavOverlay from "../components/MobileNavOverlay.vue";
 
-const { currentUser, logout } = useAuth();
+const { currentUser, isAdmin, isMeetingAdmin, logout } = useAuth();
+const { isJoined, currentMeeting, loadCurrentMeeting, leaveMeeting } =
+	useAdminMeeting();
 const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
+
+// Determine the admin role label for the header
+const adminRoleLabel = computed(() => {
+	if (isAdmin.value) {
+		return "Admin";
+	}
+	if (isMeetingAdmin.value) {
+		return "Meeting Admin";
+	}
+	return "Admin";
+});
+
+// Show Users and Pools menus for both global admins and meeting admins
+const showAdminMenus = computed(() => isAdmin.value || isMeetingAdmin.value);
+
+// Handle leaving the current meeting
+async function handleLeaveMeeting(): Promise<void> {
+	await leaveMeeting();
+}
+
+// Handle leaving from mobile nav (also close nav)
+async function handleLeaveMeetingMobile(): Promise<void> {
+	await leaveMeeting();
+	closeNav();
+}
+
+// Load current meeting state on mount
+onMounted(() => {
+	void loadCurrentMeeting();
+});
 </script>
 
 <template>
@@ -15,7 +49,7 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 		<header class="admin-header">
 			<div class="header-top">
 				<RouterLink to="/admin" class="logo-link">
-					<h1>MCDC Convention Voting - Admin</h1>
+					<h1>MCDC Convention Voting - {{ adminRoleLabel }}</h1>
 				</RouterLink>
 				<div class="header-right desktop-only">
 					<span v-if="currentUser" class="user-name">
@@ -30,7 +64,7 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 				/>
 			</div>
 			<nav class="admin-nav desktop-only">
-				<NavDropdown label="Users">
+				<NavDropdown v-if="showAdminMenus" label="Users">
 					<RouterLink to="/admin/users" class="dropdown-link">
 						All Users
 					</RouterLink>
@@ -47,7 +81,7 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 						User Cleanup
 					</RouterLink>
 				</NavDropdown>
-				<NavDropdown label="Pools">
+				<NavDropdown v-if="showAdminMenus" label="Pools">
 					<RouterLink to="/admin/pools" class="dropdown-link">
 						All Pools
 					</RouterLink>
@@ -61,9 +95,32 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 						Missing Pools
 					</RouterLink>
 				</NavDropdown>
-				<RouterLink to="/admin/meetings" class="nav-link">
-					Meetings
-				</RouterLink>
+				<NavDropdown label="Meetings">
+					<RouterLink to="/admin/meetings" class="dropdown-link">
+						{{ isJoined ? currentMeeting?.meeting.name : "All Meetings" }}
+					</RouterLink>
+					<RouterLink
+						v-if="isAdmin"
+						to="/admin/meetings/create"
+						class="dropdown-link"
+					>
+						Create Meeting
+					</RouterLink>
+					<RouterLink
+						v-if="!isJoined"
+						to="/admin/meetings/select"
+						class="dropdown-link"
+					>
+						Join Meeting
+					</RouterLink>
+					<a
+						v-else
+						class="dropdown-link leave-link"
+						@click="handleLeaveMeeting"
+					>
+						Leave Meeting
+					</a>
+				</NavDropdown>
 			</nav>
 		</header>
 
@@ -75,7 +132,7 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 				</div>
 
 				<!-- Users section -->
-				<div class="mobile-nav-section">
+				<div v-if="showAdminMenus" class="mobile-nav-section">
 					<div class="mobile-nav-section-title">Users</div>
 					<RouterLink
 						to="/admin/users"
@@ -115,7 +172,7 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 				</div>
 
 				<!-- Pools section -->
-				<div class="mobile-nav-section">
+				<div v-if="showAdminMenus" class="mobile-nav-section">
 					<div class="mobile-nav-section-title">Pools</div>
 					<RouterLink
 						to="/admin/pools"
@@ -155,8 +212,31 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 						class="mobile-nav-link"
 						@click="closeNav"
 					>
-						All Meetings
+						{{ isJoined ? currentMeeting?.meeting.name : "All Meetings" }}
 					</RouterLink>
+					<RouterLink
+						v-if="isAdmin"
+						to="/admin/meetings/create"
+						class="mobile-nav-link"
+						@click="closeNav"
+					>
+						Create Meeting
+					</RouterLink>
+					<RouterLink
+						v-if="!isJoined"
+						to="/admin/meetings/select"
+						class="mobile-nav-link"
+						@click="closeNav"
+					>
+						Join Meeting
+					</RouterLink>
+					<a
+						v-else
+						class="mobile-nav-link leave-link"
+						@click="handleLeaveMeetingMobile"
+					>
+						Leave Meeting
+					</a>
 				</div>
 
 				<button class="mobile-logout-btn" @click="logout">Logout</button>
@@ -264,6 +344,15 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 	color: #007bff;
 }
 
+.dropdown-link.leave-link {
+	cursor: pointer;
+	color: #c62828;
+}
+
+.dropdown-link.leave-link:hover {
+	background-color: #ffebee;
+}
+
 .admin-content {
 	flex: 1;
 	padding: 2rem;
@@ -316,6 +405,15 @@ const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 
 .mobile-nav-link:hover {
 	background-color: rgba(255, 255, 255, 0.1);
+}
+
+.mobile-nav-link.leave-link {
+	cursor: pointer;
+	color: #ff8a80;
+}
+
+.mobile-nav-link.leave-link:hover {
+	background-color: rgba(255, 138, 128, 0.2);
 }
 
 .mobile-logout-btn {

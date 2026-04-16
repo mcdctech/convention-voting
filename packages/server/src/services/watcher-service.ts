@@ -34,22 +34,27 @@ const PAGE_OFFSET_ADJUSTMENT = 1;
 const DECIMAL_RADIX = 10;
 
 /**
- * Get all meetings with motion summaries for watcher view
- * Watchers can see all meetings (not just active ones)
+ * Get meetings with motion summaries for watcher view
+ * Only returns meetings where the user is in the watcher pool
  */
 export async function getWatcherMeetings(
+	userId: string,
 	page = DEFAULT_PAGE,
 	limit = DEFAULT_LIMIT,
 ): Promise<{ meetings: WatcherMeetingReport[]; total: number }> {
 	const offset = (page - PAGE_OFFSET_ADJUSTMENT) * limit;
 
-	// Get total count
+	// Get total count for meetings where user is in the watcher pool
 	const countResult = await db.query<{ count: string }>(
-		"SELECT COUNT(*) as count FROM meetings",
+		`SELECT COUNT(*) as count FROM meetings m
+		 INNER JOIN user_pools up ON m.watcher_pool_id = up.pool_id
+		 WHERE up.user_id = :userId
+		   AND m.watcher_pool_id IS NOT NULL`,
+		{ userId },
 	);
 	const total = parseInt(countResult.rows[FIRST_ROW].count, DECIMAL_RADIX);
 
-	// Get paginated meetings with quorum pool names
+	// Get paginated meetings with quorum pool names, filtered by watcher pool membership
 	const meetingsResult = await db.query<{
 		id: number;
 		name: string;
@@ -63,9 +68,12 @@ export async function getWatcherMeetings(
 		        m.quorum_called_at, p.pool_name
 		 FROM meetings m
 		 INNER JOIN pools p ON m.quorum_voting_pool_id = p.id
+		 INNER JOIN user_pools up ON m.watcher_pool_id = up.pool_id
+		 WHERE up.user_id = :userId
+		   AND m.watcher_pool_id IS NOT NULL
 		 ORDER BY m.start_date DESC
 		 LIMIT :limit OFFSET :offset`,
-		{ limit, offset },
+		{ userId, limit, offset },
 	);
 
 	// For each meeting, get the motion summaries
