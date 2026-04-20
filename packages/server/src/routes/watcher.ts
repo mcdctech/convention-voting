@@ -25,6 +25,10 @@ import {
 	joinMeetingAsWatcher,
 	leaveCurrentMeeting,
 } from "../services/meeting-participant-service.js";
+import {
+	requireWatcherForMeeting,
+	requireWatcherForMotion,
+} from "../middleware/watcher-meeting-middleware.js";
 import type { Request, Response } from "express";
 import type {
 	ApiResponse,
@@ -288,6 +292,7 @@ watcherRouter.get(
  */
 watcherRouter.get(
 	"/meetings/:id",
+	requireWatcherForMeeting("id"),
 	async (req: Request, res: Response): Promise<void> => {
 		try {
 			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
@@ -336,6 +341,7 @@ watcherRouter.get(
  */
 watcherRouter.get(
 	"/meetings/:id/quorum",
+	requireWatcherForMeeting("id"),
 	async (req: Request, res: Response): Promise<void> => {
 		try {
 			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
@@ -380,6 +386,7 @@ watcherRouter.get(
  */
 watcherRouter.get(
 	"/meetings/:id/quorum/voters",
+	requireWatcherForMeeting("id"),
 	async (req: Request, res: Response): Promise<void> => {
 		try {
 			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
@@ -420,6 +427,7 @@ watcherRouter.get(
  */
 watcherRouter.get(
 	"/motions/:id",
+	requireWatcherForMotion("id"),
 	async (req: Request, res: Response): Promise<void> => {
 		try {
 			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
@@ -464,6 +472,7 @@ watcherRouter.get(
  */
 watcherRouter.get(
 	"/motions/:id/voters",
+	requireWatcherForMotion("id"),
 	async (req: Request, res: Response): Promise<void> => {
 		try {
 			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
@@ -517,6 +526,7 @@ watcherRouter.get(
  */
 watcherRouter.get(
 	"/motions/:id/results",
+	requireWatcherForMotion("id"),
 	async (req: Request, res: Response): Promise<void> => {
 		try {
 			const motionId = parseInt(req.params.id, DECIMAL_RADIX);

@@ -480,6 +480,43 @@ export async function deleteMeeting(meetingId: number): Promise<void> {
 	}
 }
 
+/**
+ * Look up the meeting ID that a motion belongs to.
+ * Returns null if the motion does not exist.
+ */
+export async function getMeetingIdForMotion(
+	motionId: number,
+): Promise<number | null> {
+	const result = await db.query<{ meeting_id: number }>(
+		"SELECT meeting_id FROM motions WHERE id = :motionId",
+		{ motionId },
+	);
+	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
+		return null;
+	}
+	return result.rows[FIRST_ROW].meeting_id;
+}
+
+/**
+ * Look up the meeting ID that a choice belongs to (via its motion).
+ * Returns null if the choice does not exist.
+ */
+export async function getMeetingIdForChoice(
+	choiceId: number,
+): Promise<number | null> {
+	const result = await db.query<{ meeting_id: number }>(
+		`SELECT m.meeting_id
+		 FROM choices c
+		 INNER JOIN motions m ON c.motion_id = m.id
+		 WHERE c.id = :choiceId`,
+		{ choiceId },
+	);
+	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
+		return null;
+	}
+	return result.rows[FIRST_ROW].meeting_id;
+}
+
 // ============================================================================
 // Motion Functions
 // ============================================================================

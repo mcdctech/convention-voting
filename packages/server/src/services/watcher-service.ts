@@ -34,6 +34,25 @@ const PAGE_OFFSET_ADJUSTMENT = 1;
 const DECIMAL_RADIX = 10;
 
 /**
+ * Check whether a user is authorized to view a specific meeting as a watcher,
+ * i.e. they are in the meeting's watcher_pool.
+ */
+export async function isUserAuthorizedForMeetingAsWatcher(
+	userId: string,
+	meetingId: number,
+): Promise<boolean> {
+	const result = await db.query<{ user_id: string }>(
+		`SELECT up.user_id
+		 FROM user_pools up
+		 INNER JOIN meetings m ON m.watcher_pool_id = up.pool_id
+		 WHERE m.id = :meetingId AND up.user_id = :userId
+		 LIMIT 1`,
+		{ meetingId, userId },
+	);
+	return result.rows.length > EMPTY_ARRAY_LENGTH;
+}
+
+/**
  * Get meetings with motion summaries for watcher view
  * Only returns meetings where the user is in the watcher pool
  */
