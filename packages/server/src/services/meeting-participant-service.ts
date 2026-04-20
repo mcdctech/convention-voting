@@ -9,7 +9,7 @@ import {
 	type MeetingParticipant,
 	type MeetingWithPool,
 } from "@mcdc-convention-voting/shared";
-import { db } from "../database/db.js";
+import { db, withTransaction } from "../database/db.js";
 
 // Array index constants
 const FIRST_ROW = 0;
@@ -184,46 +184,16 @@ export async function getJoinableMeetingsForVoter(
 }
 
 /**
- * Check if user has already been counted for quorum in a meeting
- */
-async function hasBeenCountedForQuorum(
-	userId: string,
-	meetingId: number,
-): Promise<boolean> {
-	const result = await db.query<{ quorum_counted_at: Date | null }>(
-		`SELECT quorum_counted_at FROM meeting_participants
-		 WHERE user_id = :userId
-		   AND meeting_id = :meetingId
-		   AND role = 'voter'
-		   AND quorum_counted_at IS NOT NULL
-		 LIMIT 1`,
-		{ userId, meetingId },
-	);
-
-	return result.rows.length > EMPTY_ARRAY_LENGTH;
-}
-
-/**
- * Check if quorum has been called for a meeting
- */
-async function isQuorumCalled(meetingId: number): Promise<boolean> {
-	const result = await db.query<{ quorum_called_at: Date | null }>(
-		`SELECT quorum_called_at FROM meetings WHERE id = :meetingId`,
-		{ meetingId },
-	);
-
-	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		return false;
-	}
-
-	return result.rows[FIRST_ROW].quorum_called_at !== null;
-}
-
-/**
- * Join a meeting as a voter
- * - Leaves any current meeting first
- * - Creates new participation record
- * - Counts toward quorum if quorum is open and user hasn't been counted before
+ * Join a meeting as a voter.
+ *
+ * Validation (meeting is active, user is in the quorum pool) runs outside the
+ * transaction. The UPDATE that leaves any current meeting and the INSERT of
+ * the new participation row run atomically inside a single transaction, so a
+ * failed INSERT rolls the leave back.
+ *
+ * Quorum counting is decided by the INSERT itself via a CASE/EXISTS expression,
+ * so there is no window where `callQuorum` could interleave between a "should
+ * count" check and the write — the decision is made in the same statement.
  */
 export async function joinMeetingAsVoter(
 	userId: string,
@@ -276,26 +246,43 @@ export async function joinMeetingAsVoter(
 		throw new Error("User is not eligible to join this meeting as a voter");
 	}
 
-	// Leave current meeting if any
-	await leaveCurrentMeeting(userId);
+	const insertedRow = await withTransaction(async (tx) => {
+		await tx.query(
+			`UPDATE meeting_participants
+			 SET left_at = NOW(), updated_at = NOW()
+			 WHERE user_id = :userId AND left_at IS NULL`,
+			{ userId },
+		);
 
-	// Determine if we should count toward quorum
-	// Only count if quorum hasn't been called and user hasn't been counted before
-	const quorumCalled = await isQuorumCalled(meetingId);
-	const alreadyCounted = await hasBeenCountedForQuorum(userId, meetingId);
-	const shouldCountQuorum = !quorumCalled && !alreadyCounted;
+		const insertResult = await tx.query<MeetingParticipantRow>(
+			`INSERT INTO meeting_participants (user_id, meeting_id, role, quorum_counted_at)
+			 VALUES (
+			   :userId,
+			   :meetingId,
+			   'voter',
+			   CASE
+			     WHEN EXISTS (
+			       SELECT 1 FROM meetings
+			       WHERE id = :meetingId AND quorum_called_at IS NULL
+			     )
+			     AND NOT EXISTS (
+			       SELECT 1 FROM meeting_participants
+			       WHERE user_id = :userId
+			         AND meeting_id = :meetingId
+			         AND role = 'voter'
+			         AND quorum_counted_at IS NOT NULL
+			     )
+			     THEN NOW()
+			     ELSE NULL
+			   END
+			 )
+			 RETURNING *`,
+			{ userId, meetingId },
+		);
 
-	// Create participation record
-	const insertResult = await db.query<MeetingParticipantRow>(
-		`INSERT INTO meeting_participants (user_id, meeting_id, role, quorum_counted_at)
-		 VALUES (:userId, :meetingId, 'voter', ${shouldCountQuorum ? "NOW()" : "NULL"})
-		 RETURNING *`,
-		{ userId, meetingId },
-	);
+		return insertResult.rows[FIRST_ROW];
+	});
 
-	const {
-		rows: [insertedRow],
-	} = insertResult;
 	const participant = rowToMeetingParticipant(insertedRow);
 
 	const {
@@ -512,20 +499,24 @@ export async function joinMeetingAsWatcher(
 		throw new Error("User is not eligible to join this meeting as a watcher");
 	}
 
-	// Leave current meeting if any
-	await leaveCurrentMeeting(userId);
+	// Leave any current meeting and insert the new watcher participation in a
+	// single transaction so a failed INSERT rolls the leave back.
+	const insertedRow = await withTransaction(async (tx) => {
+		await tx.query(
+			`UPDATE meeting_participants
+			 SET left_at = NOW(), updated_at = NOW()
+			 WHERE user_id = :userId AND left_at IS NULL`,
+			{ userId },
+		);
+		const insertResult = await tx.query<MeetingParticipantRow>(
+			`INSERT INTO meeting_participants (user_id, meeting_id, role)
+			 VALUES (:userId, :meetingId, 'watcher')
+			 RETURNING *`,
+			{ userId, meetingId },
+		);
+		return insertResult.rows[FIRST_ROW];
+	});
 
-	// Create participation record (no quorum counting for watchers)
-	const insertResult = await db.query<MeetingParticipantRow>(
-		`INSERT INTO meeting_participants (user_id, meeting_id, role)
-		 VALUES (:userId, :meetingId, 'watcher')
-		 RETURNING *`,
-		{ userId, meetingId },
-	);
-
-	const {
-		rows: [insertedRow],
-	} = insertResult;
 	const participant = rowToMeetingParticipant(insertedRow);
 
 	const {
@@ -709,20 +700,24 @@ export async function joinMeetingAsAdmin(
 		}
 	}
 
-	// Leave current meeting if any
-	await leaveCurrentMeeting(userId);
+	// Leave any current meeting and insert the new admin participation in a
+	// single transaction so a failed INSERT rolls the leave back.
+	const insertedRow = await withTransaction(async (tx) => {
+		await tx.query(
+			`UPDATE meeting_participants
+			 SET left_at = NOW(), updated_at = NOW()
+			 WHERE user_id = :userId AND left_at IS NULL`,
+			{ userId },
+		);
+		const insertResult = await tx.query<MeetingParticipantRow>(
+			`INSERT INTO meeting_participants (user_id, meeting_id, role)
+			 VALUES (:userId, :meetingId, 'meeting_admin')
+			 RETURNING *`,
+			{ userId, meetingId },
+		);
+		return insertResult.rows[FIRST_ROW];
+	});
 
-	// Create participation record (no quorum counting for admins)
-	const insertResult = await db.query<MeetingParticipantRow>(
-		`INSERT INTO meeting_participants (user_id, meeting_id, role)
-		 VALUES (:userId, :meetingId, 'meeting_admin')
-		 RETURNING *`,
-		{ userId, meetingId },
-	);
-
-	const {
-		rows: [insertedRow],
-	} = insertResult;
 	const participant = rowToMeetingParticipant(insertedRow);
 
 	const {
