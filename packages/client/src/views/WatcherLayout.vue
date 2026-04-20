@@ -2,6 +2,7 @@
 import { ref, onMounted } from "vue";
 import { RouterLink, useRouter, useRoute } from "vue-router";
 import { useAuth } from "../composables/useAuth";
+import { useKioskMode } from "../composables/useKioskMode";
 import { useMobileNav } from "../composables/useMobileNav";
 import { getCurrentMeetingForWatcher } from "../services/api";
 import NavHamburger from "../components/NavHamburger.vue";
@@ -10,6 +11,7 @@ import MobileNavOverlay from "../components/MobileNavOverlay.vue";
 const router = useRouter();
 const route = useRoute();
 const { currentUser, logout } = useAuth();
+const { getKioskModeQueryParam } = useKioskMode();
 const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 
 const meetingCheckComplete = ref(false);
@@ -31,12 +33,20 @@ async function checkMeetingParticipation(): Promise<void> {
 			const currentMeeting = response.data.data;
 			if (currentMeeting === null) {
 				// Watcher has no active meeting, redirect to meeting selection
-				void router.push("/watcher/meeting-selection");
+				const kioskQuery = getKioskModeQueryParam();
+				void router.push({
+					path: "/watcher/meeting-selection",
+					query: kioskQuery,
+				});
 			}
 		}
 	} catch {
 		// On error, redirect to meeting selection
-		void router.push("/watcher/meeting-selection");
+		const kioskQuery = getKioskModeQueryParam();
+		void router.push({
+			path: "/watcher/meeting-selection",
+			query: kioskQuery,
+		});
 	} finally {
 		meetingCheckComplete.value = true;
 	}

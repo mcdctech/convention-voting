@@ -24,8 +24,9 @@ const adminRoleLabel = computed(() => {
 	return "Admin";
 });
 
-// Show Users and Pools menus for both global admins and meeting admins
-const showAdminMenus = computed(() => isAdmin.value || isMeetingAdmin.value);
+// Users and Pools menus are global-admin only; scoped meeting admins only see
+// the Meetings dropdown for the meeting(s) they can administer.
+const showAdminMenus = computed(() => isAdmin.value);
 
 // Handle leaving the current meeting
 async function handleLeaveMeeting(): Promise<void> {

@@ -51,6 +51,18 @@ function updateActivityTracking(): void {
 // Watch for changes in kiosk mode or admin status
 watch([isKioskMode, isAdmin], updateActivityTracking);
 
+// Re-check meeting participation on every navigation so a user who is kicked
+// mid-session is redirected to meeting selection on the next route change.
+watch(
+	() => route.path,
+	(newPath, oldPath) => {
+		if (newPath === oldPath) {
+			return;
+		}
+		void checkMeetingParticipation();
+	},
+);
+
 /**
  * Check if user has an active meeting participation
  * Redirects to meeting selection if not
