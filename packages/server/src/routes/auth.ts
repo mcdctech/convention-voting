@@ -6,6 +6,7 @@ import { HTTP_STATUS } from "@pdc/http-status-codes";
 import { LoginErrorCode } from "@mcdc-convention-voting/shared";
 import { validateLogin, generateToken } from "../services/auth-service.js";
 import { requireAuth } from "../middleware/auth-middleware.js";
+import { leaveCurrentMeeting } from "../services/meeting-participant-service.js";
 import type { Request, Response } from "express";
 import type {
 	LoginRequest,
@@ -85,6 +86,10 @@ authRouter.post(
 			});
 			return;
 		}
+
+		// Leave any current meeting from a previous session
+		// This ensures users start fresh and can select a new meeting
+		await leaveCurrentMeeting(result.user.id);
 
 		// Generate JWT token
 		const token = generateToken(result.user);

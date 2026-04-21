@@ -20,6 +20,8 @@ const formData = ref({
 	startDate: EMPTY_STRING,
 	endDate: EMPTY_STRING,
 	quorumVotingPoolId: EMPTY_STRING,
+	watcherPoolId: EMPTY_STRING,
+	adminPoolId: EMPTY_STRING,
 });
 
 const saving = ref(false);
@@ -37,36 +39,48 @@ async function loadPools(): Promise<void> {
 	}
 }
 
+interface FormDataType {
+	name: string;
+	description: string;
+	startDate: string;
+	endDate: string;
+	quorumVotingPoolId: string;
+	watcherPoolId: string;
+	adminPoolId: string;
+}
+
+function validateFormData(data: FormDataType): string | null {
+	if (data.name.trim() === EMPTY_STRING) {
+		return "Name is required.";
+	}
+	if (data.startDate === EMPTY_STRING) {
+		return "Start date is required.";
+	}
+	if (data.endDate === EMPTY_STRING) {
+		return "End date is required.";
+	}
+	if (data.quorumVotingPoolId === EMPTY_STRING) {
+		return "Quorum voting pool is required.";
+	}
+	const startDate = new Date(data.startDate);
+	const endDate = new Date(data.endDate);
+	if (endDate <= startDate) {
+		return "End date must be after start date.";
+	}
+	return null;
+}
+
 async function handleSubmit(): Promise<void> {
 	error.value = null;
 
-	if (formData.value.name.trim() === EMPTY_STRING) {
-		error.value = "Name is required.";
-		return;
-	}
-
-	if (formData.value.startDate === EMPTY_STRING) {
-		error.value = "Start date is required.";
-		return;
-	}
-
-	if (formData.value.endDate === EMPTY_STRING) {
-		error.value = "End date is required.";
-		return;
-	}
-
-	if (formData.value.quorumVotingPoolId === EMPTY_STRING) {
-		error.value = "Quorum voting pool is required.";
+	const validationError = validateFormData(formData.value);
+	if (validationError !== null) {
+		error.value = validationError;
 		return;
 	}
 
 	const startDate = new Date(formData.value.startDate);
 	const endDate = new Date(formData.value.endDate);
-
-	if (endDate <= startDate) {
-		error.value = "End date must be after start date.";
-		return;
-	}
 
 	saving.value = true;
 
@@ -81,6 +95,12 @@ async function handleSubmit(): Promise<void> {
 			),
 			...(formData.value.description.trim() !== EMPTY_STRING && {
 				description: formData.value.description.trim(),
+			}),
+			...(formData.value.watcherPoolId !== EMPTY_STRING && {
+				watcherPoolId: Number.parseInt(formData.value.watcherPoolId, 10),
+			}),
+			...(formData.value.adminPoolId !== EMPTY_STRING && {
+				adminPoolId: Number.parseInt(formData.value.adminPoolId, 10),
 			}),
 		};
 
@@ -170,6 +190,51 @@ onMounted(() => {
 				</select>
 				<p class="field-description">
 					The pool used to determine quorum for this meeting
+				</p>
+			</div>
+
+			<div class="form-group">
+				<label for="watcherPoolId">
+					Watcher Pool
+					<span class="optional">(optional)</span>
+				</label>
+				<select
+					id="watcherPoolId"
+					v-model="formData.watcherPoolId"
+					:disabled="loadingPools"
+				>
+					<option value="">
+						{{ loadingPools ? "Loading pools..." : "No watcher pool" }}
+					</option>
+					<option v-for="pool in pools" :key="pool.id" :value="pool.id">
+						{{ pool.poolName }}
+					</option>
+				</select>
+				<p class="field-description">
+					Optional pool of users who can observe this meeting as watchers
+				</p>
+			</div>
+
+			<div class="form-group">
+				<label for="adminPoolId">
+					Admin Pool
+					<span class="optional">(optional)</span>
+				</label>
+				<select
+					id="adminPoolId"
+					v-model="formData.adminPoolId"
+					:disabled="loadingPools"
+				>
+					<option value="">
+						{{ loadingPools ? "Loading pools..." : "No admin pool" }}
+					</option>
+					<option v-for="pool in pools" :key="pool.id" :value="pool.id">
+						{{ pool.poolName }}
+					</option>
+				</select>
+				<p class="field-description">
+					Optional pool of users who can administer this meeting (global admins
+					always have access)
 				</p>
 			</div>
 

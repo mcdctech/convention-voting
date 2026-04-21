@@ -143,7 +143,10 @@ export function requireVoter(
 		return;
 	}
 
-	// Watchers and admins cannot vote
+	// Watchers and admins cannot vote.
+	// isMeetingAdmin is NOT checked here: being an admin for some meeting does
+	// not preclude voting in a different meeting where the user is in the
+	// quorum pool.
 	if (req.user.isWatcher || req.user.isAdmin) {
 		res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
 			success: false,

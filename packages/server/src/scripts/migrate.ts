@@ -1,6 +1,7 @@
 /**
  * Migration script entry point
  */
+import "dotenv/config";
 import pino from "pino";
 import { runMigrations } from "../database/migrate.js";
 

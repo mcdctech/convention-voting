@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { ref, onMounted, onUnmounted, watch } from "vue";
+import { RouterLink, useRouter, useRoute } from "vue-router";
 import { useAuth } from "../composables/useAuth";
 import { useKioskMode } from "../composables/useKioskMode";
 import { useActivityTimeout } from "../composables/useActivityTimeout";
 import { useMobileNav } from "../composables/useMobileNav";
+import { getCurrentMeeting } from "../services/api";
 import KioskModeIndicator from "../components/KioskModeIndicator.vue";
 import InactivityWarningModal from "../components/InactivityWarningModal.vue";
 import NavHamburger from "../components/NavHamburger.vue";
 import MobileNavOverlay from "../components/MobileNavOverlay.vue";
 
 const router = useRouter();
+const route = useRoute();
 const { currentUser, isAdmin, logout } = useAuth();
 const { isKioskMode, getKioskModeQueryParam } = useKioskMode();
 const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
@@ -21,6 +23,8 @@ const {
 	startTracking,
 	stopTracking,
 } = useActivityTimeout();
+
+const meetingCheckComplete = ref(false);
 
 /**
  * Handle inactivity logout - called when countdown expires
@@ -47,8 +51,51 @@ function updateActivityTracking(): void {
 // Watch for changes in kiosk mode or admin status
 watch([isKioskMode, isAdmin], updateActivityTracking);
 
+// Re-check meeting participation on every navigation so a user who is kicked
+// mid-session is redirected to meeting selection on the next route change.
+watch(
+	() => route.path,
+	(newPath, oldPath) => {
+		if (newPath === oldPath) {
+			return;
+		}
+		void checkMeetingParticipation();
+	},
+);
+
+/**
+ * Check if user has an active meeting participation
+ * Redirects to meeting selection if not
+ */
+async function checkMeetingParticipation(): Promise<void> {
+	// Skip check if already on meetings page
+	if (route.path === "/meetings") {
+		meetingCheckComplete.value = true;
+		return;
+	}
+
+	try {
+		const response = await getCurrentMeeting();
+		if (response.success && response.data !== undefined) {
+			const currentMeeting = response.data.data;
+			if (currentMeeting === null) {
+				// User has no active meeting, redirect to meeting selection
+				const kioskQuery = getKioskModeQueryParam();
+				void router.push({ path: "/meetings", query: kioskQuery });
+			}
+		}
+	} catch {
+		// On error, redirect to meeting selection
+		const kioskQuery = getKioskModeQueryParam();
+		void router.push({ path: "/meetings", query: kioskQuery });
+	} finally {
+		meetingCheckComplete.value = true;
+	}
+}
+
 onMounted(() => {
 	updateActivityTracking();
+	void checkMeetingParticipation();
 });
 
 onUnmounted(() => {
@@ -57,7 +104,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-	<div class="voter-layout">
+	<div v-if="meetingCheckComplete" class="voter-layout">
 		<header class="header">
 			<div class="header-content">
 				<RouterLink to="/" class="logo-link">

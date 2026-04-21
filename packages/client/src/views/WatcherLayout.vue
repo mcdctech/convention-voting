@@ -1,16 +1,64 @@
 <script setup lang="ts">
-import { RouterLink } from "vue-router";
+import { ref, onMounted } from "vue";
+import { RouterLink, useRouter, useRoute } from "vue-router";
 import { useAuth } from "../composables/useAuth";
+import { useKioskMode } from "../composables/useKioskMode";
 import { useMobileNav } from "../composables/useMobileNav";
+import { getCurrentMeetingForWatcher } from "../services/api";
 import NavHamburger from "../components/NavHamburger.vue";
 import MobileNavOverlay from "../components/MobileNavOverlay.vue";
 
+const router = useRouter();
+const route = useRoute();
 const { currentUser, logout } = useAuth();
+const { getKioskModeQueryParam } = useKioskMode();
 const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
+
+const meetingCheckComplete = ref(false);
+
+/**
+ * Check if watcher has an active meeting participation
+ * Redirects to meeting selection if not
+ */
+async function checkMeetingParticipation(): Promise<void> {
+	// Skip check if already on watcher meeting selection page
+	if (route.path === "/watcher/meeting-selection") {
+		meetingCheckComplete.value = true;
+		return;
+	}
+
+	try {
+		const response = await getCurrentMeetingForWatcher();
+		if (response.success && response.data !== undefined) {
+			const currentMeeting = response.data.data;
+			if (currentMeeting === null) {
+				// Watcher has no active meeting, redirect to meeting selection
+				const kioskQuery = getKioskModeQueryParam();
+				void router.push({
+					path: "/watcher/meeting-selection",
+					query: kioskQuery,
+				});
+			}
+		}
+	} catch {
+		// On error, redirect to meeting selection
+		const kioskQuery = getKioskModeQueryParam();
+		void router.push({
+			path: "/watcher/meeting-selection",
+			query: kioskQuery,
+		});
+	} finally {
+		meetingCheckComplete.value = true;
+	}
+}
+
+onMounted(() => {
+	void checkMeetingParticipation();
+});
 </script>
 
 <template>
-	<div class="watcher-layout">
+	<div v-if="meetingCheckComplete" class="watcher-layout">
 		<header class="watcher-header">
 			<div class="header-top">
 				<RouterLink to="/watcher" class="logo-link">

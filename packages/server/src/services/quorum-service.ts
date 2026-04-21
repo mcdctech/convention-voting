@@ -1,7 +1,9 @@
 /**
  * Quorum tracking and reporting service
  *
- * Calculates quorum statistics based on voter activity and pool membership.
+ * Calculates quorum statistics based on meeting participation and pool membership.
+ * Users are counted toward quorum when they join a meeting as a voter,
+ * before quorum has been called.
  */
 import { db } from "../database/db.js";
 import type {
@@ -22,10 +24,9 @@ const ZERO_COUNT = 0;
  * Get quorum report for a meeting
  *
  * Calculation logic:
- * - If quorum has been called: count distinct users with activity
- *   between meeting start and quorum_called_at
- * - If quorum not called: count distinct users with activity
- *   between meeting start and NOW (live count)
+ * - Counts voters who have explicitly joined the meeting and were counted for quorum
+ * - quorum_counted_at is set when a voter joins before quorum is called
+ * - Once quorum is called, new joiners are not counted toward quorum
  */
 export async function getQuorumReport(
 	meetingId: number,
@@ -57,9 +58,6 @@ export async function getQuorumReport(
 		rows: [meeting],
 	} = meetingResult;
 
-	// Calculate cutoff time
-	const cutoffTime = meeting.quorum_called_at ?? new Date();
-
 	// Get total eligible voters from quorum pool
 	const eligibleResult = await db.query<{ count: string }>(
 		`SELECT COUNT(DISTINCT user_id) as count
@@ -72,19 +70,14 @@ export async function getQuorumReport(
 		DECIMAL_RADIX,
 	);
 
-	// Get distinct active users from quorum pool with activity in timeframe
+	// Get count of voters who have been counted for quorum (quorum_counted_at IS NOT NULL)
 	const activeResult = await db.query<{ count: string }>(
-		`SELECT COUNT(DISTINCT al.user_id) as count
-		 FROM activity_logs al
-		 INNER JOIN user_pools up ON al.user_id = up.user_id
-		 WHERE up.pool_id = :poolId
-		   AND al.created_at >= :startDate
-		   AND al.created_at <= :cutoffTime`,
-		{
-			poolId: meeting.quorum_voting_pool_id,
-			startDate: meeting.start_date,
-			cutoffTime,
-		},
+		`SELECT COUNT(DISTINCT user_id) as count
+		 FROM meeting_participants
+		 WHERE meeting_id = :meetingId
+		   AND role = 'voter'
+		   AND quorum_counted_at IS NOT NULL`,
+		{ meetingId },
 	);
 	const activeVoterCount = parseInt(
 		activeResult.rows[FIRST_ROW].count,
@@ -97,6 +90,9 @@ export async function getQuorumReport(
 			? (activeVoterCount / totalEligibleVoters) * PERCENTAGE_MULTIPLIER
 			: ZERO_COUNT;
 
+	// Calculate as of time - use quorum_called_at if set, otherwise now
+	const calculatedAsOf = meeting.quorum_called_at ?? new Date();
+
 	return {
 		meetingId: meeting.id,
 		meetingName: meeting.name,
@@ -104,7 +100,7 @@ export async function getQuorumReport(
 		activeVoterCount,
 		activeVoterPercentage,
 		quorumCalledAt: meeting.quorum_called_at,
-		calculatedAsOf: cutoffTime,
+		calculatedAsOf,
 		meetingStartDate: meeting.start_date,
 		meetingEndDate: meeting.end_date,
 		quorumPoolName: meeting.pool_name,
@@ -137,18 +133,15 @@ export async function callQuorum(
 /**
  * Get list of active voters for quorum (for detailed view)
  *
- * Returns users from the quorum pool who had activity during the meeting.
+ * Returns users who have been counted for quorum (joined the meeting as a voter
+ * before quorum was called).
  */
 export async function getActiveVotersForQuorum(
 	meetingId: number,
 ): Promise<QuorumActiveVoter[]> {
-	const meeting = await db.query<{
-		quorum_voting_pool_id: number;
-		start_date: Date;
-		quorum_called_at: Date | null;
-	}>(
-		`SELECT quorum_voting_pool_id, start_date, quorum_called_at
-		 FROM meetings WHERE id = :meetingId`,
+	// Verify meeting exists
+	const meeting = await db.query<{ id: number }>(
+		`SELECT id FROM meetings WHERE id = :meetingId`,
 		{ meetingId },
 	);
 
@@ -156,38 +149,27 @@ export async function getActiveVotersForQuorum(
 		throw new Error(`Meeting with ID ${String(meetingId)} not found`);
 	}
 
-	const {
-		rows: [meetingRow],
-	} = meeting;
-	const {
-		quorum_voting_pool_id: poolId,
-		start_date: startDate,
-		quorum_called_at: quorumCalledAt,
-	} = meetingRow;
-	const cutoffTime = quorumCalledAt ?? new Date();
-
+	// Get voters who have been counted for quorum
 	const result = await db.query<{
 		user_id: string;
 		username: string;
 		first_name: string;
 		last_name: string;
-		last_activity: Date;
+		quorum_counted_at: Date;
 	}>(
 		`SELECT
 		   u.id as user_id,
 		   u.username,
 		   u.first_name,
 		   u.last_name,
-		   MAX(al.created_at) as last_activity
-		 FROM users u
-		 INNER JOIN user_pools up ON u.id = up.user_id
-		 INNER JOIN activity_logs al ON u.id = al.user_id
-		 WHERE up.pool_id = :poolId
-		   AND al.created_at >= :startDate
-		   AND al.created_at <= :cutoffTime
-		 GROUP BY u.id, u.username, u.first_name, u.last_name
-		 ORDER BY last_activity DESC`,
-		{ poolId, startDate, cutoffTime },
+		   mp.quorum_counted_at
+		 FROM meeting_participants mp
+		 INNER JOIN users u ON mp.user_id = u.id
+		 WHERE mp.meeting_id = :meetingId
+		   AND mp.role = 'voter'
+		   AND mp.quorum_counted_at IS NOT NULL
+		 ORDER BY mp.quorum_counted_at ASC`,
+		{ meetingId },
 	);
 
 	return result.rows.map((row) => ({
@@ -195,6 +177,6 @@ export async function getActiveVotersForQuorum(
 		username: row.username,
 		firstName: row.first_name,
 		lastName: row.last_name,
-		lastActivity: row.last_activity,
+		lastActivity: row.quorum_counted_at,
 	}));
 }

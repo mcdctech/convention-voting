@@ -4,6 +4,12 @@
 import { Router } from "express";
 import { HTTP_STATUS } from "@pdc/http-status-codes";
 import { requireVoter } from "../middleware/auth-middleware.js";
+import {
+	getCurrentMeetingInfo,
+	getJoinableMeetingsForVoter,
+	joinMeetingAsVoter,
+	leaveCurrentMeeting,
+} from "../services/meeting-participant-service.js";
 import { getOpenMotionsForUser } from "../services/motion-service.js";
 import { getPoolsForUser } from "../services/pool-service.js";
 import { castVote, getMotionForVoting } from "../services/vote-service.js";
@@ -12,6 +18,10 @@ import type {
 	ApiResponse,
 	CastVoteRequest,
 	CastVoteResponse,
+	CurrentMeetingResponse,
+	JoinableMeetingsResponse,
+	JoinMeetingResponse,
+	LeaveMeetingResponse,
 	MotionForVoting,
 	OpenMotionsResponse,
 	Pool,
@@ -22,6 +32,24 @@ const DECIMAL_RADIX = 10;
 
 // HTTP status code constant
 const HTTP_INTERNAL_SERVER_ERROR = 500;
+
+/**
+ * Determine HTTP status code for meeting join errors
+ */
+function getMeetingJoinErrorStatus(message: string): number {
+	if (
+		message.includes("not found") ||
+		message.includes("not currently active")
+	) {
+		return HTTP_STATUS.CLIENT_ERROR.NOT_FOUND;
+	}
+
+	if (message.includes("not eligible")) {
+		return HTTP_STATUS.CLIENT_ERROR.FORBIDDEN;
+	}
+
+	return HTTP_INTERNAL_SERVER_ERROR;
+}
 
 /**
  * Determine HTTP status code for vote casting errors
@@ -269,6 +297,171 @@ voterRouter.post(
 			res.status(statusCode).json({
 				success: false,
 				error: errorMessage,
+			});
+		}
+	},
+);
+
+// ============================================================================
+// Meeting Participation Endpoints
+// ============================================================================
+
+/**
+ * GET /api/voter/meetings/joinable
+ * Get list of active meetings the user can join as a voter
+ */
+voterRouter.get(
+	"/meetings/joinable",
+	async (
+		req: Request<object, ApiResponse<JoinableMeetingsResponse>>,
+		res: Response<ApiResponse<JoinableMeetingsResponse>>,
+	): Promise<void> => {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		try {
+			const meetings = await getJoinableMeetingsForVoter(req.user.id);
+
+			res.json({
+				success: true,
+				data: {
+					data: meetings,
+				},
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+				success: false,
+				error: `Failed to get joinable meetings: ${message}`,
+			});
+		}
+	},
+);
+
+/**
+ * GET /api/voter/meetings/current
+ * Get the user's current active meeting
+ */
+voterRouter.get(
+	"/meetings/current",
+	async (
+		req: Request<object, ApiResponse<CurrentMeetingResponse>>,
+		res: Response<ApiResponse<CurrentMeetingResponse>>,
+	): Promise<void> => {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		try {
+			const currentMeeting = await getCurrentMeetingInfo(req.user.id);
+
+			res.json({
+				success: true,
+				data: {
+					data: currentMeeting,
+				},
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+				success: false,
+				error: `Failed to get current meeting: ${message}`,
+			});
+		}
+	},
+);
+
+/**
+ * POST /api/voter/meetings/:id/join
+ * Join a meeting as a voter
+ * Protected by requireVoter to ensure only voters can join meetings
+ */
+voterRouter.post(
+	"/meetings/:id/join",
+	requireVoter,
+	async (
+		req: Request<{ id: string }, ApiResponse<JoinMeetingResponse>>,
+		res: Response<ApiResponse<JoinMeetingResponse>>,
+	): Promise<void> => {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+		if (Number.isNaN(meetingId)) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+				success: false,
+				error: "Invalid meeting ID",
+			});
+			return;
+		}
+
+		try {
+			const result = await joinMeetingAsVoter(req.user.id, meetingId);
+
+			res.json({
+				success: true,
+				data: {
+					data: result,
+				},
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			const statusCode = getMeetingJoinErrorStatus(message);
+
+			res.status(statusCode).json({
+				success: false,
+				error: message,
+			});
+		}
+	},
+);
+
+/**
+ * POST /api/voter/meetings/leave
+ * Leave the current meeting
+ */
+voterRouter.post(
+	"/meetings/leave",
+	async (
+		req: Request<object, ApiResponse<LeaveMeetingResponse>>,
+		res: Response<ApiResponse<LeaveMeetingResponse>>,
+	): Promise<void> => {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		try {
+			const success = await leaveCurrentMeeting(req.user.id);
+
+			res.json({
+				success: true,
+				data: {
+					data: { success },
+				},
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+				success: false,
+				error: `Failed to leave meeting: ${message}`,
 			});
 		}
 	},

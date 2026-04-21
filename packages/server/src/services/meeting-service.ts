@@ -50,6 +50,26 @@ const VALID_STATUS_TRANSITIONS: Record<MotionStatus, MotionStatus[]> = {
 };
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Verify a pool exists, throw error if not
+ */
+async function verifyPoolExists(
+	poolId: number,
+	poolType: string,
+): Promise<void> {
+	const poolCheck = await db.query<{ id: number }>(
+		"SELECT id FROM pools WHERE id = :poolId",
+		{ poolId },
+	);
+	if (poolCheck.rows.length === EMPTY_ARRAY_LENGTH) {
+		throw new Error(`${poolType} with ID ${String(poolId)} does not exist`);
+	}
+}
+
+// ============================================================================
 // Meeting Functions
 // ============================================================================
 
@@ -59,17 +79,27 @@ const VALID_STATUS_TRANSITIONS: Record<MotionStatus, MotionStatus[]> = {
 export async function createMeeting(
 	request: CreateMeetingRequest,
 ): Promise<Meeting> {
-	const { name, description, startDate, endDate, quorumVotingPoolId } = request;
+	const {
+		name,
+		description,
+		startDate,
+		endDate,
+		quorumVotingPoolId,
+		watcherPoolId,
+		adminPoolId,
+	} = request;
 
-	// Verify pool exists
-	const poolCheck = await db.query<{ id: number }>(
-		"SELECT id FROM pools WHERE id = :poolId",
-		{ poolId: quorumVotingPoolId },
-	);
-	if (poolCheck.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(
-			`Pool with ID ${String(quorumVotingPoolId)} does not exist`,
-		);
+	// Verify quorum pool exists
+	await verifyPoolExists(quorumVotingPoolId, "Pool");
+
+	// Verify watcher pool exists if specified
+	if (watcherPoolId !== undefined && watcherPoolId !== null) {
+		await verifyPoolExists(watcherPoolId, "Watcher pool");
+	}
+
+	// Verify admin pool exists if specified
+	if (adminPoolId !== undefined && adminPoolId !== null) {
+		await verifyPoolExists(adminPoolId, "Admin pool");
 	}
 
 	const result = await db.query<{
@@ -79,12 +109,14 @@ export async function createMeeting(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		watcher_pool_id: number | null;
+		admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`INSERT INTO meetings (name, description, start_date, end_date, quorum_voting_pool_id)
-		 VALUES (:name, :description, :startDate, :endDate, :quorumVotingPoolId)
+		`INSERT INTO meetings (name, description, start_date, end_date, quorum_voting_pool_id, watcher_pool_id, admin_pool_id)
+		 VALUES (:name, :description, :startDate, :endDate, :quorumVotingPoolId, :watcherPoolId, :adminPoolId)
 		 RETURNING *`,
 		{
 			name,
@@ -92,6 +124,8 @@ export async function createMeeting(
 			startDate,
 			endDate,
 			quorumVotingPoolId,
+			watcherPoolId: watcherPoolId ?? null,
+			adminPoolId: adminPoolId ?? null,
 		},
 	);
 
@@ -105,6 +139,8 @@ export async function createMeeting(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		watcherPoolId: row.watcher_pool_id,
+		adminPoolId: row.admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -112,7 +148,7 @@ export async function createMeeting(
 }
 
 /**
- * Get meeting by ID with pool name
+ * Get meeting by ID with pool names
  */
 export async function getMeetingById(
 	meetingId: number,
@@ -124,14 +160,23 @@ export async function getMeetingById(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		watcher_pool_id: number | null;
+		admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
-		pool_name: string;
+		quorum_pool_name: string;
+		watcher_pool_name: string | null;
+		admin_pool_name: string | null;
 	}>(
-		`SELECT m.*, p.pool_name
+		`SELECT m.*,
+		        qp.pool_name as quorum_pool_name,
+		        wp.pool_name as watcher_pool_name,
+		        ap.pool_name as admin_pool_name
 		 FROM meetings m
-		 INNER JOIN pools p ON m.quorum_voting_pool_id = p.id
+		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
+		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
+		 LEFT JOIN pools ap ON m.admin_pool_id = ap.id
 		 WHERE m.id = :meetingId`,
 		{ meetingId },
 	);
@@ -150,10 +195,14 @@ export async function getMeetingById(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		watcherPoolId: row.watcher_pool_id,
+		adminPoolId: row.admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
-		quorumVotingPoolName: row.pool_name,
+		quorumVotingPoolName: row.quorum_pool_name,
+		watcherPoolName: row.watcher_pool_name,
+		adminPoolName: row.admin_pool_name,
 	};
 }
 
@@ -180,14 +229,23 @@ export async function listMeetings(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		watcher_pool_id: number | null;
+		admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
-		pool_name: string;
+		quorum_pool_name: string;
+		watcher_pool_name: string | null;
+		admin_pool_name: string | null;
 	}>(
-		`SELECT m.*, p.pool_name
+		`SELECT m.*,
+		        qp.pool_name as quorum_pool_name,
+		        wp.pool_name as watcher_pool_name,
+		        ap.pool_name as admin_pool_name
 		 FROM meetings m
-		 INNER JOIN pools p ON m.quorum_voting_pool_id = p.id
+		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
+		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
+		 LEFT JOIN pools ap ON m.admin_pool_id = ap.id
 		 ORDER BY m.start_date DESC
 		 LIMIT :limit OFFSET :offset`,
 		{ limit, offset },
@@ -200,27 +258,109 @@ export async function listMeetings(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		watcherPoolId: row.watcher_pool_id,
+		adminPoolId: row.admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
-		quorumVotingPoolName: row.pool_name,
+		quorumVotingPoolName: row.quorum_pool_name,
+		watcherPoolName: row.watcher_pool_name,
+		adminPoolName: row.admin_pool_name,
 	}));
 
 	return { meetings, total };
 }
 
 /**
- * Update meeting details
+ * List meetings for a meeting admin (filtered by admin pool membership)
+ * Only returns meetings where the user is in the admin pool
  */
-export async function updateMeeting(
-	meetingId: number,
-	updates: UpdateMeetingRequest,
-): Promise<Meeting> {
-	const { name, description, startDate, endDate, quorumVotingPoolId } = updates;
+export async function listMeetingsForMeetingAdmin(
+	userId: string,
+	page = DEFAULT_PAGE,
+	limit = DEFAULT_LIMIT,
+): Promise<{ meetings: MeetingWithPool[]; total: number }> {
+	const offset = (page - PAGE_OFFSET_ADJUSTMENT) * limit;
 
-	// Build dynamic update query
+	// Get total count for meetings where user is in admin pool
+	const countResult = await db.query<{ count: string }>(
+		`SELECT COUNT(*) as count FROM meetings m
+		 INNER JOIN user_pools up ON m.admin_pool_id = up.pool_id
+		 WHERE up.user_id = :userId`,
+		{ userId },
+	);
+	const total = parseInt(countResult.rows[FIRST_ROW].count, DECIMAL_RADIX);
+
+	// Get paginated meetings with pool names, filtered by admin pool membership
+	const result = await db.query<{
+		id: number;
+		name: string;
+		description: string | null;
+		start_date: Date;
+		end_date: Date;
+		quorum_voting_pool_id: number;
+		watcher_pool_id: number | null;
+		admin_pool_id: number | null;
+		quorum_called_at: Date | null;
+		created_at: Date;
+		updated_at: Date;
+		quorum_pool_name: string;
+		watcher_pool_name: string | null;
+		admin_pool_name: string | null;
+	}>(
+		`SELECT m.*,
+		        qp.pool_name as quorum_pool_name,
+		        wp.pool_name as watcher_pool_name,
+		        ap.pool_name as admin_pool_name
+		 FROM meetings m
+		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
+		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
+		 LEFT JOIN pools ap ON m.admin_pool_id = ap.id
+		 INNER JOIN user_pools up ON m.admin_pool_id = up.pool_id
+		 WHERE up.user_id = :userId
+		 ORDER BY m.start_date DESC
+		 LIMIT :limit OFFSET :offset`,
+		{ userId, limit, offset },
+	);
+
+	const meetings = result.rows.map((row) => ({
+		id: row.id,
+		name: row.name,
+		description: row.description,
+		startDate: row.start_date,
+		endDate: row.end_date,
+		quorumVotingPoolId: row.quorum_voting_pool_id,
+		watcherPoolId: row.watcher_pool_id,
+		adminPoolId: row.admin_pool_id,
+		quorumCalledAt: row.quorum_called_at,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+		quorumVotingPoolName: row.quorum_pool_name,
+		watcherPoolName: row.watcher_pool_name,
+		adminPoolName: row.admin_pool_name,
+	}));
+
+	return { meetings, total };
+}
+
+/**
+ * Build update clauses for meeting updates
+ */
+async function buildMeetingUpdateClauses(
+	updates: UpdateMeetingRequest,
+): Promise<{ setClauses: string[]; values: Record<string, unknown> }> {
+	const {
+		name,
+		description,
+		startDate,
+		endDate,
+		quorumVotingPoolId,
+		watcherPoolId,
+		adminPoolId,
+	} = updates;
+
 	const setClauses: string[] = [];
-	const values: Record<string, unknown> = { meetingId };
+	const values: Record<string, unknown> = {};
 
 	if (name !== undefined) {
 		setClauses.push(`name = :name`);
@@ -243,19 +383,39 @@ export async function updateMeeting(
 	}
 
 	if (quorumVotingPoolId !== undefined) {
-		// Verify pool exists
-		const poolCheck = await db.query<{ id: number }>(
-			"SELECT id FROM pools WHERE id = :poolId",
-			{ poolId: quorumVotingPoolId },
-		);
-		if (poolCheck.rows.length === EMPTY_ARRAY_LENGTH) {
-			throw new Error(
-				`Pool with ID ${String(quorumVotingPoolId)} does not exist`,
-			);
-		}
+		await verifyPoolExists(quorumVotingPoolId, "Pool");
 		setClauses.push(`quorum_voting_pool_id = :quorumVotingPoolId`);
 		values.quorumVotingPoolId = quorumVotingPoolId;
 	}
+
+	if (watcherPoolId !== undefined) {
+		if (watcherPoolId !== null) {
+			await verifyPoolExists(watcherPoolId, "Watcher pool");
+		}
+		setClauses.push(`watcher_pool_id = :watcherPoolId`);
+		values.watcherPoolId = watcherPoolId;
+	}
+
+	if (adminPoolId !== undefined) {
+		if (adminPoolId !== null) {
+			await verifyPoolExists(adminPoolId, "Admin pool");
+		}
+		setClauses.push(`admin_pool_id = :adminPoolId`);
+		values.adminPoolId = adminPoolId;
+	}
+
+	return { setClauses, values };
+}
+
+/**
+ * Update meeting details
+ */
+export async function updateMeeting(
+	meetingId: number,
+	updates: UpdateMeetingRequest,
+): Promise<Meeting> {
+	const { setClauses, values } = await buildMeetingUpdateClauses(updates);
+	values.meetingId = meetingId;
 
 	if (setClauses.length === EMPTY_ARRAY_LENGTH) {
 		throw new Error("No fields to update");
@@ -271,6 +431,8 @@ export async function updateMeeting(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		watcher_pool_id: number | null;
+		admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
@@ -296,6 +458,8 @@ export async function updateMeeting(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		watcherPoolId: row.watcher_pool_id,
+		adminPoolId: row.admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -314,6 +478,43 @@ export async function deleteMeeting(meetingId: number): Promise<void> {
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
 		throw new Error(`Meeting with ID ${String(meetingId)} not found`);
 	}
+}
+
+/**
+ * Look up the meeting ID that a motion belongs to.
+ * Returns null if the motion does not exist.
+ */
+export async function getMeetingIdForMotion(
+	motionId: number,
+): Promise<number | null> {
+	const result = await db.query<{ meeting_id: number }>(
+		"SELECT meeting_id FROM motions WHERE id = :motionId",
+		{ motionId },
+	);
+	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
+		return null;
+	}
+	return result.rows[FIRST_ROW].meeting_id;
+}
+
+/**
+ * Look up the meeting ID that a choice belongs to (via its motion).
+ * Returns null if the choice does not exist.
+ */
+export async function getMeetingIdForChoice(
+	choiceId: number,
+): Promise<number | null> {
+	const result = await db.query<{ meeting_id: number }>(
+		`SELECT m.meeting_id
+		 FROM choices c
+		 INNER JOIN motions m ON c.motion_id = m.id
+		 WHERE c.id = :choiceId`,
+		{ choiceId },
+	);
+	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
+		return null;
+	}
+	return result.rows[FIRST_ROW].meeting_id;
 }
 
 // ============================================================================

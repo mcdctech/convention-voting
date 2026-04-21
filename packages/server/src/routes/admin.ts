@@ -5,6 +5,32 @@ import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { HTTP_STATUS } from "@pdc/http-status-codes";
 import {
+	ParticipantRole,
+	type CreateUserRequest,
+	type UpdateUserRequest,
+	type UserListResponse,
+	type BulkPasswordResponse,
+	type PasswordResetResponse,
+	type GeneratePasswordsRequest,
+	type CreatePoolRequest,
+	type UpdatePoolRequest,
+	type PoolListResponse,
+	type PendingPoolKeyListResponse,
+	type ResolvePendingPoolCreateRequest,
+	type ResolvePendingPoolRemapRequest,
+	type CreateMeetingRequest,
+	type UpdateMeetingRequest,
+	type MeetingListResponse,
+	type CreateMotionRequest,
+	type UpdateMotionRequest,
+	type UpdateMotionStatusRequest,
+	type MotionListResponse,
+	type CreateChoiceRequest,
+	type UpdateChoiceRequest,
+	type ReorderChoicesRequest,
+	type ChoiceListResponse,
+} from "@mcdc-convention-voting/shared";
+import {
 	createUser,
 	getUserById,
 	listUsers,
@@ -35,6 +61,7 @@ import {
 	createMeeting,
 	getMeetingById,
 	listMeetings,
+	listMeetingsForMeetingAdmin,
 	updateMeeting,
 	deleteMeeting,
 	createMotion,
@@ -68,31 +95,19 @@ import {
 	resolvePendingByRemapping,
 	deletePendingPoolKey,
 } from "../services/pending-pool-service.js";
-import type {
-	CreateUserRequest,
-	UpdateUserRequest,
-	UserListResponse,
-	BulkPasswordResponse,
-	PasswordResetResponse,
-	GeneratePasswordsRequest,
-	CreatePoolRequest,
-	UpdatePoolRequest,
-	PoolListResponse,
-	PendingPoolKeyListResponse,
-	ResolvePendingPoolCreateRequest,
-	ResolvePendingPoolRemapRequest,
-	CreateMeetingRequest,
-	UpdateMeetingRequest,
-	MeetingListResponse,
-	CreateMotionRequest,
-	UpdateMotionRequest,
-	UpdateMotionStatusRequest,
-	MotionListResponse,
-	CreateChoiceRequest,
-	UpdateChoiceRequest,
-	ReorderChoicesRequest,
-	ChoiceListResponse,
-} from "@mcdc-convention-voting/shared";
+import {
+	getJoinableMeetingsForAdmin,
+	getAllActiveMeetings,
+	joinMeetingAsAdmin,
+	leaveCurrentMeeting,
+	getCurrentMeetingInfo,
+} from "../services/meeting-participant-service.js";
+import { requireAdmin } from "../middleware/auth-middleware.js";
+import {
+	requireMeetingAdmin,
+	requireMeetingAdminForChoice,
+	requireMeetingAdminForMotion,
+} from "../middleware/meeting-admin-middleware.js";
 
 export const adminRouter = Router();
 
@@ -181,6 +196,7 @@ const upload = multer({
  */
 adminRouter.post(
 	"/users/upload",
+	requireAdmin,
 	upload.single("file"),
 	async (req: Request, res: Response) => {
 		try {
@@ -211,7 +227,7 @@ adminRouter.post(
  * GET /api/admin/users
  * List all users with pagination and optional search/pool filter
  */
-adminRouter.get("/users", async (req: Request, res: Response) => {
+adminRouter.get("/users", requireAdmin, async (req: Request, res: Response) => {
 	try {
 		const pageParam =
 			typeof req.query.page === "string"
@@ -261,43 +277,47 @@ adminRouter.get("/users", async (req: Request, res: Response) => {
  * POST /api/admin/users
  * Create a single user
  */
-adminRouter.post("/users", async (req: Request, res: Response) => {
-	try {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
-		const request: CreateUserRequest = req.body;
+adminRouter.post(
+	"/users",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const request: CreateUserRequest = req.body;
 
-		// Validate required fields
-		if (
-			isEmptyString(request.voterId) ||
-			isEmptyString(request.firstName) ||
-			isEmptyString(request.lastName)
-		) {
-			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
-				error: "Missing required fields: voterId, firstName, lastName",
-			});
-			return;
+			// Validate required fields
+			if (
+				isEmptyString(request.voterId) ||
+				isEmptyString(request.firstName) ||
+				isEmptyString(request.lastName)
+			) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "Missing required fields: voterId, firstName, lastName",
+				});
+				return;
+			}
+
+			// Trim whitespace from validated fields
+			const trimmedRequest: CreateUserRequest = {
+				...request,
+				voterId: request.voterId.trim(),
+				firstName: request.firstName.trim(),
+				lastName: request.lastName.trim(),
+				username: request.username?.trim(),
+			};
+
+			const user = await createUser(trimmedRequest);
+			res
+				.status(HTTP_STATUS.SUCCESSFUL.CREATED)
+				.json({ success: true, data: user });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to create user: ${message}` });
 		}
-
-		// Trim whitespace from validated fields
-		const trimmedRequest: CreateUserRequest = {
-			...request,
-			voterId: request.voterId.trim(),
-			firstName: request.firstName.trim(),
-			lastName: request.lastName.trim(),
-			username: request.username?.trim(),
-		};
-
-		const user = await createUser(trimmedRequest);
-		res
-			.status(HTTP_STATUS.SUCCESSFUL.CREATED)
-			.json({ success: true, data: user });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to create user: ${message}` });
-	}
-});
+	},
+);
 
 /**
  * GET /api/admin/users/by-date-range
@@ -305,166 +325,203 @@ adminRouter.post("/users", async (req: Request, res: Response) => {
  * Query params: startDate, endDate (ISO format), page, limit
  * NOTE: This route MUST come before /users/:id to avoid being caught by the :id param
  */
-adminRouter.get("/users/by-date-range", async (req: Request, res: Response) => {
-	try {
-		const dateParams = parseDateRangeParams(req.query);
-		if (!dateParams.success) {
+adminRouter.get(
+	"/users/by-date-range",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const dateParams = parseDateRangeParams(req.query);
+			if (!dateParams.success) {
+				res
+					.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+					.json({ error: dateParams.error });
+				return;
+			}
+
+			const pageParam =
+				typeof req.query.page === "string"
+					? req.query.page
+					: String(DEFAULT_PAGE);
+			const limitParam =
+				typeof req.query.limit === "string"
+					? req.query.limit
+					: String(DEFAULT_LIMIT);
+			const page = Number.parseInt(pageParam, DECIMAL_RADIX);
+			const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
+
+			const result = await listUsersByDateRange(
+				dateParams.start,
+				dateParams.end,
+				page,
+				limit,
+			);
+			res.json({ success: true, data: result.users, total: result.total });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
 			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: dateParams.error });
-			return;
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to list users: ${message}` });
 		}
-
-		const pageParam =
-			typeof req.query.page === "string"
-				? req.query.page
-				: String(DEFAULT_PAGE);
-		const limitParam =
-			typeof req.query.limit === "string"
-				? req.query.limit
-				: String(DEFAULT_LIMIT);
-		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
-		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
-
-		const result = await listUsersByDateRange(
-			dateParams.start,
-			dateParams.end,
-			page,
-			limit,
-		);
-		res.json({ success: true, data: result.users, total: result.total });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to list users: ${message}` });
-	}
-});
+	},
+);
 
 /**
  * GET /api/admin/users/:id
  * Get a single user by ID
  */
-adminRouter.get("/users/:id", async (req: Request, res: Response) => {
-	try {
-		const user = await getUserById(req.params.id);
+adminRouter.get(
+	"/users/:id",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const user = await getUserById(req.params.id);
 
-		if (user === null) {
+			if (user === null) {
+				res
+					.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
+					.json({ error: "User not found" });
+				return;
+			}
+
+			res.json({ success: true, data: user });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
 			res
-				.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
-				.json({ error: "User not found" });
-			return;
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get user: ${message}` });
 		}
-
-		res.json({ success: true, data: user });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to get user: ${message}` });
-	}
-});
+	},
+);
 
 /**
  * PUT /api/admin/users/:id
  * Update user details
  */
-adminRouter.put("/users/:id", async (req: Request, res: Response) => {
-	try {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
-		const updates: UpdateUserRequest = req.body;
-		const user = await updateUser(req.params.id, updates);
-		res.json({ success: true, data: user });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to update user: ${message}` });
-	}
-});
+adminRouter.put(
+	"/users/:id",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const updates: UpdateUserRequest = req.body;
+			const user = await updateUser(req.params.id, updates);
+			res.json({ success: true, data: user });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to update user: ${message}` });
+		}
+	},
+);
 
 /**
  * POST /api/admin/users/:id/disable
  * Disable a user
  */
-adminRouter.post("/users/:id/disable", async (req: Request, res: Response) => {
-	try {
-		const user = await disableUser(req.params.id);
-		res.json({ success: true, data: user });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to disable user: ${message}` });
-	}
-});
+adminRouter.post(
+	"/users/:id/disable",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			// Prevent users from disabling themselves
+			if (req.params.id === req.user?.id) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					success: false,
+					error: "Cannot disable your own account",
+				});
+				return;
+			}
+
+			const user = await disableUser(req.params.id);
+			res.json({ success: true, data: user });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to disable user: ${message}` });
+		}
+	},
+);
 
 /**
  * POST /api/admin/users/:id/enable
  * Enable a user
  */
-adminRouter.post("/users/:id/enable", async (req: Request, res: Response) => {
-	try {
-		const user = await enableUser(req.params.id);
-		res.json({ success: true, data: user });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to enable user: ${message}` });
-	}
-});
+adminRouter.post(
+	"/users/:id/enable",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const user = await enableUser(req.params.id);
+			res.json({ success: true, data: user });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to enable user: ${message}` });
+		}
+	},
+);
 
 /**
  * DELETE /api/admin/users/:id
  * Delete a single user (cannot delete admins)
  */
-adminRouter.delete("/users/:id", async (req: Request, res: Response) => {
-	try {
-		await deleteUser(req.params.id);
-		res.json({ success: true });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		const status = message.includes("not found")
-			? HTTP_STATUS.CLIENT_ERROR.NOT_FOUND
-			: HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST;
-		res.status(status).json({ error: `Failed to delete user: ${message}` });
-	}
-});
+adminRouter.delete(
+	"/users/:id",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			await deleteUser(req.params.id);
+			res.json({ success: true });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			const status = message.includes("not found")
+				? HTTP_STATUS.CLIENT_ERROR.NOT_FOUND
+				: HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST;
+			res.status(status).json({ error: `Failed to delete user: ${message}` });
+		}
+	},
+);
 
 /**
  * POST /api/admin/users/bulk-delete
  * Bulk delete users by IDs (cannot delete admins)
  * Body: { userIds: string[] }
  */
-adminRouter.post("/users/bulk-delete", async (req: Request, res: Response) => {
-	try {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
-		const body: { userIds?: string[] } = req.body;
+adminRouter.post(
+	"/users/bulk-delete",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const body: { userIds?: string[] } = req.body;
 
-		if (!Array.isArray(body.userIds)) {
+			if (!Array.isArray(body.userIds)) {
+				res
+					.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+					.json({ error: "userIds must be an array" });
+				return;
+			}
+
+			const result = await bulkDeleteUsers(body.userIds);
+			res.json({
+				success: true,
+				data: {
+					deleted: result.deleted,
+					skipped: result.skipped,
+					skippedAdmins: result.skippedAdmins,
+				},
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
 			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: "userIds must be an array" });
-			return;
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to delete users: ${message}` });
 		}
-
-		const result = await bulkDeleteUsers(body.userIds);
-		res.json({
-			success: true,
-			data: {
-				deleted: result.deleted,
-				skipped: result.skipped,
-				skippedAdmins: result.skippedAdmins,
-			},
-		});
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to delete users: ${message}` });
-	}
-});
+	},
+);
 
 /**
  * POST /api/admin/users/:id/reset-password
@@ -472,6 +529,7 @@ adminRouter.post("/users/bulk-delete", async (req: Request, res: Response) => {
  */
 adminRouter.post(
 	"/users/:id/reset-password",
+	requireAdmin,
 	async (req: Request, res: Response) => {
 		try {
 			const user = await getUserById(req.params.id);
@@ -506,6 +564,7 @@ adminRouter.post(
  */
 adminRouter.post(
 	"/users/generate-passwords",
+	requireAdmin,
 	async (req: Request, res: Response) => {
 		try {
 			// Extract optional filter parameters from request body
@@ -541,17 +600,21 @@ adminRouter.post(
  * GET /api/admin/settings
  * Get system settings
  */
-adminRouter.get("/settings", async (req: Request, res: Response) => {
-	try {
-		const settings = await getSystemSettings();
-		res.json({ success: true, data: settings });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to get settings: ${message}` });
-	}
-});
+adminRouter.get(
+	"/settings",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const settings = await getSystemSettings();
+			res.json({ success: true, data: settings });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get settings: ${message}` });
+		}
+	},
+);
 
 /**
  * PUT /api/admin/settings/login-enabled
@@ -559,6 +622,7 @@ adminRouter.get("/settings", async (req: Request, res: Response) => {
  */
 adminRouter.put(
 	"/settings/login-enabled",
+	requireAdmin,
 	async (req: Request, res: Response) => {
 		try {
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- Express req.body is any
@@ -595,6 +659,7 @@ adminRouter.put(
  */
 adminRouter.post(
 	"/pools/upload",
+	requireAdmin,
 	upload.single("file"),
 	async (req: Request, res: Response) => {
 		try {
@@ -625,7 +690,7 @@ adminRouter.post(
  * GET /api/admin/pools
  * List all pools with pagination
  */
-adminRouter.get("/pools", async (req: Request, res: Response) => {
+adminRouter.get("/pools", requireAdmin, async (req: Request, res: Response) => {
 	try {
 		const pageParam =
 			typeof req.query.page === "string"
@@ -663,84 +728,92 @@ adminRouter.get("/pools", async (req: Request, res: Response) => {
  * POST /api/admin/pools
  * Create a single pool
  */
-adminRouter.post("/pools", async (req: Request, res: Response) => {
-	try {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
-		const request: CreatePoolRequest = req.body;
+adminRouter.post(
+	"/pools",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const request: CreatePoolRequest = req.body;
 
-		// Validate required fields
-		if (isEmptyString(request.poolKey) || isEmptyString(request.poolName)) {
-			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
-				error: "Missing required fields: poolKey, poolName",
-			});
-			return;
+			// Validate required fields
+			if (isEmptyString(request.poolKey) || isEmptyString(request.poolName)) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "Missing required fields: poolKey, poolName",
+				});
+				return;
+			}
+
+			// Trim whitespace from validated fields
+			const trimmedRequest: CreatePoolRequest = {
+				...request,
+				poolKey: request.poolKey.trim(),
+				poolName: request.poolName.trim(),
+			};
+
+			// Validate pool key format
+			const poolKeyError = validatePoolKeyFormat(trimmedRequest.poolKey);
+			if (poolKeyError !== undefined) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: poolKeyError,
+				});
+				return;
+			}
+
+			const pool = await createPool(trimmedRequest);
+			res
+				.status(HTTP_STATUS.SUCCESSFUL.CREATED)
+				.json({ success: true, data: pool });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to create pool: ${message}` });
 		}
-
-		// Trim whitespace from validated fields
-		const trimmedRequest: CreatePoolRequest = {
-			...request,
-			poolKey: request.poolKey.trim(),
-			poolName: request.poolName.trim(),
-		};
-
-		// Validate pool key format
-		const poolKeyError = validatePoolKeyFormat(trimmedRequest.poolKey);
-		if (poolKeyError !== undefined) {
-			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
-				error: poolKeyError,
-			});
-			return;
-		}
-
-		const pool = await createPool(trimmedRequest);
-		res
-			.status(HTTP_STATUS.SUCCESSFUL.CREATED)
-			.json({ success: true, data: pool });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to create pool: ${message}` });
-	}
-});
+	},
+);
 
 /**
  * GET /api/admin/pools/pending
  * List pending (missing) pool keys with user counts
  */
-adminRouter.get("/pools/pending", async (req: Request, res: Response) => {
-	try {
-		const pageParam =
-			typeof req.query.page === "string"
-				? req.query.page
-				: String(DEFAULT_PAGE);
-		const limitParam =
-			typeof req.query.limit === "string"
-				? req.query.limit
-				: String(DEFAULT_LIMIT);
-		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
-		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
+adminRouter.get(
+	"/pools/pending",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const pageParam =
+				typeof req.query.page === "string"
+					? req.query.page
+					: String(DEFAULT_PAGE);
+			const limitParam =
+				typeof req.query.limit === "string"
+					? req.query.limit
+					: String(DEFAULT_LIMIT);
+			const page = Number.parseInt(pageParam, DECIMAL_RADIX);
+			const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
 
-		const { pendingKeys, total } = await listPendingPoolKeys(page, limit);
+			const { pendingKeys, total } = await listPendingPoolKeys(page, limit);
 
-		const response: PendingPoolKeyListResponse = {
-			data: pendingKeys,
-			pagination: {
-				page,
-				limit,
-				total,
-				totalPages: Math.ceil(total / limit),
-			},
-		};
+			const response: PendingPoolKeyListResponse = {
+				data: pendingKeys,
+				pagination: {
+					page,
+					limit,
+					total,
+					totalPages: Math.ceil(total / limit),
+				},
+			};
 
-		res.json(response);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to list pending pool keys: ${message}` });
-	}
-});
+			res.json(response);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to list pending pool keys: ${message}` });
+		}
+	},
+);
 
 /**
  * POST /api/admin/pools/pending/create
@@ -748,6 +821,7 @@ adminRouter.get("/pools/pending", async (req: Request, res: Response) => {
  */
 adminRouter.post(
 	"/pools/pending/create",
+	requireAdmin,
 	async (req: Request, res: Response) => {
 		try {
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
@@ -796,6 +870,7 @@ adminRouter.post(
  */
 adminRouter.post(
 	"/pools/pending/remap",
+	requireAdmin,
 	async (req: Request, res: Response) => {
 		try {
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
@@ -837,6 +912,7 @@ adminRouter.post(
  */
 adminRouter.delete(
 	"/pools/pending/:poolKey",
+	requireAdmin,
 	async (req: Request, res: Response) => {
 		try {
 			// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Already using destructuring
@@ -861,132 +937,152 @@ adminRouter.delete(
  * GET /api/admin/pools/:id
  * Get a single pool by ID
  */
-adminRouter.get("/pools/:id", async (req: Request, res: Response) => {
-	try {
-		const poolId = parseInt(req.params.id, 10);
-		const pool = await getPoolById(poolId);
+adminRouter.get(
+	"/pools/:id",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const poolId = parseInt(req.params.id, 10);
+			const pool = await getPoolById(poolId);
 
-		if (pool === null) {
+			if (pool === null) {
+				res
+					.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
+					.json({ error: "Pool not found" });
+				return;
+			}
+
+			res.json({ success: true, data: pool });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
 			res
-				.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
-				.json({ error: "Pool not found" });
-			return;
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get pool: ${message}` });
 		}
-
-		res.json({ success: true, data: pool });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to get pool: ${message}` });
-	}
-});
+	},
+);
 
 /**
  * PUT /api/admin/pools/:id
  * Update pool details
  */
-adminRouter.put("/pools/:id", async (req: Request, res: Response) => {
-	try {
-		const poolId = parseInt(req.params.id, 10);
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
-		const updates: UpdatePoolRequest = req.body;
+adminRouter.put(
+	"/pools/:id",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const poolId = parseInt(req.params.id, 10);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const updates: UpdatePoolRequest = req.body;
 
-		// Validate pool key format if being updated
-		if (updates.poolKey !== undefined) {
-			const trimmedPoolKey = updates.poolKey.trim();
-			const poolKeyError = validatePoolKeyFormat(trimmedPoolKey);
-			if (poolKeyError !== undefined) {
-				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
-					error: poolKeyError,
-				});
-				return;
+			// Validate pool key format if being updated
+			if (updates.poolKey !== undefined) {
+				const trimmedPoolKey = updates.poolKey.trim();
+				const poolKeyError = validatePoolKeyFormat(trimmedPoolKey);
+				if (poolKeyError !== undefined) {
+					res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+						error: poolKeyError,
+					});
+					return;
+				}
+				updates.poolKey = trimmedPoolKey;
 			}
-			updates.poolKey = trimmedPoolKey;
-		}
 
-		const pool = await updatePool(poolId, updates);
-		res.json({ success: true, data: pool });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to update pool: ${message}` });
-	}
-});
+			const pool = await updatePool(poolId, updates);
+			res.json({ success: true, data: pool });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to update pool: ${message}` });
+		}
+	},
+);
 
 /**
  * POST /api/admin/pools/:id/disable
  * Disable a pool
  */
-adminRouter.post("/pools/:id/disable", async (req: Request, res: Response) => {
-	try {
-		const poolId = parseInt(req.params.id, 10);
-		const pool = await disablePool(poolId);
-		res.json({ success: true, data: pool });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to disable pool: ${message}` });
-	}
-});
+adminRouter.post(
+	"/pools/:id/disable",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const poolId = parseInt(req.params.id, 10);
+			const pool = await disablePool(poolId);
+			res.json({ success: true, data: pool });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to disable pool: ${message}` });
+		}
+	},
+);
 
 /**
  * POST /api/admin/pools/:id/enable
  * Enable a pool
  */
-adminRouter.post("/pools/:id/enable", async (req: Request, res: Response) => {
-	try {
-		const poolId = parseInt(req.params.id, 10);
-		const pool = await enablePool(poolId);
-		res.json({ success: true, data: pool });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to enable pool: ${message}` });
-	}
-});
+adminRouter.post(
+	"/pools/:id/enable",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const poolId = parseInt(req.params.id, 10);
+			const pool = await enablePool(poolId);
+			res.json({ success: true, data: pool });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to enable pool: ${message}` });
+		}
+	},
+);
 
 /**
  * GET /api/admin/pools/:id/users
  * Get users in a pool
  */
-adminRouter.get("/pools/:id/users", async (req: Request, res: Response) => {
-	try {
-		const poolId = parseInt(req.params.id, 10);
-		const pageParam =
-			typeof req.query.page === "string"
-				? req.query.page
-				: String(DEFAULT_PAGE);
-		const limitParam =
-			typeof req.query.limit === "string"
-				? req.query.limit
-				: String(DEFAULT_LIMIT);
-		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
-		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
+adminRouter.get(
+	"/pools/:id/users",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const poolId = parseInt(req.params.id, 10);
+			const pageParam =
+				typeof req.query.page === "string"
+					? req.query.page
+					: String(DEFAULT_PAGE);
+			const limitParam =
+				typeof req.query.limit === "string"
+					? req.query.limit
+					: String(DEFAULT_LIMIT);
+			const page = Number.parseInt(pageParam, DECIMAL_RADIX);
+			const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
 
-		const { users, total } = await getUsersInPool(poolId, page, limit);
+			const { users, total } = await getUsersInPool(poolId, page, limit);
 
-		const response: UserListResponse = {
-			data: users,
-			pagination: {
-				page,
-				limit,
-				total,
-				totalPages: Math.ceil(total / limit),
-			},
-		};
+			const response: UserListResponse = {
+				data: users,
+				pagination: {
+					page,
+					limit,
+					total,
+					totalPages: Math.ceil(total / limit),
+				},
+			};
 
-		res.json(response);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to get pool users: ${message}` });
-	}
-});
+			res.json(response);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get pool users: ${message}` });
+		}
+	},
+);
 
 /**
  * POST /api/admin/pools/:id/users/:userId
@@ -994,6 +1090,7 @@ adminRouter.get("/pools/:id/users", async (req: Request, res: Response) => {
  */
 adminRouter.post(
 	"/pools/:id/users/:userId",
+	requireAdmin,
 	async (req: Request, res: Response) => {
 		try {
 			const {
@@ -1018,12 +1115,30 @@ adminRouter.post(
  */
 adminRouter.delete(
 	"/pools/:id/users/:userId",
+	requireAdmin,
 	async (req: Request, res: Response) => {
 		try {
 			const {
 				params: { id, userId },
 			} = req;
 			const poolId = parseInt(id, 10);
+
+			// Check if user is removing themselves from their joined meeting's admin pool
+			if (userId === req.user?.id) {
+				const currentMeeting = await getCurrentMeetingInfo(userId);
+				if (
+					currentMeeting !== null &&
+					currentMeeting.participant.role === ParticipantRole.MeetingAdmin &&
+					currentMeeting.meeting.adminPoolId === poolId
+				) {
+					res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+						success: false,
+						error:
+							"Cannot remove yourself from the admin pool of your current meeting",
+					});
+					return;
+				}
+			}
 
 			await removeUserFromPool(poolId, userId);
 			res.json({
@@ -1043,20 +1158,24 @@ adminRouter.delete(
  * GET /api/admin/users/:id/pools
  * Get pools for a user
  */
-adminRouter.get("/users/:id/pools", async (req: Request, res: Response) => {
-	try {
-		const {
-			params: { id },
-		} = req;
-		const pools = await getPoolsForUser(id);
-		res.json({ success: true, data: pools });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to get user pools: ${message}` });
-	}
-});
+adminRouter.get(
+	"/users/:id/pools",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const {
+				params: { id },
+			} = req;
+			const pools = await getPoolsForUser(id);
+			res.json({ success: true, data: pools });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get user pools: ${message}` });
+		}
+	},
+);
 
 /**
  * Meeting Management Routes
@@ -1066,55 +1185,71 @@ adminRouter.get("/users/:id/pools", async (req: Request, res: Response) => {
  * POST /api/admin/meetings
  * Create a new meeting
  */
-adminRouter.post("/meetings", async (req: Request, res: Response) => {
-	try {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
-		const request: Partial<CreateMeetingRequest> = req.body;
+adminRouter.post(
+	"/meetings",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const request: Partial<CreateMeetingRequest> = req.body;
 
-		// Validate required fields
-		if (
-			request.name === undefined ||
-			request.name === "" ||
-			request.startDate === undefined ||
-			request.startDate === "" ||
-			request.endDate === undefined ||
-			request.endDate === "" ||
-			request.quorumVotingPoolId === undefined
-		) {
-			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
-				error:
-					"Missing required fields: name, startDate, endDate, quorumVotingPoolId",
+			// Validate required fields
+			if (
+				request.name === undefined ||
+				request.name === "" ||
+				request.startDate === undefined ||
+				request.startDate === "" ||
+				request.endDate === undefined ||
+				request.endDate === "" ||
+				request.quorumVotingPoolId === undefined
+			) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error:
+						"Missing required fields: name, startDate, endDate, quorumVotingPoolId",
+				});
+				return;
+			}
+
+			// After validation, we know all required fields exist
+			const validatedRequest: CreateMeetingRequest = {
+				name: request.name,
+				startDate: request.startDate,
+				endDate: request.endDate,
+				quorumVotingPoolId: request.quorumVotingPoolId,
+				watcherPoolId: request.watcherPoolId,
+				adminPoolId: request.adminPoolId,
+				description: request.description,
+			};
+
+			const meeting = await createMeeting(validatedRequest);
+			res
+				.status(HTTP_STATUS.SUCCESSFUL.CREATED)
+				.json({ success: true, data: meeting });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to create meeting: ${message}` });
+		}
+	},
+);
+
+/**
+ * GET /api/admin/meetings
+ * List meetings with pagination
+ * For global admins: returns all meetings
+ * For meeting admins: returns only meetings where user is in admin pool
+ */
+adminRouter.get("/meetings", async (req: Request, res: Response) => {
+	try {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
 			});
 			return;
 		}
 
-		// After validation, we know all required fields exist
-		const validatedRequest: CreateMeetingRequest = {
-			name: request.name,
-			startDate: request.startDate,
-			endDate: request.endDate,
-			quorumVotingPoolId: request.quorumVotingPoolId,
-			description: request.description,
-		};
-
-		const meeting = await createMeeting(validatedRequest);
-		res
-			.status(HTTP_STATUS.SUCCESSFUL.CREATED)
-			.json({ success: true, data: meeting });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to create meeting: ${message}` });
-	}
-});
-
-/**
- * GET /api/admin/meetings
- * List all meetings with pagination
- */
-adminRouter.get("/meetings", async (req: Request, res: Response) => {
-	try {
 		const pageParam =
 			typeof req.query.page === "string"
 				? req.query.page
@@ -1126,7 +1261,10 @@ adminRouter.get("/meetings", async (req: Request, res: Response) => {
 		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
 		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
 
-		const { meetings, total } = await listMeetings(page, limit);
+		// Global admins see all meetings; meeting admins only see their authorized meetings
+		const { meetings, total } = req.user.isAdmin
+			? await listMeetings(page, limit)
+			: await listMeetingsForMeetingAdmin(req.user.id, page, limit);
 
 		const response: MeetingListResponse = {
 			data: meetings,
@@ -1147,66 +1285,218 @@ adminRouter.get("/meetings", async (req: Request, res: Response) => {
 	}
 });
 
-/**
- * GET /api/admin/meetings/:id
- * Get a single meeting by ID
- */
-adminRouter.get("/meetings/:id", async (req: Request, res: Response) => {
-	try {
-		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
-		const meeting = await getMeetingById(meetingId);
+// ============================================================================
+// Meeting Admin Selection Routes
+// These routes allow non-global admins who are meeting admins to select and
+// manage the meetings they are authorized to administer
+// IMPORTANT: These routes must be defined before /meetings/:id routes
+// ============================================================================
 
-		if (meeting === null) {
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
-				.json({ error: "Meeting not found" });
+/**
+ * GET /api/admin/meetings/joinable
+ * Get list of meetings the current user can administer
+ * For global admins, this returns all active meetings
+ * For meeting admins, this returns meetings where they are in the admin pool
+ */
+adminRouter.get("/meetings/joinable", async (req: Request, res: Response) => {
+	try {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
 			return;
 		}
 
-		res.json({ success: true, data: meeting });
+		// Global admins can join any active meeting
+		// Meeting admins can only join meetings where they are in the admin pool
+		const meetings = req.user.isAdmin
+			? await getAllActiveMeetings()
+			: await getJoinableMeetingsForAdmin(req.user.id);
+		res.json({ success: true, data: { data: meetings } });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Unknown error";
 		res
 			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to get meeting: ${message}` });
+			.json({ success: false, error: `Failed to get meetings: ${message}` });
 	}
 });
+
+/**
+ * GET /api/admin/meetings/current
+ * Get current meeting for meeting admin
+ */
+adminRouter.get("/meetings/current", async (req: Request, res: Response) => {
+	try {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		const meetingInfo = await getCurrentMeetingInfo(req.user.id);
+		res.json({ success: true, data: meetingInfo });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+			success: false,
+			error: `Failed to get current meeting: ${message}`,
+		});
+	}
+});
+
+/**
+ * POST /api/admin/meetings/leave
+ * Leave current meeting as meeting admin
+ */
+adminRouter.post("/meetings/leave", async (req: Request, res: Response) => {
+	try {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		const success = await leaveCurrentMeeting(req.user.id);
+		if (success) {
+			res.json({ success: true, data: { left: true } });
+		} else {
+			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+				success: false,
+				error: "Not currently in a meeting",
+			});
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		res
+			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+			.json({ success: false, error: `Failed to leave meeting: ${message}` });
+	}
+});
+
+/**
+ * GET /api/admin/meetings/:id
+ * Get a single meeting by ID
+ */
+adminRouter.get(
+	"/meetings/:id",
+	requireMeetingAdmin("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			const meeting = await getMeetingById(meetingId);
+
+			if (meeting === null) {
+				res
+					.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
+					.json({ error: "Meeting not found" });
+				return;
+			}
+
+			res.json({ success: true, data: meeting });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get meeting: ${message}` });
+		}
+	},
+);
 
 /**
  * PUT /api/admin/meetings/:id
  * Update meeting details
  */
-adminRouter.put("/meetings/:id", async (req: Request, res: Response) => {
-	try {
-		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
-		const updates: UpdateMeetingRequest = req.body;
-		const meeting = await updateMeeting(meetingId, updates);
-		res.json({ success: true, data: meeting });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to update meeting: ${message}` });
-	}
-});
+adminRouter.put(
+	"/meetings/:id",
+	requireMeetingAdmin("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const updates: UpdateMeetingRequest = req.body;
+			// Only global admins may change the admin pool for a meeting.
+			// Strip adminPoolId from the update payload for non-global-admins so a
+			// scoped meeting admin can't grant admin rights to others.
+			if (req.user?.isAdmin !== true && "adminPoolId" in updates) {
+				delete updates.adminPoolId;
+			}
+			const meeting = await updateMeeting(meetingId, updates);
+			res.json({ success: true, data: meeting });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to update meeting: ${message}` });
+		}
+	},
+);
 
 /**
  * DELETE /api/admin/meetings/:id
  * Delete a meeting (cascades to motions and choices)
  */
-adminRouter.delete("/meetings/:id", async (req: Request, res: Response) => {
-	try {
-		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
-		await deleteMeeting(meetingId);
-		res.json({ success: true, message: "Meeting deleted successfully" });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to delete meeting: ${message}` });
-	}
-});
+adminRouter.delete(
+	"/meetings/:id",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			await deleteMeeting(meetingId);
+			res.json({ success: true, message: "Meeting deleted successfully" });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to delete meeting: ${message}` });
+		}
+	},
+);
+
+/**
+ * POST /api/admin/meetings/:id/join
+ * Join a meeting as meeting admin
+ */
+adminRouter.post(
+	"/meetings/:id/join",
+	requireMeetingAdmin("id"),
+	async (req: Request, res: Response) => {
+		try {
+			if (req.user === undefined) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+					success: false,
+					error: "Authentication required",
+				});
+				return;
+			}
+
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			if (Number.isNaN(meetingId)) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					success: false,
+					error: "Invalid meeting ID",
+				});
+				return;
+			}
+
+			const result = await joinMeetingAsAdmin(
+				req.user.id,
+				meetingId,
+				req.user.isAdmin,
+			);
+			res.json({ success: true, data: result });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ success: false, error: `Failed to join meeting: ${message}` });
+		}
+	},
+);
 
 /**
  * Motion Management Routes
@@ -1218,6 +1508,7 @@ adminRouter.delete("/meetings/:id", async (req: Request, res: Response) => {
  */
 adminRouter.post(
 	"/meetings/:meetingId/motions",
+	requireMeetingAdmin("meetingId"),
 	async (req: Request, res: Response) => {
 		try {
 			const meetingId = parseInt(req.params.meetingId, DECIMAL_RADIX);
@@ -1264,6 +1555,7 @@ adminRouter.post(
  */
 adminRouter.get(
 	"/meetings/:meetingId/motions",
+	requireMeetingAdmin("meetingId"),
 	async (req: Request, res: Response) => {
 		try {
 			const meetingId = parseInt(req.params.meetingId, DECIMAL_RADIX);
@@ -1308,26 +1600,30 @@ adminRouter.get(
  * GET /api/admin/motions/:id
  * Get a single motion by ID
  */
-adminRouter.get("/motions/:id", async (req: Request, res: Response) => {
-	try {
-		const motionId = parseInt(req.params.id, DECIMAL_RADIX);
-		const motion = await getMotionById(motionId);
+adminRouter.get(
+	"/motions/:id",
+	requireMeetingAdminForMotion("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
+			const motion = await getMotionById(motionId);
 
-		if (motion === null) {
+			if (motion === null) {
+				res
+					.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
+					.json({ error: "Motion not found" });
+				return;
+			}
+
+			res.json({ success: true, data: motion });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
 			res
-				.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
-				.json({ error: "Motion not found" });
-			return;
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get motion: ${message}` });
 		}
-
-		res.json({ success: true, data: motion });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to get motion: ${message}` });
-	}
-});
+	},
+);
 
 /**
  * GET /api/admin/motions/:id/vote-stats
@@ -1335,6 +1631,7 @@ adminRouter.get("/motions/:id", async (req: Request, res: Response) => {
  */
 adminRouter.get(
 	"/motions/:id/vote-stats",
+	requireMeetingAdminForMotion("id"),
 	async (req: Request, res: Response) => {
 		try {
 			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
@@ -1353,75 +1650,89 @@ adminRouter.get(
  * GET /api/admin/motions/:id/results
  * Get detailed voting results for a completed motion
  */
-adminRouter.get("/motions/:id/results", async (req: Request, res: Response) => {
-	try {
-		const motionId = parseInt(req.params.id, DECIMAL_RADIX);
-		const results = await getMotionDetailedResults(motionId);
-		res.json({ success: true, data: results });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
+adminRouter.get(
+	"/motions/:id/results",
+	requireMeetingAdminForMotion("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
+			const results = await getMotionDetailedResults(motionId);
+			res.json({ success: true, data: results });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
 
-		// Return 400 for "not voting_complete" errors
-		if (message.includes("voting_complete")) {
-			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({ error: message });
-		} else {
-			res
-				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-				.json({ error: `Failed to get motion results: ${message}` });
+			// Return 400 for "not voting_complete" errors
+			if (message.includes("voting_complete")) {
+				res
+					.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+					.json({ error: message });
+			} else {
+				res
+					.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+					.json({ error: `Failed to get motion results: ${message}` });
+			}
 		}
-	}
-});
+	},
+);
 
 /**
  * PUT /api/admin/motions/:id
  * Update motion details (non-status fields)
  */
-adminRouter.put("/motions/:id", async (req: Request, res: Response) => {
-	try {
-		const motionId = parseInt(req.params.id, DECIMAL_RADIX);
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
-		const updates: UpdateMotionRequest = req.body;
-		const motion = await updateMotion(motionId, updates);
-		res.json({ success: true, data: motion });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to update motion: ${message}` });
-	}
-});
+adminRouter.put(
+	"/motions/:id",
+	requireMeetingAdminForMotion("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const updates: UpdateMotionRequest = req.body;
+			const motion = await updateMotion(motionId, updates);
+			res.json({ success: true, data: motion });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to update motion: ${message}` });
+		}
+	},
+);
 
 /**
  * PUT /api/admin/motions/:id/status
  * Update motion status (forward-only transitions)
  */
-adminRouter.put("/motions/:id/status", async (req: Request, res: Response) => {
-	try {
-		const motionId = parseInt(req.params.id, DECIMAL_RADIX);
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
-		const body: Partial<UpdateMotionStatusRequest> = req.body;
+adminRouter.put(
+	"/motions/:id/status",
+	requireMeetingAdminForMotion("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const body: Partial<UpdateMotionStatusRequest> = req.body;
 
-		if (body.status === undefined) {
-			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
-				error: "Missing required field: status",
-			});
-			return;
+			if (body.status === undefined) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "Missing required field: status",
+				});
+				return;
+			}
+
+			const request: UpdateMotionStatusRequest = {
+				status: body.status,
+				endOverride: body.endOverride,
+			};
+
+			const motion = await updateMotionStatus(motionId, request);
+			res.json({ success: true, data: motion });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to update motion status: ${message}` });
 		}
-
-		const request: UpdateMotionStatusRequest = {
-			status: body.status,
-			endOverride: body.endOverride,
-		};
-
-		const motion = await updateMotionStatus(motionId, request);
-		res.json({ success: true, data: motion });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to update motion status: ${message}` });
-	}
-});
+	},
+);
 
 /**
  * PUT /api/admin/motions/:id/end-override
@@ -1429,6 +1740,7 @@ adminRouter.put("/motions/:id/status", async (req: Request, res: Response) => {
  */
 adminRouter.put(
 	"/motions/:id/end-override",
+	requireMeetingAdminForMotion("id"),
 	async (req: Request, res: Response) => {
 		try {
 			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
@@ -1450,18 +1762,22 @@ adminRouter.put(
  * DELETE /api/admin/motions/:id
  * Delete a motion (cascades to choices)
  */
-adminRouter.delete("/motions/:id", async (req: Request, res: Response) => {
-	try {
-		const motionId = parseInt(req.params.id, DECIMAL_RADIX);
-		await deleteMotion(motionId);
-		res.json({ success: true, message: "Motion deleted successfully" });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to delete motion: ${message}` });
-	}
-});
+adminRouter.delete(
+	"/motions/:id",
+	requireMeetingAdminForMotion("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
+			await deleteMotion(motionId);
+			res.json({ success: true, message: "Motion deleted successfully" });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to delete motion: ${message}` });
+		}
+	},
+);
 
 /**
  * Choice Management Routes
@@ -1473,6 +1789,7 @@ adminRouter.delete("/motions/:id", async (req: Request, res: Response) => {
  */
 adminRouter.post(
 	"/motions/:motionId/choices",
+	requireMeetingAdminForMotion("motionId"),
 	async (req: Request, res: Response) => {
 		try {
 			const motionId = parseInt(req.params.motionId, DECIMAL_RADIX);
@@ -1513,6 +1830,7 @@ adminRouter.post(
  */
 adminRouter.get(
 	"/motions/:motionId/choices",
+	requireMeetingAdminForMotion("motionId"),
 	async (req: Request, res: Response) => {
 		try {
 			const motionId = parseInt(req.params.motionId, DECIMAL_RADIX);
@@ -1536,45 +1854,53 @@ adminRouter.get(
  * GET /api/admin/choices/:id
  * Get a single choice by ID
  */
-adminRouter.get("/choices/:id", async (req: Request, res: Response) => {
-	try {
-		const choiceId = parseInt(req.params.id, DECIMAL_RADIX);
-		const choice = await getChoiceById(choiceId);
+adminRouter.get(
+	"/choices/:id",
+	requireMeetingAdminForChoice("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const choiceId = parseInt(req.params.id, DECIMAL_RADIX);
+			const choice = await getChoiceById(choiceId);
 
-		if (choice === null) {
+			if (choice === null) {
+				res
+					.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
+					.json({ error: "Choice not found" });
+				return;
+			}
+
+			res.json({ success: true, data: choice });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
 			res
-				.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
-				.json({ error: "Choice not found" });
-			return;
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get choice: ${message}` });
 		}
-
-		res.json({ success: true, data: choice });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to get choice: ${message}` });
-	}
-});
+	},
+);
 
 /**
  * PUT /api/admin/choices/:id
  * Update a choice (only if motion not started)
  */
-adminRouter.put("/choices/:id", async (req: Request, res: Response) => {
-	try {
-		const choiceId = parseInt(req.params.id, DECIMAL_RADIX);
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
-		const updates: UpdateChoiceRequest = req.body;
-		const choice = await updateChoice(choiceId, updates);
-		res.json({ success: true, data: choice });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to update choice: ${message}` });
-	}
-});
+adminRouter.put(
+	"/choices/:id",
+	requireMeetingAdminForChoice("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const choiceId = parseInt(req.params.id, DECIMAL_RADIX);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const updates: UpdateChoiceRequest = req.body;
+			const choice = await updateChoice(choiceId, updates);
+			res.json({ success: true, data: choice });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to update choice: ${message}` });
+		}
+	},
+);
 
 /**
  * PUT /api/admin/motions/:motionId/choices/reorder
@@ -1582,6 +1908,7 @@ adminRouter.put("/choices/:id", async (req: Request, res: Response) => {
  */
 adminRouter.put(
 	"/motions/:motionId/choices/reorder",
+	requireMeetingAdminForMotion("motionId"),
 	async (req: Request, res: Response) => {
 		try {
 			const motionId = parseInt(req.params.motionId, DECIMAL_RADIX);
@@ -1610,18 +1937,22 @@ adminRouter.put(
  * DELETE /api/admin/choices/:id
  * Delete a choice (only if motion not started)
  */
-adminRouter.delete("/choices/:id", async (req: Request, res: Response) => {
-	try {
-		const choiceId = parseInt(req.params.id, DECIMAL_RADIX);
-		await deleteChoice(choiceId);
-		res.json({ success: true, message: "Choice deleted successfully" });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to delete choice: ${message}` });
-	}
-});
+adminRouter.delete(
+	"/choices/:id",
+	requireMeetingAdminForChoice("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const choiceId = parseInt(req.params.id, DECIMAL_RADIX);
+			await deleteChoice(choiceId);
+			res.json({ success: true, message: "Choice deleted successfully" });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to delete choice: ${message}` });
+		}
+	},
+);
 
 /**
  * Quorum Management Routes
@@ -1631,51 +1962,60 @@ adminRouter.delete("/choices/:id", async (req: Request, res: Response) => {
  * GET /api/admin/meetings/:id/quorum
  * Get quorum report for a meeting
  */
-adminRouter.get("/meetings/:id/quorum", async (req: Request, res: Response) => {
-	try {
-		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
-		const report = await getQuorumReport(meetingId);
+adminRouter.get(
+	"/meetings/:id/quorum",
+	requireMeetingAdmin("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			const report = await getQuorumReport(meetingId);
 
-		if (report === null) {
+			if (report === null) {
+				res
+					.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
+					.json({ error: "Meeting not found" });
+				return;
+			}
+
+			res.json({ success: true, data: report });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
 			res
-				.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND)
-				.json({ error: "Meeting not found" });
-			return;
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get quorum report: ${message}` });
 		}
-
-		res.json({ success: true, data: report });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to get quorum report: ${message}` });
-	}
-});
+	},
+);
 
 /**
  * PUT /api/admin/meetings/:id/quorum
  * Call or uncall quorum for a meeting
  */
-adminRouter.put("/meetings/:id/quorum", async (req: Request, res: Response) => {
-	try {
-		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- Express req.body is any
-		const quorumCalledAt: string | null = req.body.quorumCalledAt ?? null;
+adminRouter.put(
+	"/meetings/:id/quorum",
+	requireMeetingAdmin("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- Express req.body is any
+			const quorumCalledAt: string | null = req.body.quorumCalledAt ?? null;
 
-		const timestamp = quorumCalledAt === null ? null : new Date(quorumCalledAt);
+			const timestamp =
+				quorumCalledAt === null ? null : new Date(quorumCalledAt);
 
-		await callQuorum(meetingId, timestamp);
+			await callQuorum(meetingId, timestamp);
 
-		// Return updated quorum report
-		const report = await getQuorumReport(meetingId);
-		res.json({ success: true, data: report });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-			.json({ error: `Failed to update quorum: ${message}` });
-	}
-});
+			// Return updated quorum report
+			const report = await getQuorumReport(meetingId);
+			res.json({ success: true, data: report });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+				.json({ error: `Failed to update quorum: ${message}` });
+		}
+	},
+);
 
 /**
  * GET /api/admin/meetings/:id/quorum/voters
@@ -1683,6 +2023,7 @@ adminRouter.put("/meetings/:id/quorum", async (req: Request, res: Response) => {
  */
 adminRouter.get(
 	"/meetings/:id/quorum/voters",
+	requireMeetingAdmin("id"),
 	async (req: Request, res: Response) => {
 		try {
 			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);

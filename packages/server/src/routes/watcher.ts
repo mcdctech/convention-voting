@@ -19,7 +19,24 @@ import {
 	getWatcherMotionVoters,
 	getWatcherMotionResult,
 } from "../services/watcher-service.js";
+import {
+	getCurrentMeetingInfo,
+	getJoinableMeetingsForWatcher,
+	joinMeetingAsWatcher,
+	leaveCurrentMeeting,
+} from "../services/meeting-participant-service.js";
+import {
+	requireWatcherForMeeting,
+	requireWatcherForMotion,
+} from "../middleware/watcher-meeting-middleware.js";
 import type { Request, Response } from "express";
+import type {
+	ApiResponse,
+	CurrentMeetingResponse,
+	JoinableMeetingsResponse,
+	JoinMeetingResponse,
+	LeaveMeetingResponse,
+} from "@mcdc-convention-voting/shared";
 
 export const watcherRouter = Router();
 
@@ -28,17 +45,210 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 50;
 const DECIMAL_RADIX = 10;
 
+// HTTP status code constant
+const HTTP_INTERNAL_SERVER_ERROR = 500;
+
+/**
+ * Determine HTTP status code for meeting join errors
+ */
+function getMeetingJoinErrorStatus(message: string): number {
+	if (
+		message.includes("not found") ||
+		message.includes("not currently active") ||
+		message.includes("does not allow watchers")
+	) {
+		return HTTP_STATUS.CLIENT_ERROR.NOT_FOUND;
+	}
+
+	if (message.includes("not eligible")) {
+		return HTTP_STATUS.CLIENT_ERROR.FORBIDDEN;
+	}
+
+	return HTTP_INTERNAL_SERVER_ERROR;
+}
+
+// ============================================================================
+// Meeting Participation Endpoints
+// ============================================================================
+
+/**
+ * GET /watcher/meetings/joinable
+ * Get list of active meetings the user can join as a watcher
+ */
+watcherRouter.get(
+	"/meetings/joinable",
+	async (
+		req: Request<object, ApiResponse<JoinableMeetingsResponse>>,
+		res: Response<ApiResponse<JoinableMeetingsResponse>>,
+	): Promise<void> => {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		try {
+			const meetings = await getJoinableMeetingsForWatcher(req.user.id);
+
+			res.json({
+				success: true,
+				data: {
+					data: meetings,
+				},
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+				success: false,
+				error: `Failed to get joinable meetings: ${message}`,
+			});
+		}
+	},
+);
+
+/**
+ * GET /watcher/meetings/current
+ * Get the user's current active meeting
+ */
+watcherRouter.get(
+	"/meetings/current",
+	async (
+		req: Request<object, ApiResponse<CurrentMeetingResponse>>,
+		res: Response<ApiResponse<CurrentMeetingResponse>>,
+	): Promise<void> => {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		try {
+			const currentMeeting = await getCurrentMeetingInfo(req.user.id);
+
+			res.json({
+				success: true,
+				data: {
+					data: currentMeeting,
+				},
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+				success: false,
+				error: `Failed to get current meeting: ${message}`,
+			});
+		}
+	},
+);
+
+/**
+ * POST /watcher/meetings/:id/join
+ * Join a meeting as a watcher
+ */
+watcherRouter.post(
+	"/meetings/:id/join",
+	async (
+		req: Request<{ id: string }, ApiResponse<JoinMeetingResponse>>,
+		res: Response<ApiResponse<JoinMeetingResponse>>,
+	): Promise<void> => {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+		if (Number.isNaN(meetingId)) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+				success: false,
+				error: "Invalid meeting ID",
+			});
+			return;
+		}
+
+		try {
+			const result = await joinMeetingAsWatcher(req.user.id, meetingId);
+
+			res.json({
+				success: true,
+				data: {
+					data: result,
+				},
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			const statusCode = getMeetingJoinErrorStatus(message);
+
+			res.status(statusCode).json({
+				success: false,
+				error: message,
+			});
+		}
+	},
+);
+
+/**
+ * POST /watcher/meetings/leave
+ * Leave the current meeting
+ */
+watcherRouter.post(
+	"/meetings/leave",
+	async (
+		req: Request<object, ApiResponse<LeaveMeetingResponse>>,
+		res: Response<ApiResponse<LeaveMeetingResponse>>,
+	): Promise<void> => {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		try {
+			const success = await leaveCurrentMeeting(req.user.id);
+
+			res.json({
+				success: true,
+				data: {
+					data: { success },
+				},
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+				success: false,
+				error: `Failed to leave meeting: ${message}`,
+			});
+		}
+	},
+);
+
 // ============================================================================
 // Meeting Endpoints
 // ============================================================================
 
 /**
  * GET /watcher/meetings
- * Get all meetings with motion summaries
+ * Get meetings with motion summaries (filtered by watcher pool membership)
  */
 watcherRouter.get(
 	"/meetings",
 	async (req: Request, res: Response): Promise<void> => {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
 		try {
 			const page = parseInt(
 				// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Query param is string
@@ -51,7 +261,11 @@ watcherRouter.get(
 				DECIMAL_RADIX,
 			);
 
-			const { meetings, total } = await getWatcherMeetings(page, limit);
+			const { meetings, total } = await getWatcherMeetings(
+				req.user.id,
+				page,
+				limit,
+			);
 
 			res.json({
 				data: meetings,
@@ -78,6 +292,7 @@ watcherRouter.get(
  */
 watcherRouter.get(
 	"/meetings/:id",
+	requireWatcherForMeeting("id"),
 	async (req: Request, res: Response): Promise<void> => {
 		try {
 			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
@@ -126,6 +341,7 @@ watcherRouter.get(
  */
 watcherRouter.get(
 	"/meetings/:id/quorum",
+	requireWatcherForMeeting("id"),
 	async (req: Request, res: Response): Promise<void> => {
 		try {
 			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
@@ -170,6 +386,7 @@ watcherRouter.get(
  */
 watcherRouter.get(
 	"/meetings/:id/quorum/voters",
+	requireWatcherForMeeting("id"),
 	async (req: Request, res: Response): Promise<void> => {
 		try {
 			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
@@ -210,6 +427,7 @@ watcherRouter.get(
  */
 watcherRouter.get(
 	"/motions/:id",
+	requireWatcherForMotion("id"),
 	async (req: Request, res: Response): Promise<void> => {
 		try {
 			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
@@ -254,6 +472,7 @@ watcherRouter.get(
  */
 watcherRouter.get(
 	"/motions/:id/voters",
+	requireWatcherForMotion("id"),
 	async (req: Request, res: Response): Promise<void> => {
 		try {
 			const motionId = parseInt(req.params.id, DECIMAL_RADIX);
@@ -307,6 +526,7 @@ watcherRouter.get(
  */
 watcherRouter.get(
 	"/motions/:id/results",
+	requireWatcherForMotion("id"),
 	async (req: Request, res: Response): Promise<void> => {
 		try {
 			const motionId = parseInt(req.params.id, DECIMAL_RADIX);

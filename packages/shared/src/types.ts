@@ -350,6 +350,8 @@ export enum MotionStatus {
  * - start_date: TIMESTAMP WITH TIME ZONE NOT NULL
  * - end_date: TIMESTAMP WITH TIME ZONE NOT NULL
  * - quorum_voting_pool_id: INTEGER NOT NULL REFERENCES pools(id) ON DELETE RESTRICT
+ * - watcher_pool_id: INTEGER REFERENCES pools(id) ON DELETE RESTRICT (nullable)
+ * - admin_pool_id: INTEGER REFERENCES pools(id) ON DELETE RESTRICT (nullable)
  * - quorum_called_at: TIMESTAMP WITH TIME ZONE (nullable)
  * - created_at: TIMESTAMP WITH TIME ZONE
  * - updated_at: TIMESTAMP WITH TIME ZONE
@@ -363,6 +365,8 @@ export interface Meeting {
 	startDate: Date;
 	endDate: Date;
 	quorumVotingPoolId: number;
+	watcherPoolId: number | null;
+	adminPoolId: number | null;
 	quorumCalledAt: Date | null;
 	createdAt: Date;
 	updatedAt: Date;
@@ -373,6 +377,110 @@ export interface Meeting {
  */
 export interface MeetingWithPool extends Meeting {
 	quorumVotingPoolName: string;
+	watcherPoolName: string | null;
+	adminPoolName: string | null;
+}
+
+/**
+ * Participant role enum
+ * Represents the role of a user when they join a meeting
+ *
+ * Database enum (participant_role):
+ * - 'voter': Can vote on motions and counts toward quorum
+ * - 'watcher': Can observe meeting but cannot vote
+ * - 'meeting_admin': Can administer the meeting (scoped admin rights)
+ *
+ * IMPORTANT: Keep this enum in sync with database migrations
+ */
+export enum ParticipantRole {
+	Voter = "voter",
+	Watcher = "watcher",
+	MeetingAdmin = "meeting_admin",
+}
+
+/**
+ * Meeting participant interface
+ *
+ * Database schema (meeting_participants table):
+ * - id: SERIAL PRIMARY KEY
+ * - user_id: UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+ * - meeting_id: INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE
+ * - role: participant_role NOT NULL
+ * - joined_at: TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+ * - left_at: TIMESTAMP WITH TIME ZONE (nullable, NULL if still active)
+ * - quorum_counted_at: TIMESTAMP WITH TIME ZONE (nullable, only for voters)
+ * - created_at: TIMESTAMP WITH TIME ZONE
+ * - updated_at: TIMESTAMP WITH TIME ZONE
+ *
+ * IMPORTANT: Keep this type in sync with database migrations
+ */
+export interface MeetingParticipant {
+	id: number;
+	userId: string;
+	meetingId: number;
+	role: ParticipantRole;
+	joinedAt: Date;
+	leftAt: Date | null;
+	quorumCountedAt: Date | null;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+/**
+ * Meeting available for a user to join
+ * Used in meeting selection screens for voters, watchers, and meeting admins
+ */
+export interface JoinableMeeting {
+	id: number;
+	name: string;
+	description: string | null;
+	startDate: Date;
+	endDate: Date;
+	quorumVotingPoolName: string;
+	/** Role the user would have if they join this meeting */
+	role: ParticipantRole;
+}
+
+/**
+ * Current meeting information for a user
+ * Returns the meeting the user is currently participating in
+ */
+export interface CurrentMeetingInfo {
+	meeting: MeetingWithPool;
+	participant: MeetingParticipant;
+}
+
+/**
+ * Response for joinable meetings list
+ */
+export interface JoinableMeetingsResponse {
+	data: JoinableMeeting[];
+}
+
+/**
+ * Response for current meeting endpoint
+ */
+export interface CurrentMeetingResponse {
+	data: CurrentMeetingInfo | null;
+}
+
+/**
+ * Response for joining a meeting
+ */
+export interface JoinMeetingResponse {
+	data: {
+		participant: MeetingParticipant;
+		meeting: MeetingWithPool;
+	};
+}
+
+/**
+ * Response for leaving a meeting
+ */
+export interface LeaveMeetingResponse {
+	data: {
+		success: boolean;
+	};
 }
 
 /**
@@ -449,6 +557,8 @@ export interface CreateMeetingRequest {
 	startDate: string; // ISO 8601 string
 	endDate: string; // ISO 8601 string
 	quorumVotingPoolId: number;
+	watcherPoolId?: number | null;
+	adminPoolId?: number | null;
 }
 
 /**
@@ -460,6 +570,8 @@ export interface UpdateMeetingRequest {
 	startDate?: string; // ISO 8601 string
 	endDate?: string; // ISO 8601 string
 	quorumVotingPoolId?: number;
+	watcherPoolId?: number | null;
+	adminPoolId?: number | null;
 }
 
 /**
@@ -624,6 +736,7 @@ export interface AuthUser {
 	lastName: string;
 	isAdmin: boolean;
 	isWatcher: boolean;
+	isMeetingAdmin: boolean;
 }
 
 /**

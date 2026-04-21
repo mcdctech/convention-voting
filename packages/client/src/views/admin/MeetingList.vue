@@ -2,10 +2,14 @@
 import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { getMeetings, deleteMeeting } from "../../services/api";
+import { useAuth } from "../../composables/useAuth";
+import { useAdminMeeting } from "../../composables/useAdminMeeting";
 import TablePagination from "../../components/TablePagination.vue";
 import type { MeetingWithPool } from "@mcdc-convention-voting/shared";
 
 const router = useRouter();
+const { isAdmin } = useAuth();
+const { isJoined, joinedMeetingId, currentMeeting } = useAdminMeeting();
 
 const MEETINGS_PER_PAGE = 50;
 const INITIAL_PAGE = 1;
@@ -16,6 +20,14 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const currentPage = ref(INITIAL_PAGE);
 const totalMeetings = ref(INITIAL_TOTAL);
+
+// Filter meetings to only show joined meeting when in joined mode
+const filteredMeetings = computed(() => {
+	if (!isJoined.value) {
+		return meetings.value;
+	}
+	return meetings.value.filter((m) => m.id === joinedMeetingId.value);
+});
 
 const totalPages = computed(() =>
 	Math.ceil(totalMeetings.value / MEETINGS_PER_PAGE),
@@ -99,12 +111,18 @@ onMounted(() => {
 <template>
 	<div class="meeting-list">
 		<div class="header">
-			<h2>Meetings</h2>
-			<div class="actions">
+			<h2>{{ isJoined ? currentMeeting?.meeting.name : "Meetings" }}</h2>
+			<div v-if="isAdmin" class="actions">
 				<router-link to="/admin/meetings/create" class="btn btn-primary">
 					Create Meeting
 				</router-link>
 			</div>
+		</div>
+
+		<!-- Joined meeting indicator -->
+		<div v-if="isJoined" class="joined-indicator">
+			Currently viewing joined meeting. Use the menu to leave and see all
+			meetings.
 		</div>
 
 		<div v-if="error" class="error">
@@ -113,7 +131,7 @@ onMounted(() => {
 
 		<div v-if="loading" class="loading">Loading meetings...</div>
 
-		<div v-else-if="meetings.length === 0" class="empty">
+		<div v-else-if="filteredMeetings.length === 0" class="empty">
 			No meetings found. Create a meeting to get started.
 		</div>
 
@@ -130,7 +148,7 @@ onMounted(() => {
 					</tr>
 				</thead>
 				<tbody>
-					<tr v-for="meeting in meetings" :key="meeting.id">
+					<tr v-for="meeting in filteredMeetings" :key="meeting.id">
 						<td class="meeting-name">
 							{{ meeting.name }}
 						</td>
@@ -212,6 +230,16 @@ onMounted(() => {
 .actions {
 	display: flex;
 	gap: 1rem;
+}
+
+.joined-indicator {
+	background-color: #e3f2fd;
+	color: #1565c0;
+	padding: 0.75rem 1rem;
+	border-radius: 4px;
+	margin-bottom: 1rem;
+	font-size: 0.875rem;
+	border: 1px solid #90caf9;
 }
 
 .error {

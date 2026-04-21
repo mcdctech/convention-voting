@@ -2,6 +2,8 @@
 import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { getPool, getPoolUsers, removeUserFromPool } from "../../services/api";
+import { useAuth } from "../../composables/useAuth";
+import { useAdminMeeting } from "../../composables/useAdminMeeting";
 import TablePagination from "../../components/TablePagination.vue";
 import type { Pool, User } from "@mcdc-convention-voting/shared";
 
@@ -10,6 +12,28 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
+const { currentUser } = useAuth();
+const { isJoined, joinedMeetingAdminPoolId } = useAdminMeeting();
+
+// Check if user can be removed from this pool
+// Cannot remove self from joined meeting's admin pool
+function canRemoveUser(userId: string): boolean {
+	// Can always remove other users
+	if (userId !== currentUser.value?.id) {
+		return true;
+	}
+	// Can remove self if not in joined mode
+	if (!isJoined.value) {
+		return true;
+	}
+	// Get the current pool ID
+	const poolId = Number.parseInt(props.id, 10);
+	if (Number.isNaN(poolId)) {
+		return true;
+	}
+	// Cannot remove self from joined meeting's admin pool
+	return poolId !== joinedMeetingAdminPoolId.value;
+}
 
 const USERS_PER_PAGE = 50;
 const INITIAL_PAGE = 1;
@@ -178,11 +202,15 @@ onMounted(() => {
 						</td>
 						<td class="actions-cell">
 							<button
+								v-if="canRemoveUser(user.id)"
 								class="btn btn-small btn-warning"
 								@click="requestRemove(user.id, user.username)"
 							>
 								Remove from Pool
 							</button>
+							<span v-else class="self-protection-note">
+								Cannot remove (joined meeting admin pool)
+							</span>
 						</td>
 					</tr>
 				</tbody>
@@ -340,6 +368,12 @@ onMounted(() => {
 	gap: 0.5rem;
 	flex-wrap: wrap;
 	align-items: center;
+}
+
+.self-protection-note {
+	font-size: 0.8125rem;
+	color: #e65100;
+	font-style: italic;
 }
 
 .btn {

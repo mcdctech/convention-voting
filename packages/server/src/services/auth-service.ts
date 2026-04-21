@@ -15,6 +15,31 @@ const EMPTY_ARRAY_LENGTH = 0;
 const DEFAULT_JWT_EXPIRES_IN = "24h";
 
 /**
+ * Check if user is a meeting admin for any active meeting
+ * Returns true if user is in the admin_pool of any currently active meeting
+ */
+async function isUserMeetingAdminForAnyMeeting(
+	userId: string,
+): Promise<boolean> {
+	const result = await db.query<{ exists: boolean }>(
+		`SELECT EXISTS(
+			SELECT 1 FROM user_pools up
+			INNER JOIN meetings m ON m.admin_pool_id = up.pool_id
+			WHERE up.user_id = :userId
+			  AND NOW() >= m.start_date
+			  AND NOW() <= m.end_date
+		) as exists`,
+		{ userId },
+	);
+
+	// SELECT EXISTS always returns exactly one row
+	const {
+		rows: [row],
+	} = result;
+	return row.exists;
+}
+
+/**
  * Internal user type with password hash (never exposed via API)
  */
 interface UserWithPassword {
@@ -123,6 +148,9 @@ export async function validateLogin(
 		return { success: false, errorCode: LoginErrorCode.AccountDisabled };
 	}
 
+	// Check if user is a meeting admin for any active meeting
+	const isMeetingAdmin = await isUserMeetingAdminForAnyMeeting(user.id);
+
 	// Success - return auth user (without sensitive data)
 	return {
 		success: true,
@@ -133,6 +161,7 @@ export async function validateLogin(
 			lastName: user.lastName,
 			isAdmin: user.isAdmin,
 			isWatcher: user.isWatcher,
+			isMeetingAdmin,
 		},
 	};
 }
@@ -239,6 +268,10 @@ export async function getAuthUserById(
 	const {
 		rows: [row],
 	} = result;
+
+	// Check if user is a meeting admin for any active meeting
+	const isMeetingAdmin = await isUserMeetingAdminForAnyMeeting(row.id);
+
 	return {
 		id: row.id,
 		username: row.username,
@@ -246,5 +279,6 @@ export async function getAuthUserById(
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
 		isWatcher: row.is_watcher,
+		isMeetingAdmin,
 	};
 }

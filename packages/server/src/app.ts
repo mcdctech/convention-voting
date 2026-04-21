@@ -10,11 +10,8 @@ import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
 import { voterRouter } from "./routes/voter.js";
 import { watcherRouter } from "./routes/watcher.js";
-import {
-	requireAuth,
-	requireAdmin,
-	requireWatcher,
-} from "./middleware/auth-middleware.js";
+import { requireAuth, requireWatcher } from "./middleware/auth-middleware.js";
+import { requireAdminOrMeetingAdmin } from "./middleware/meeting-admin-middleware.js";
 import { activityLogger } from "./middleware/activity-logger-middleware.js";
 import { getShallowHealth, getDeepHealth } from "./services/health-service.js";
 
@@ -87,7 +84,7 @@ export function createApp(): Express {
 	app.use(
 		`${API_PREFIX}/admin`,
 		requireAuth,
-		requireAdmin,
+		requireAdminOrMeetingAdmin,
 		activityLogger,
 		adminRouter,
 	);
