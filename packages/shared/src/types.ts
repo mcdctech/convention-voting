@@ -14,12 +14,13 @@
  * - last_name: VARCHAR(255) NOT NULL
  * - is_admin: BOOLEAN NOT NULL DEFAULT FALSE
  * - is_watcher: BOOLEAN NOT NULL DEFAULT FALSE
+ * - is_meeting_admin: BOOLEAN NOT NULL DEFAULT FALSE
  * - is_disabled: BOOLEAN NOT NULL DEFAULT FALSE
  * - created_at: TIMESTAMP WITH TIME ZONE
  * - updated_at: TIMESTAMP WITH TIME ZONE
  *
- * Role exclusivity: A user can only be admin, watcher, or voter (neither flag set).
- * Database constraint prevents is_admin=TRUE AND is_watcher=TRUE.
+ * Role exclusivity: A user can only be admin, watcher, meeting_admin, or voter (all flags false).
+ * Database constraint ensures at most one of is_admin, is_watcher, is_meeting_admin is TRUE.
  *
  * Note: poolNames is computed from user_pools join, not stored in database
  *
@@ -33,6 +34,7 @@ export interface User {
 	lastName: string;
 	isAdmin: boolean;
 	isWatcher: boolean;
+	isMeetingAdmin: boolean;
 	isDisabled: boolean;
 	createdAt: Date;
 	updatedAt: Date;
@@ -78,7 +80,7 @@ export interface PaginatedResponse<T> {
  * User type/role values
  * Represents the exclusive role a user can have in the system
  */
-export type UserType = "voter" | "admin" | "watcher";
+export type UserType = "voter" | "admin" | "watcher" | "meeting_admin";
 
 /**
  * CSV row format for bulk user upload
@@ -87,7 +89,7 @@ export interface UserCSVRow {
 	voter_id: string;
 	first_name: string;
 	last_name: string;
-	user_type?: string; // Optional: 'voter' (default), 'admin', or 'watcher'
+	user_type?: string; // Optional: 'voter' (default), 'admin', 'watcher', or 'meeting_admin'
 	is_enabled: string; // Required: 'true', '1', 'false', or '0'
 	pool_key_1?: string;
 	pool_key_2?: string;
@@ -112,6 +114,7 @@ export interface CreateUserRequest {
 	poolKeys?: string[]; // Optional pool keys to associate with user
 	isAdmin?: boolean; // Optional, defaults to false
 	isWatcher?: boolean; // Optional, defaults to false
+	isMeetingAdmin?: boolean; // Optional, defaults to false
 	isDisabled?: boolean; // Optional, defaults to false
 }
 
@@ -351,10 +354,12 @@ export enum MotionStatus {
  * - end_date: TIMESTAMP WITH TIME ZONE NOT NULL
  * - quorum_voting_pool_id: INTEGER NOT NULL REFERENCES pools(id) ON DELETE RESTRICT
  * - watcher_pool_id: INTEGER REFERENCES pools(id) ON DELETE RESTRICT (nullable)
- * - admin_pool_id: INTEGER REFERENCES pools(id) ON DELETE RESTRICT (nullable)
+ * - meeting_admin_pool_id: INTEGER REFERENCES pools(id) ON DELETE RESTRICT (nullable)
  * - quorum_called_at: TIMESTAMP WITH TIME ZONE (nullable)
  * - created_at: TIMESTAMP WITH TIME ZONE
  * - updated_at: TIMESTAMP WITH TIME ZONE
+ *
+ * Note: voterPoolIds is populated from meeting_voter_pools junction table
  *
  * IMPORTANT: Keep this type in sync with database migrations
  */
@@ -366,10 +371,11 @@ export interface Meeting {
 	endDate: Date;
 	quorumVotingPoolId: number;
 	watcherPoolId: number | null;
-	adminPoolId: number | null;
+	meetingAdminPoolId: number | null;
 	quorumCalledAt: Date | null;
 	createdAt: Date;
 	updatedAt: Date;
+	voterPoolIds?: number[]; // Optional: populated from meeting_voter_pools junction
 }
 
 /**
@@ -378,7 +384,7 @@ export interface Meeting {
 export interface MeetingWithPool extends Meeting {
 	quorumVotingPoolName: string;
 	watcherPoolName: string | null;
-	adminPoolName: string | null;
+	meetingAdminPoolName: string | null;
 }
 
 /**
@@ -550,6 +556,7 @@ export interface Choice {
 
 /**
  * Request to create a meeting
+ * Note: watcherPoolId and meetingAdminPoolId are auto-created if not provided
  */
 export interface CreateMeetingRequest {
 	name: string;
@@ -557,8 +564,9 @@ export interface CreateMeetingRequest {
 	startDate: string; // ISO 8601 string
 	endDate: string; // ISO 8601 string
 	quorumVotingPoolId: number;
-	watcherPoolId?: number | null;
-	adminPoolId?: number | null;
+	voterPoolIds?: number[]; // Additional voter pools (quorum pool always included)
+	watcherPoolId?: number | null; // Auto-created if not provided
+	meetingAdminPoolId?: number | null; // Auto-created if not provided
 }
 
 /**
@@ -570,8 +578,9 @@ export interface UpdateMeetingRequest {
 	startDate?: string; // ISO 8601 string
 	endDate?: string; // ISO 8601 string
 	quorumVotingPoolId?: number;
+	voterPoolIds?: number[]; // Replace all voter pools
 	watcherPoolId?: number | null;
-	adminPoolId?: number | null;
+	meetingAdminPoolId?: number | null;
 }
 
 /**

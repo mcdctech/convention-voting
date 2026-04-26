@@ -64,6 +64,8 @@ import {
 	listMeetingsForMeetingAdmin,
 	updateMeeting,
 	deleteMeeting,
+	getVoterPoolsForMeeting,
+	setVoterPoolsForMeeting,
 	createMotion,
 	getMotionById,
 	getMotionDetailedResults,
@@ -988,8 +990,8 @@ adminRouter.put(
 				updates.poolKey = trimmedPoolKey;
 			}
 
-			const pool = await updatePool(poolId, updates);
-			res.json({ success: true, data: pool });
+			const { pool, resolvedUsers } = await updatePool(poolId, updates);
+			res.json({ success: true, data: pool, resolvedUsers });
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
 			res
@@ -1129,7 +1131,7 @@ adminRouter.delete(
 				if (
 					currentMeeting !== null &&
 					currentMeeting.participant.role === ParticipantRole.MeetingAdmin &&
-					currentMeeting.meeting.adminPoolId === poolId
+					currentMeeting.meeting.meetingAdminPoolId === poolId
 				) {
 					res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
 						success: false,
@@ -1217,7 +1219,7 @@ adminRouter.post(
 				endDate: request.endDate,
 				quorumVotingPoolId: request.quorumVotingPoolId,
 				watcherPoolId: request.watcherPoolId,
-				adminPoolId: request.adminPoolId,
+				meetingAdminPoolId: request.meetingAdminPoolId,
 				description: request.description,
 			};
 
@@ -1419,11 +1421,11 @@ adminRouter.put(
 			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
 			const updates: UpdateMeetingRequest = req.body;
-			// Only global admins may change the admin pool for a meeting.
-			// Strip adminPoolId from the update payload for non-global-admins so a
+			// Only global admins may change the meeting admin pool for a meeting.
+			// Strip meetingAdminPoolId from the update payload for non-global-admins so a
 			// scoped meeting admin can't grant admin rights to others.
-			if (req.user?.isAdmin !== true && "adminPoolId" in updates) {
-				delete updates.adminPoolId;
+			if (req.user?.isAdmin !== true && "meetingAdminPoolId" in updates) {
+				delete updates.meetingAdminPoolId;
 			}
 			const meeting = await updateMeeting(meetingId, updates);
 			res.json({ success: true, data: meeting });
@@ -1494,6 +1496,84 @@ adminRouter.post(
 			res
 				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
 				.json({ success: false, error: `Failed to join meeting: ${message}` });
+		}
+	},
+);
+
+/**
+ * Voter Pool Management Routes
+ */
+
+/**
+ * GET /api/admin/meetings/:id/voter-pools
+ * Get voter pools for a meeting
+ */
+adminRouter.get(
+	"/meetings/:id/voter-pools",
+	requireMeetingAdmin("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			if (Number.isNaN(meetingId)) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					success: false,
+					error: "Invalid meeting ID",
+				});
+				return;
+			}
+
+			const voterPoolIds = await getVoterPoolsForMeeting(meetingId);
+			res.json({ success: true, data: voterPoolIds });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+				success: false,
+				error: `Failed to get voter pools: ${message}`,
+			});
+		}
+	},
+);
+
+/**
+ * PUT /api/admin/meetings/:id/voter-pools
+ * Set voter pools for a meeting (quorum pool always included)
+ */
+adminRouter.put(
+	"/meetings/:id/voter-pools",
+	requireMeetingAdmin("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			if (Number.isNaN(meetingId)) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					success: false,
+					error: "Invalid meeting ID",
+				});
+				return;
+			}
+
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const body: { poolIds?: number[] } = req.body;
+
+			if (!Array.isArray(body.poolIds)) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					success: false,
+					error: "poolIds must be an array of numbers",
+				});
+				return;
+			}
+
+			const voterPoolIds = await setVoterPoolsForMeeting(
+				meetingId,
+				body.poolIds,
+			);
+			res.json({ success: true, data: voterPoolIds });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+				success: false,
+				error: `Failed to set voter pools: ${message}`,
+			});
 		}
 	},
 );

@@ -14,12 +14,14 @@ import {
 	type MotionDetailedResults,
 	type MotionVoteStats,
 	type MotionWithPool,
+	type Pool,
 	type UpdateChoiceRequest,
 	type UpdateMeetingRequest,
 	type UpdateMotionRequest,
 	type UpdateMotionStatusRequest,
 } from "@mcdc-convention-voting/shared";
-import { db } from "../database/db.js";
+import { db, withTransaction } from "../database/db.js";
+import { createPool, generatePoolKeyFromMeetingName } from "./pool-service.js";
 
 // Array index constants
 const FIRST_ROW = 0;
@@ -69,38 +71,62 @@ async function verifyPoolExists(
 	}
 }
 
+// Pool name suffixes for auto-created pools
+const WATCHER_POOL_SUFFIX = "watchers";
+const MEETING_ADMIN_POOL_SUFFIX = "meeting-admins";
+
 // ============================================================================
 // Meeting Functions
 // ============================================================================
 
 /**
+ * Auto-create watcher and meeting admin pools for a new meeting
+ */
+async function autoCreateMeetingPools(meetingName: string): Promise<{
+	watcherPool: Pool;
+	meetingAdminPool: Pool;
+}> {
+	// Generate unique pool keys
+	const watcherPoolKey = await generatePoolKeyFromMeetingName(
+		meetingName,
+		WATCHER_POOL_SUFFIX,
+	);
+	const meetingAdminPoolKey = await generatePoolKeyFromMeetingName(
+		meetingName,
+		MEETING_ADMIN_POOL_SUFFIX,
+	);
+
+	// Create watcher pool
+	const watcherPool = await createPool({
+		poolKey: watcherPoolKey,
+		poolName: `${meetingName} - Watchers`,
+		description: `Watchers for meeting: ${meetingName}`,
+	});
+
+	// Create meeting admin pool
+	const meetingAdminPool = await createPool({
+		poolKey: meetingAdminPoolKey,
+		poolName: `${meetingName} - Meeting Admins`,
+		description: `Meeting administrators for: ${meetingName}`,
+	});
+
+	return { watcherPool, meetingAdminPool };
+}
+
+/**
  * Create a new meeting
+ * Auto-creates watcher and meeting admin pools
  */
 export async function createMeeting(
 	request: CreateMeetingRequest,
 ): Promise<Meeting> {
-	const {
-		name,
-		description,
-		startDate,
-		endDate,
-		quorumVotingPoolId,
-		watcherPoolId,
-		adminPoolId,
-	} = request;
+	const { name, description, startDate, endDate, quorumVotingPoolId } = request;
 
 	// Verify quorum pool exists
 	await verifyPoolExists(quorumVotingPoolId, "Pool");
 
-	// Verify watcher pool exists if specified
-	if (watcherPoolId !== undefined && watcherPoolId !== null) {
-		await verifyPoolExists(watcherPoolId, "Watcher pool");
-	}
-
-	// Verify admin pool exists if specified
-	if (adminPoolId !== undefined && adminPoolId !== null) {
-		await verifyPoolExists(adminPoolId, "Admin pool");
-	}
+	// Auto-create watcher and meeting admin pools
+	const { watcherPool, meetingAdminPool } = await autoCreateMeetingPools(name);
 
 	const result = await db.query<{
 		id: number;
@@ -110,13 +136,13 @@ export async function createMeeting(
 		end_date: Date;
 		quorum_voting_pool_id: number;
 		watcher_pool_id: number | null;
-		admin_pool_id: number | null;
+		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`INSERT INTO meetings (name, description, start_date, end_date, quorum_voting_pool_id, watcher_pool_id, admin_pool_id)
-		 VALUES (:name, :description, :startDate, :endDate, :quorumVotingPoolId, :watcherPoolId, :adminPoolId)
+		`INSERT INTO meetings (name, description, start_date, end_date, quorum_voting_pool_id, watcher_pool_id, meeting_admin_pool_id)
+		 VALUES (:name, :description, :startDate, :endDate, :quorumVotingPoolId, :watcherPoolId, :meetingAdminPoolId)
 		 RETURNING *`,
 		{
 			name,
@@ -124,14 +150,22 @@ export async function createMeeting(
 			startDate,
 			endDate,
 			quorumVotingPoolId,
-			watcherPoolId: watcherPoolId ?? null,
-			adminPoolId: adminPoolId ?? null,
+			watcherPoolId: watcherPool.id,
+			meetingAdminPoolId: meetingAdminPool.id,
 		},
 	);
 
 	const {
 		rows: [row],
 	} = result;
+
+	// Add quorum pool to voter pools junction table
+	await db.query(
+		`INSERT INTO meeting_voter_pools (meeting_id, pool_id)
+		 VALUES (:meetingId, :poolId)`,
+		{ meetingId: row.id, poolId: quorumVotingPoolId },
+	);
+
 	return {
 		id: row.id,
 		name: row.name,
@@ -140,10 +174,11 @@ export async function createMeeting(
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
 		watcherPoolId: row.watcher_pool_id,
-		adminPoolId: row.admin_pool_id,
+		meetingAdminPoolId: row.meeting_admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
+		voterPoolIds: [quorumVotingPoolId],
 	};
 }
 
@@ -161,22 +196,22 @@ export async function getMeetingById(
 		end_date: Date;
 		quorum_voting_pool_id: number;
 		watcher_pool_id: number | null;
-		admin_pool_id: number | null;
+		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 		quorum_pool_name: string;
 		watcher_pool_name: string | null;
-		admin_pool_name: string | null;
+		meeting_admin_pool_name: string | null;
 	}>(
 		`SELECT m.*,
 		        qp.pool_name as quorum_pool_name,
 		        wp.pool_name as watcher_pool_name,
-		        ap.pool_name as admin_pool_name
+		        ap.pool_name as meeting_admin_pool_name
 		 FROM meetings m
 		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
 		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
-		 LEFT JOIN pools ap ON m.admin_pool_id = ap.id
+		 LEFT JOIN pools ap ON m.meeting_admin_pool_id = ap.id
 		 WHERE m.id = :meetingId`,
 		{ meetingId },
 	);
@@ -188,6 +223,10 @@ export async function getMeetingById(
 	const {
 		rows: [row],
 	} = result;
+
+	// Get voter pool IDs
+	const voterPoolIds = await getVoterPoolsForMeeting(meetingId);
+
 	return {
 		id: row.id,
 		name: row.name,
@@ -196,13 +235,14 @@ export async function getMeetingById(
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
 		watcherPoolId: row.watcher_pool_id,
-		adminPoolId: row.admin_pool_id,
+		meetingAdminPoolId: row.meeting_admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		quorumVotingPoolName: row.quorum_pool_name,
 		watcherPoolName: row.watcher_pool_name,
-		adminPoolName: row.admin_pool_name,
+		meetingAdminPoolName: row.meeting_admin_pool_name,
+		voterPoolIds,
 	};
 }
 
@@ -230,22 +270,22 @@ export async function listMeetings(
 		end_date: Date;
 		quorum_voting_pool_id: number;
 		watcher_pool_id: number | null;
-		admin_pool_id: number | null;
+		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 		quorum_pool_name: string;
 		watcher_pool_name: string | null;
-		admin_pool_name: string | null;
+		meeting_admin_pool_name: string | null;
 	}>(
 		`SELECT m.*,
 		        qp.pool_name as quorum_pool_name,
 		        wp.pool_name as watcher_pool_name,
-		        ap.pool_name as admin_pool_name
+		        ap.pool_name as meeting_admin_pool_name
 		 FROM meetings m
 		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
 		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
-		 LEFT JOIN pools ap ON m.admin_pool_id = ap.id
+		 LEFT JOIN pools ap ON m.meeting_admin_pool_id = ap.id
 		 ORDER BY m.start_date DESC
 		 LIMIT :limit OFFSET :offset`,
 		{ limit, offset },
@@ -259,13 +299,13 @@ export async function listMeetings(
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
 		watcherPoolId: row.watcher_pool_id,
-		adminPoolId: row.admin_pool_id,
+		meetingAdminPoolId: row.meeting_admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		quorumVotingPoolName: row.quorum_pool_name,
 		watcherPoolName: row.watcher_pool_name,
-		adminPoolName: row.admin_pool_name,
+		meetingAdminPoolName: row.meeting_admin_pool_name,
 	}));
 
 	return { meetings, total };
@@ -285,7 +325,7 @@ export async function listMeetingsForMeetingAdmin(
 	// Get total count for meetings where user is in admin pool
 	const countResult = await db.query<{ count: string }>(
 		`SELECT COUNT(*) as count FROM meetings m
-		 INNER JOIN user_pools up ON m.admin_pool_id = up.pool_id
+		 INNER JOIN user_pools up ON m.meeting_admin_pool_id = up.pool_id
 		 WHERE up.user_id = :userId`,
 		{ userId },
 	);
@@ -300,23 +340,23 @@ export async function listMeetingsForMeetingAdmin(
 		end_date: Date;
 		quorum_voting_pool_id: number;
 		watcher_pool_id: number | null;
-		admin_pool_id: number | null;
+		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 		quorum_pool_name: string;
 		watcher_pool_name: string | null;
-		admin_pool_name: string | null;
+		meeting_admin_pool_name: string | null;
 	}>(
 		`SELECT m.*,
 		        qp.pool_name as quorum_pool_name,
 		        wp.pool_name as watcher_pool_name,
-		        ap.pool_name as admin_pool_name
+		        ap.pool_name as meeting_admin_pool_name
 		 FROM meetings m
 		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
 		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
-		 LEFT JOIN pools ap ON m.admin_pool_id = ap.id
-		 INNER JOIN user_pools up ON m.admin_pool_id = up.pool_id
+		 LEFT JOIN pools ap ON m.meeting_admin_pool_id = ap.id
+		 INNER JOIN user_pools up ON m.meeting_admin_pool_id = up.pool_id
 		 WHERE up.user_id = :userId
 		 ORDER BY m.start_date DESC
 		 LIMIT :limit OFFSET :offset`,
@@ -331,13 +371,13 @@ export async function listMeetingsForMeetingAdmin(
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
 		watcherPoolId: row.watcher_pool_id,
-		adminPoolId: row.admin_pool_id,
+		meetingAdminPoolId: row.meeting_admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		quorumVotingPoolName: row.quorum_pool_name,
 		watcherPoolName: row.watcher_pool_name,
-		adminPoolName: row.admin_pool_name,
+		meetingAdminPoolName: row.meeting_admin_pool_name,
 	}));
 
 	return { meetings, total };
@@ -356,7 +396,7 @@ async function buildMeetingUpdateClauses(
 		endDate,
 		quorumVotingPoolId,
 		watcherPoolId,
-		adminPoolId,
+		meetingAdminPoolId,
 	} = updates;
 
 	const setClauses: string[] = [];
@@ -396,12 +436,12 @@ async function buildMeetingUpdateClauses(
 		values.watcherPoolId = watcherPoolId;
 	}
 
-	if (adminPoolId !== undefined) {
-		if (adminPoolId !== null) {
-			await verifyPoolExists(adminPoolId, "Admin pool");
+	if (meetingAdminPoolId !== undefined) {
+		if (meetingAdminPoolId !== null) {
+			await verifyPoolExists(meetingAdminPoolId, "Admin pool");
 		}
-		setClauses.push(`admin_pool_id = :adminPoolId`);
-		values.adminPoolId = adminPoolId;
+		setClauses.push(`meeting_admin_pool_id = :meetingAdminPoolId`);
+		values.meetingAdminPoolId = meetingAdminPoolId;
 	}
 
 	return { setClauses, values };
@@ -432,7 +472,7 @@ export async function updateMeeting(
 		end_date: Date;
 		quorum_voting_pool_id: number;
 		watcher_pool_id: number | null;
-		admin_pool_id: number | null;
+		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
@@ -459,7 +499,7 @@ export async function updateMeeting(
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
 		watcherPoolId: row.watcher_pool_id,
-		adminPoolId: row.admin_pool_id,
+		meetingAdminPoolId: row.meeting_admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -478,6 +518,148 @@ export async function deleteMeeting(meetingId: number): Promise<void> {
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
 		throw new Error(`Meeting with ID ${String(meetingId)} not found`);
 	}
+}
+
+// ============================================================================
+// Voter Pool Junction Table Functions
+// ============================================================================
+
+/**
+ * Get voter pool IDs for a meeting
+ */
+export async function getVoterPoolsForMeeting(
+	meetingId: number,
+): Promise<number[]> {
+	const result = await db.query<{ pool_id: number }>(
+		`SELECT pool_id FROM meeting_voter_pools
+		 WHERE meeting_id = :meetingId
+		 ORDER BY created_at ASC`,
+		{ meetingId },
+	);
+
+	return result.rows.map((row) => row.pool_id);
+}
+
+/**
+ * Add a voter pool to a meeting
+ */
+export async function addVoterPoolToMeeting(
+	meetingId: number,
+	poolId: number,
+): Promise<void> {
+	// Verify pool exists
+	await verifyPoolExists(poolId, "Voter pool");
+
+	await db.query(
+		`INSERT INTO meeting_voter_pools (meeting_id, pool_id)
+		 VALUES (:meetingId, :poolId)
+		 ON CONFLICT (meeting_id, pool_id) DO NOTHING`,
+		{ meetingId, poolId },
+	);
+}
+
+/**
+ * Remove a voter pool from a meeting
+ * Cannot remove the quorum voting pool
+ */
+export async function removeVoterPoolFromMeeting(
+	meetingId: number,
+	poolId: number,
+): Promise<void> {
+	// Check if this is the quorum pool
+	const meetingResult = await db.query<{ quorum_voting_pool_id: number }>(
+		"SELECT quorum_voting_pool_id FROM meetings WHERE id = :meetingId",
+		{ meetingId },
+	);
+
+	if (meetingResult.rows.length === EMPTY_ARRAY_LENGTH) {
+		throw new Error(`Meeting with ID ${String(meetingId)} not found`);
+	}
+
+	const {
+		rows: [{ quorum_voting_pool_id: quorumPoolId }],
+	} = meetingResult;
+
+	if (poolId === quorumPoolId) {
+		throw new Error("Cannot remove the quorum voting pool from voter pools");
+	}
+
+	await db.query(
+		`DELETE FROM meeting_voter_pools
+		 WHERE meeting_id = :meetingId AND pool_id = :poolId`,
+		{ meetingId, poolId },
+	);
+}
+
+/**
+ * Set all voter pools for a meeting
+ * The quorum pool is always included regardless of input
+ */
+export async function setVoterPoolsForMeeting(
+	meetingId: number,
+	poolIds: number[],
+): Promise<number[]> {
+	// Get the quorum pool ID
+	const meetingResult = await db.query<{ quorum_voting_pool_id: number }>(
+		"SELECT quorum_voting_pool_id FROM meetings WHERE id = :meetingId",
+		{ meetingId },
+	);
+
+	if (meetingResult.rows.length === EMPTY_ARRAY_LENGTH) {
+		throw new Error(`Meeting with ID ${String(meetingId)} not found`);
+	}
+
+	const {
+		rows: [{ quorum_voting_pool_id: quorumPoolId }],
+	} = meetingResult;
+
+	// Ensure quorum pool is always included
+	const finalPoolIds = [...new Set([quorumPoolId, ...poolIds])];
+
+	// Verify all pools exist
+	for (const poolId of finalPoolIds) {
+		// eslint-disable-next-line no-await-in-loop -- Sequential verification required
+		await verifyPoolExists(poolId, "Voter pool");
+	}
+
+	return await withTransaction(async (tx) => {
+		// Delete existing voter pool associations
+		await tx.query(
+			"DELETE FROM meeting_voter_pools WHERE meeting_id = :meetingId",
+			{ meetingId },
+		);
+
+		// Insert new associations
+		for (const poolId of finalPoolIds) {
+			// eslint-disable-next-line no-await-in-loop -- Sequential inserts in transaction
+			await tx.query(
+				`INSERT INTO meeting_voter_pools (meeting_id, pool_id)
+				 VALUES (:meetingId, :poolId)`,
+				{ meetingId, poolId },
+			);
+		}
+
+		return finalPoolIds;
+	});
+}
+
+/**
+ * Check if a user is in any voter pool for a meeting
+ */
+export async function isUserInMeetingVoterPools(
+	userId: string,
+	meetingId: number,
+): Promise<boolean> {
+	const result = await db.query<{ exists: boolean }>(
+		`SELECT EXISTS(
+			SELECT 1 FROM meeting_voter_pools mvp
+			INNER JOIN user_pools up ON mvp.pool_id = up.pool_id
+			WHERE mvp.meeting_id = :meetingId AND up.user_id = :userId
+		) as exists`,
+		{ meetingId, userId },
+	);
+
+	return result.rows[FIRST_ROW].exists;
 }
 
 /**

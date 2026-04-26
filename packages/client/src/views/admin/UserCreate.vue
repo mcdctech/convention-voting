@@ -9,7 +9,7 @@ const router = useRouter();
 const EMPTY_STRING = "";
 
 // User role options
-type UserRole = "voter" | "admin" | "watcher";
+type UserRole = "voter" | "admin" | "watcher" | "meeting_admin";
 
 const formData = ref({
 	voterId: EMPTY_STRING,
@@ -46,6 +46,7 @@ async function handleSubmit(): Promise<void> {
 			}),
 			isAdmin: formData.value.role === "admin",
 			isWatcher: formData.value.role === "watcher",
+			isMeetingAdmin: formData.value.role === "meeting_admin",
 		};
 
 		await createUser(userData);
@@ -110,7 +111,8 @@ function cancel(): void {
 				<select id="role" v-model="formData.role" required>
 					<option value="voter">Voter</option>
 					<option value="watcher">Watcher (Observer)</option>
-					<option value="admin">Admin</option>
+					<option value="meeting_admin">Meeting Admin</option>
+					<option value="admin">Global Admin</option>
 				</select>
 				<p class="role-description">
 					<template v-if="formData.role === 'voter'">
@@ -120,9 +122,14 @@ function cancel(): void {
 						Watchers have read-only access to meeting reports, quorum status,
 						and completed motion results. They cannot vote.
 					</template>
+					<template v-else-if="formData.role === 'meeting_admin'">
+						Meeting Admins can manage meetings they are assigned to (motions,
+						quorum, reports). They must be added to a meeting's admin pool. They
+						cannot vote.
+					</template>
 					<template v-else-if="formData.role === 'admin'">
-						Admins can manage users, meetings, motions, and system settings.
-						They cannot vote.
+						Global Admins can manage all users, meetings, motions, and system
+						settings. They have access to all meetings. They cannot vote.
 					</template>
 				</p>
 			</div>

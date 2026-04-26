@@ -615,6 +615,34 @@ export async function deleteMeeting(id: number): Promise<ApiResponse<void>> {
 }
 
 /**
+ * Get voter pools for a meeting
+ */
+export async function getMeetingVoterPools(
+	meetingId: number,
+): Promise<ApiResponse<number[]>> {
+	return await apiRequest<ApiResponse<number[]>>(
+		`${API_PREFIX}/admin/meetings/${meetingId}/voter-pools`,
+	);
+}
+
+/**
+ * Update voter pools for a meeting
+ * Note: The quorum pool is always included automatically by the backend
+ */
+export async function updateMeetingVoterPools(
+	meetingId: number,
+	poolIds: number[],
+): Promise<ApiResponse<number[]>> {
+	return await apiRequest<ApiResponse<number[]>>(
+		`${API_PREFIX}/admin/meetings/${meetingId}/voter-pools`,
+		{
+			method: "PUT",
+			body: JSON.stringify({ poolIds }),
+		},
+	);
+}
+
+/**
  * Motion Management API Functions
  */
 

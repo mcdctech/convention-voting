@@ -20,8 +20,6 @@ const formData = ref({
 	startDate: EMPTY_STRING,
 	endDate: EMPTY_STRING,
 	quorumVotingPoolId: EMPTY_STRING,
-	watcherPoolId: EMPTY_STRING,
-	adminPoolId: EMPTY_STRING,
 });
 
 const saving = ref(false);
@@ -45,8 +43,6 @@ interface FormDataType {
 	startDate: string;
 	endDate: string;
 	quorumVotingPoolId: string;
-	watcherPoolId: string;
-	adminPoolId: string;
 }
 
 function validateFormData(data: FormDataType): string | null {
@@ -95,12 +91,6 @@ async function handleSubmit(): Promise<void> {
 			),
 			...(formData.value.description.trim() !== EMPTY_STRING && {
 				description: formData.value.description.trim(),
-			}),
-			...(formData.value.watcherPoolId !== EMPTY_STRING && {
-				watcherPoolId: Number.parseInt(formData.value.watcherPoolId, 10),
-			}),
-			...(formData.value.adminPoolId !== EMPTY_STRING && {
-				adminPoolId: Number.parseInt(formData.value.adminPoolId, 10),
 			}),
 		};
 
@@ -193,48 +183,26 @@ onMounted(() => {
 				</p>
 			</div>
 
-			<div class="form-group">
-				<label for="watcherPoolId">
-					Watcher Pool
-					<span class="optional">(optional)</span>
-				</label>
-				<select
-					id="watcherPoolId"
-					v-model="formData.watcherPoolId"
-					:disabled="loadingPools"
-				>
-					<option value="">
-						{{ loadingPools ? "Loading pools..." : "No watcher pool" }}
-					</option>
-					<option v-for="pool in pools" :key="pool.id" :value="pool.id">
-						{{ pool.poolName }}
-					</option>
-				</select>
-				<p class="field-description">
-					Optional pool of users who can observe this meeting as watchers
+			<div class="info-box">
+				<strong>Auto-Created Pools</strong>
+				<p>
+					The following pools will be automatically created when this meeting is
+					saved:
 				</p>
-			</div>
-
-			<div class="form-group">
-				<label for="adminPoolId">
-					Admin Pool
-					<span class="optional">(optional)</span>
-				</label>
-				<select
-					id="adminPoolId"
-					v-model="formData.adminPoolId"
-					:disabled="loadingPools"
-				>
-					<option value="">
-						{{ loadingPools ? "Loading pools..." : "No admin pool" }}
-					</option>
-					<option v-for="pool in pools" :key="pool.id" :value="pool.id">
-						{{ pool.poolName }}
-					</option>
-				</select>
-				<p class="field-description">
-					Optional pool of users who can administer this meeting (global admins
-					always have access)
+				<ul>
+					<li>
+						<strong>{{ formData.name || "Meeting Name" }} - Watchers</strong> -
+						Users in this pool can observe the meeting
+					</li>
+					<li>
+						<strong
+							>{{ formData.name || "Meeting Name" }} - Meeting Admins</strong
+						>
+						- Users in this pool can administer the meeting
+					</li>
+				</ul>
+				<p class="info-note">
+					You can add users to these pools after the meeting is created.
 				</p>
 			</div>
 
@@ -356,5 +324,38 @@ h2 {
 
 .btn-secondary:hover:not(:disabled) {
 	background-color: #616161;
+}
+
+.info-box {
+	background-color: #e3f2fd;
+	border: 1px solid #90caf9;
+	border-radius: 4px;
+	padding: 1rem;
+	margin-bottom: 1.5rem;
+}
+
+.info-box strong {
+	color: #1565c0;
+}
+
+.info-box p {
+	margin: 0.5rem 0;
+	color: #424242;
+}
+
+.info-box ul {
+	margin: 0.5rem 0;
+	padding-left: 1.5rem;
+}
+
+.info-box li {
+	margin: 0.25rem 0;
+	color: #424242;
+}
+
+.info-note {
+	font-size: 0.875rem;
+	font-style: italic;
+	color: #666 !important;
 }
 </style>

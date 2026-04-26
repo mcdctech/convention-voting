@@ -24,7 +24,7 @@ async function isUserMeetingAdminForAnyMeeting(
 	const result = await db.query<{ exists: boolean }>(
 		`SELECT EXISTS(
 			SELECT 1 FROM user_pools up
-			INNER JOIN meetings m ON m.admin_pool_id = up.pool_id
+			INNER JOIN meetings m ON m.meeting_admin_pool_id = up.pool_id
 			WHERE up.user_id = :userId
 			  AND NOW() >= m.start_date
 			  AND NOW() <= m.end_date

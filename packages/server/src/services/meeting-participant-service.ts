@@ -93,22 +93,22 @@ export async function getCurrentMeetingInfo(
 		end_date: Date;
 		quorum_voting_pool_id: number;
 		watcher_pool_id: number | null;
-		admin_pool_id: number | null;
+		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 		quorum_pool_name: string;
 		watcher_pool_name: string | null;
-		admin_pool_name: string | null;
+		meeting_admin_pool_name: string | null;
 	}>(
 		`SELECT m.*,
 		        qp.pool_name as quorum_pool_name,
 		        wp.pool_name as watcher_pool_name,
-		        ap.pool_name as admin_pool_name
+		        ap.pool_name as meeting_admin_pool_name
 		 FROM meetings m
 		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
 		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
-		 LEFT JOIN pools ap ON m.admin_pool_id = ap.id
+		 LEFT JOIN pools ap ON m.meeting_admin_pool_id = ap.id
 		 WHERE m.id = :meetingId`,
 		{ meetingId: participation.meetingId },
 	);
@@ -128,13 +128,13 @@ export async function getCurrentMeetingInfo(
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
 		watcherPoolId: row.watcher_pool_id,
-		adminPoolId: row.admin_pool_id,
+		meetingAdminPoolId: row.meeting_admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		quorumVotingPoolName: row.quorum_pool_name,
 		watcherPoolName: row.watcher_pool_name,
-		adminPoolName: row.admin_pool_name,
+		meetingAdminPoolName: row.meeting_admin_pool_name,
 	};
 
 	return {
@@ -208,22 +208,22 @@ export async function joinMeetingAsVoter(
 		end_date: Date;
 		quorum_voting_pool_id: number;
 		watcher_pool_id: number | null;
-		admin_pool_id: number | null;
+		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 		quorum_pool_name: string;
 		watcher_pool_name: string | null;
-		admin_pool_name: string | null;
+		meeting_admin_pool_name: string | null;
 	}>(
 		`SELECT m.*,
 		        qp.pool_name as quorum_pool_name,
 		        wp.pool_name as watcher_pool_name,
-		        ap.pool_name as admin_pool_name
+		        ap.pool_name as meeting_admin_pool_name
 		 FROM meetings m
 		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
 		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
-		 LEFT JOIN pools ap ON m.admin_pool_id = ap.id
+		 LEFT JOIN pools ap ON m.meeting_admin_pool_id = ap.id
 		 WHERE m.id = :meetingId
 		   AND NOW() >= m.start_date
 		   AND NOW() <= m.end_date`,
@@ -296,13 +296,13 @@ export async function joinMeetingAsVoter(
 		endDate: meetingRow.end_date,
 		quorumVotingPoolId: meetingRow.quorum_voting_pool_id,
 		watcherPoolId: meetingRow.watcher_pool_id,
-		adminPoolId: meetingRow.admin_pool_id,
+		meetingAdminPoolId: meetingRow.meeting_admin_pool_id,
 		quorumCalledAt: meetingRow.quorum_called_at,
 		createdAt: meetingRow.created_at,
 		updatedAt: meetingRow.updated_at,
 		quorumVotingPoolName: meetingRow.quorum_pool_name,
 		watcherPoolName: meetingRow.watcher_pool_name,
-		adminPoolName: meetingRow.admin_pool_name,
+		meetingAdminPoolName: meetingRow.meeting_admin_pool_name,
 	};
 
 	return { participant, meeting };
@@ -458,22 +458,22 @@ export async function joinMeetingAsWatcher(
 		end_date: Date;
 		quorum_voting_pool_id: number;
 		watcher_pool_id: number | null;
-		admin_pool_id: number | null;
+		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 		quorum_pool_name: string;
 		watcher_pool_name: string | null;
-		admin_pool_name: string | null;
+		meeting_admin_pool_name: string | null;
 	}>(
 		`SELECT m.*,
 		        qp.pool_name as quorum_pool_name,
 		        wp.pool_name as watcher_pool_name,
-		        ap.pool_name as admin_pool_name
+		        ap.pool_name as meeting_admin_pool_name
 		 FROM meetings m
 		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
 		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
-		 LEFT JOIN pools ap ON m.admin_pool_id = ap.id
+		 LEFT JOIN pools ap ON m.meeting_admin_pool_id = ap.id
 		 WHERE m.id = :meetingId
 		   AND NOW() >= m.start_date
 		   AND NOW() <= m.end_date
@@ -530,13 +530,13 @@ export async function joinMeetingAsWatcher(
 		endDate: meetingRow.end_date,
 		quorumVotingPoolId: meetingRow.quorum_voting_pool_id,
 		watcherPoolId: meetingRow.watcher_pool_id,
-		adminPoolId: meetingRow.admin_pool_id,
+		meetingAdminPoolId: meetingRow.meeting_admin_pool_id,
 		quorumCalledAt: meetingRow.quorum_called_at,
 		createdAt: meetingRow.created_at,
 		updatedAt: meetingRow.updated_at,
 		quorumVotingPoolName: meetingRow.quorum_pool_name,
 		watcherPoolName: meetingRow.watcher_pool_name,
-		adminPoolName: meetingRow.admin_pool_name,
+		meetingAdminPoolName: meetingRow.meeting_admin_pool_name,
 	};
 
 	return { participant, meeting };
@@ -565,12 +565,12 @@ export async function getJoinableMeetingsForAdmin(
 	}>(
 		`SELECT DISTINCT m.id, m.name, m.description, m.start_date, m.end_date, p.pool_name
 		 FROM meetings m
-		 INNER JOIN pools p ON m.admin_pool_id = p.id
-		 INNER JOIN user_pools up ON up.pool_id = m.admin_pool_id
+		 INNER JOIN pools p ON m.meeting_admin_pool_id = p.id
+		 INNER JOIN user_pools up ON up.pool_id = m.meeting_admin_pool_id
 		 WHERE up.user_id = :userId
 		   AND NOW() >= m.start_date
 		   AND NOW() <= m.end_date
-		   AND m.admin_pool_id IS NOT NULL
+		   AND m.meeting_admin_pool_id IS NOT NULL
 		 ORDER BY m.start_date ASC`,
 		{ userId },
 	);
@@ -638,26 +638,26 @@ export async function joinMeetingAsAdmin(
 		? `SELECT m.*,
 		        qp.pool_name as quorum_pool_name,
 		        wp.pool_name as watcher_pool_name,
-		        ap.pool_name as admin_pool_name
+		        ap.pool_name as meeting_admin_pool_name
 		 FROM meetings m
 		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
 		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
-		 LEFT JOIN pools ap ON m.admin_pool_id = ap.id
+		 LEFT JOIN pools ap ON m.meeting_admin_pool_id = ap.id
 		 WHERE m.id = :meetingId
 		   AND NOW() >= m.start_date
 		   AND NOW() <= m.end_date`
 		: `SELECT m.*,
 		        qp.pool_name as quorum_pool_name,
 		        wp.pool_name as watcher_pool_name,
-		        ap.pool_name as admin_pool_name
+		        ap.pool_name as meeting_admin_pool_name
 		 FROM meetings m
 		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
 		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
-		 LEFT JOIN pools ap ON m.admin_pool_id = ap.id
+		 LEFT JOIN pools ap ON m.meeting_admin_pool_id = ap.id
 		 WHERE m.id = :meetingId
 		   AND NOW() >= m.start_date
 		   AND NOW() <= m.end_date
-		   AND m.admin_pool_id IS NOT NULL`;
+		   AND m.meeting_admin_pool_id IS NOT NULL`;
 
 	const meetingResult = await db.query<{
 		id: number;
@@ -667,13 +667,13 @@ export async function joinMeetingAsAdmin(
 		end_date: Date;
 		quorum_voting_pool_id: number;
 		watcher_pool_id: number | null;
-		admin_pool_id: number | null;
+		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 		quorum_pool_name: string;
 		watcher_pool_name: string | null;
-		admin_pool_name: string | null;
+		meeting_admin_pool_name: string | null;
 	}>(meetingQuery, { meetingId });
 
 	if (meetingResult.rows.length === EMPTY_ARRAY_LENGTH) {
@@ -688,7 +688,7 @@ export async function joinMeetingAsAdmin(
 	if (!isGlobalAdmin) {
 		const poolCheck = await db.query<{ user_id: string }>(
 			`SELECT up.user_id FROM user_pools up
-			 INNER JOIN meetings m ON m.admin_pool_id = up.pool_id
+			 INNER JOIN meetings m ON m.meeting_admin_pool_id = up.pool_id
 			 WHERE m.id = :meetingId AND up.user_id = :userId`,
 			{ meetingId, userId },
 		);
@@ -731,13 +731,13 @@ export async function joinMeetingAsAdmin(
 		endDate: meetingRow.end_date,
 		quorumVotingPoolId: meetingRow.quorum_voting_pool_id,
 		watcherPoolId: meetingRow.watcher_pool_id,
-		adminPoolId: meetingRow.admin_pool_id,
+		meetingAdminPoolId: meetingRow.meeting_admin_pool_id,
 		quorumCalledAt: meetingRow.quorum_called_at,
 		createdAt: meetingRow.created_at,
 		updatedAt: meetingRow.updated_at,
 		quorumVotingPoolName: meetingRow.quorum_pool_name,
 		watcherPoolName: meetingRow.watcher_pool_name,
-		adminPoolName: meetingRow.admin_pool_name,
+		meetingAdminPoolName: meetingRow.meeting_admin_pool_name,
 	};
 
 	return { participant, meeting };
@@ -753,7 +753,7 @@ export async function isUserMeetingAdmin(
 ): Promise<boolean> {
 	const result = await db.query<{ user_id: string }>(
 		`SELECT up.user_id FROM user_pools up
-		 INNER JOIN meetings m ON m.admin_pool_id = up.pool_id
+		 INNER JOIN meetings m ON m.meeting_admin_pool_id = up.pool_id
 		 WHERE m.id = :meetingId AND up.user_id = :userId`,
 		{ meetingId, userId },
 	);
