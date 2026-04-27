@@ -103,13 +103,14 @@ export async function createUser(request: CreateUserRequest): Promise<User> {
 		last_name: string;
 		is_admin: boolean;
 		is_watcher: boolean;
+		is_meeting_admin: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
 	}>(
 		`INSERT INTO users (username, voter_id, first_name, last_name, password_hash, is_admin, is_watcher)
      VALUES (:username, :voterId, :firstName, :lastName, NULL, :isAdmin, :isWatcher)
-     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at`,
+     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_meeting_admin, is_disabled, created_at, updated_at`,
 		{
 			username: finalUsername,
 			voterId,
@@ -131,6 +132,7 @@ export async function createUser(request: CreateUserRequest): Promise<User> {
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
 		isWatcher: row.is_watcher,
+		isMeetingAdmin: row.is_meeting_admin,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -185,6 +187,7 @@ export async function upsertUser(request: CreateUserRequest): Promise<User> {
 		last_name: string;
 		is_admin: boolean;
 		is_watcher: boolean;
+		is_meeting_admin: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
@@ -198,7 +201,7 @@ export async function upsertUser(request: CreateUserRequest): Promise<User> {
        is_watcher = EXCLUDED.is_watcher,
        is_disabled = EXCLUDED.is_disabled,
        updated_at = NOW()
-     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at`,
+     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_meeting_admin, is_disabled, created_at, updated_at`,
 		{
 			username: generatedUsername,
 			voterId,
@@ -221,6 +224,7 @@ export async function upsertUser(request: CreateUserRequest): Promise<User> {
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
 		isWatcher: row.is_watcher,
+		isMeetingAdmin: row.is_meeting_admin,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -450,11 +454,12 @@ export async function getUserById(userId: string): Promise<User | null> {
 		last_name: string;
 		is_admin: boolean;
 		is_watcher: boolean;
+		is_meeting_admin: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		"SELECT id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at FROM users WHERE id = :userId",
+		"SELECT id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_meeting_admin, is_disabled, created_at, updated_at FROM users WHERE id = :userId",
 		{ userId },
 	);
 
@@ -473,6 +478,7 @@ export async function getUserById(userId: string): Promise<User | null> {
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
 		isWatcher: row.is_watcher,
+		isMeetingAdmin: row.is_meeting_admin,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -553,6 +559,7 @@ export async function listUsers(
 		last_name: string;
 		is_admin: boolean;
 		is_watcher: boolean;
+		is_meeting_admin: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
@@ -560,7 +567,7 @@ export async function listUsers(
 	}>(
 		`SELECT
        u.id, u.username, u.voter_id, u.first_name, u.last_name,
-       u.is_admin, u.is_watcher, u.is_disabled, u.created_at, u.updated_at,
+       u.is_admin, u.is_watcher, u.is_meeting_admin, u.is_disabled, u.created_at, u.updated_at,
        array_agg(p.pool_name ORDER BY p.pool_name) FILTER (WHERE p.pool_name IS NOT NULL) as pool_names
      FROM users u
      ${poolJoin}
@@ -581,6 +588,7 @@ export async function listUsers(
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
 		isWatcher: row.is_watcher,
+		isMeetingAdmin: row.is_meeting_admin,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -665,6 +673,7 @@ export async function updateUser(
 			last_name: string;
 			is_admin: boolean;
 			is_watcher: boolean;
+			is_meeting_admin: boolean;
 			is_disabled: boolean;
 			created_at: Date;
 			updated_at: Date;
@@ -672,7 +681,7 @@ export async function updateUser(
 			`UPDATE users
        SET ${setClauses.join(", ")}
        WHERE id = :userId
-       RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at`,
+       RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_meeting_admin, is_disabled, created_at, updated_at`,
 			values,
 		);
 
@@ -691,6 +700,7 @@ export async function updateUser(
 			lastName: row.last_name,
 			isAdmin: row.is_admin,
 			isWatcher: row.is_watcher,
+			isMeetingAdmin: row.is_meeting_admin,
 			isDisabled: row.is_disabled,
 			createdAt: row.created_at,
 			updatedAt: row.updated_at,
@@ -724,6 +734,7 @@ export async function disableUser(userId: string): Promise<User> {
 		last_name: string;
 		is_admin: boolean;
 		is_watcher: boolean;
+		is_meeting_admin: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
@@ -731,7 +742,7 @@ export async function disableUser(userId: string): Promise<User> {
 		`UPDATE users
      SET is_disabled = TRUE, updated_at = NOW()
      WHERE id = :userId
-     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at`,
+     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_meeting_admin, is_disabled, created_at, updated_at`,
 		{ userId },
 	);
 
@@ -750,6 +761,7 @@ export async function disableUser(userId: string): Promise<User> {
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
 		isWatcher: row.is_watcher,
+		isMeetingAdmin: row.is_meeting_admin,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -768,6 +780,7 @@ export async function enableUser(userId: string): Promise<User> {
 		last_name: string;
 		is_admin: boolean;
 		is_watcher: boolean;
+		is_meeting_admin: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
@@ -775,7 +788,7 @@ export async function enableUser(userId: string): Promise<User> {
 		`UPDATE users
      SET is_disabled = FALSE, updated_at = NOW()
      WHERE id = :userId
-     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at`,
+     RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_meeting_admin, is_disabled, created_at, updated_at`,
 		{ userId },
 	);
 
@@ -794,6 +807,7 @@ export async function enableUser(userId: string): Promise<User> {
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
 		isWatcher: row.is_watcher,
+		isMeetingAdmin: row.is_meeting_admin,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -1038,11 +1052,12 @@ export async function listUsersByDateRange(
 		last_name: string;
 		is_admin: boolean;
 		is_watcher: boolean;
+		is_meeting_admin: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`SELECT id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_disabled, created_at, updated_at
+		`SELECT id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_meeting_admin, is_disabled, created_at, updated_at
      FROM users
      WHERE created_at >= :startDate AND created_at <= :endDate
      ORDER BY created_at DESC
@@ -1058,6 +1073,7 @@ export async function listUsersByDateRange(
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
 		isWatcher: row.is_watcher,
+		isMeetingAdmin: row.is_meeting_admin,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,

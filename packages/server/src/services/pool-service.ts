@@ -31,6 +31,41 @@ export async function poolKeyExists(poolKey: string): Promise<boolean> {
 	return result.rows[FIRST_ROW].exists;
 }
 
+// Pool key generation constants
+const INITIAL_COUNTER = 1;
+const COUNTER_INCREMENT = 1;
+
+/**
+ * Generate a unique pool key from a meeting name
+ * Slugifies the name and adds suffix, handling conflicts
+ *
+ * @param meetingName - The meeting name to slugify
+ * @param suffix - Suffix to add (e.g., "watchers", "meeting-admins")
+ * @returns A unique pool key
+ */
+export async function generatePoolKeyFromMeetingName(
+	meetingName: string,
+	suffix: string,
+): Promise<string> {
+	// Slugify: lowercase, replace spaces/special chars with hyphens, trim leading/trailing hyphens
+	const slug = meetingName
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/(?:^-|-$)/g, "");
+
+	let poolKey = `${slug}-${suffix}`;
+	let counter = INITIAL_COUNTER;
+
+	// Check for conflicts and increment counter if needed
+	// eslint-disable-next-line no-await-in-loop -- Sequential uniqueness check required
+	while (await poolKeyExists(poolKey)) {
+		counter += COUNTER_INCREMENT;
+		poolKey = `${slug}-${suffix}-${String(counter)}`;
+	}
+
+	return poolKey;
+}
+
 /**
  * Get pool by ID
  */
@@ -227,86 +262,145 @@ export async function listPools(
 }
 
 /**
+ * Result of updating a pool, including resolved pending assignments
+ */
+export interface UpdatePoolResult {
+	pool: Pool;
+	resolvedUsers: number;
+}
+
+/**
  * Update pool details
+ *
+ * When the pool key is changed, this function automatically resolves any
+ * pending pool assignments that match either the OLD or NEW key:
+ * - Users with pending assignments for the NEW key are added to this pool
+ * - Users with pending assignments for the OLD key are added to this pool
+ * - All resolved pending records are deleted
  */
 export async function updatePool(
 	poolId: number,
 	updates: UpdatePoolRequest,
-): Promise<Pool> {
-	const { poolKey, poolName, description } = updates;
+): Promise<UpdatePoolResult> {
+	const { poolKey: newPoolKey, poolName, description } = updates;
 
-	// Build dynamic update query
-	const setClauses: string[] = [];
-	const values: Record<string, unknown> = { poolId };
+	return await withTransaction(async (tx) => {
+		// Get current pool data before updating
+		const currentPoolResult = await tx.query<{
+			id: number;
+			pool_key: string;
+		}>("SELECT id, pool_key FROM pools WHERE id = :poolId", { poolId });
 
-	if (poolKey !== undefined) {
-		// Check if new pool key already exists
-		if (await poolKeyExists(poolKey)) {
-			const existingPool = await db.query<{ id: number }>(
-				"SELECT id FROM pools WHERE pool_key = :poolKey",
-				{ poolKey },
-			);
-			// Only throw error if it's a different pool
-			const {
-				rows: [existingRow],
-			} = existingPool;
-			if (existingRow.id !== poolId) {
-				throw new Error(`Pool key ${poolKey} already exists`);
-			}
+		if (currentPoolResult.rows.length === EMPTY_ARRAY_LENGTH) {
+			throw new Error(`Pool with ID ${poolId} not found`);
 		}
-		setClauses.push(`pool_key = :poolKey`);
-		values.poolKey = poolKey;
-	}
 
-	if (poolName !== undefined) {
-		setClauses.push(`pool_name = :poolName`);
-		values.poolName = poolName;
-	}
+		const {
+			rows: [{ pool_key: oldPoolKey }],
+		} = currentPoolResult;
 
-	if (description !== undefined) {
-		setClauses.push(`description = :description`);
-		values.description = description;
-	}
+		// Build dynamic update query
+		const setClauses: string[] = [];
+		const values: Record<string, unknown> = { poolId };
 
-	if (setClauses.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error("No fields to update");
-	}
+		if (newPoolKey !== undefined) {
+			// Check if new pool key already exists (on a different pool)
+			const existingPool = await tx.query<{ id: number }>(
+				"SELECT id FROM pools WHERE pool_key = :newPoolKey AND id != :poolId",
+				{ newPoolKey, poolId },
+			);
+			if (existingPool.rows.length > EMPTY_ARRAY_LENGTH) {
+				throw new Error(`Pool key ${newPoolKey} already exists`);
+			}
+			setClauses.push(`pool_key = :newPoolKey`);
+			values.newPoolKey = newPoolKey;
+		}
 
-	// Add updated_at
-	setClauses.push(`updated_at = NOW()`);
+		if (poolName !== undefined) {
+			setClauses.push(`pool_name = :poolName`);
+			values.poolName = poolName;
+		}
 
-	const result = await db.query<{
-		id: number;
-		pool_key: string;
-		pool_name: string;
-		description: string | null;
-		is_disabled: boolean;
-		created_at: Date;
-		updated_at: Date;
-	}>(
-		`UPDATE pools
-     SET ${setClauses.join(", ")}
-     WHERE id = :poolId
-     RETURNING *`,
-		values,
-	);
+		if (description !== undefined) {
+			setClauses.push(`description = :description`);
+			values.description = description;
+		}
 
-	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Pool with ID ${poolId} not found`);
-	}
+		if (setClauses.length === EMPTY_ARRAY_LENGTH) {
+			throw new Error("No fields to update");
+		}
 
-	const {
-		rows: [row],
-	} = result;
-	return {
-		id: row.id,
-		poolKey: row.pool_key,
-		poolName: row.pool_name,
-		description: row.description,
-		isDisabled: row.is_disabled,
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-	};
+		// Add updated_at
+		setClauses.push(`updated_at = NOW()`);
+
+		// Update the pool
+		const result = await tx.query<{
+			id: number;
+			pool_key: string;
+			pool_name: string;
+			description: string | null;
+			is_disabled: boolean;
+			created_at: Date;
+			updated_at: Date;
+		}>(
+			`UPDATE pools
+       SET ${setClauses.join(", ")}
+       WHERE id = :poolId
+       RETURNING *`,
+			values,
+		);
+
+		const {
+			rows: [row],
+		} = result;
+		const pool: Pool = {
+			id: row.id,
+			poolKey: row.pool_key,
+			poolName: row.pool_name,
+			description: row.description,
+			isDisabled: row.is_disabled,
+			createdAt: row.created_at,
+			updatedAt: row.updated_at,
+		};
+
+		// Resolve pending assignments if pool key was changed
+		if (newPoolKey === undefined || newPoolKey === oldPoolKey) {
+			return { pool, resolvedUsers: 0 };
+		}
+
+		// Collect pool keys to resolve: both OLD and NEW keys
+		const keysToResolve = [oldPoolKey, newPoolKey];
+
+		// Find all users with pending assignments for either key
+		const pendingUsersResult = await tx.query<{ user_id: string }>(
+			`SELECT DISTINCT user_id FROM pending_pool_keys
+       WHERE pool_key = ANY(:keysToResolve)`,
+			{ keysToResolve },
+		);
+
+		// Add each user to the pool
+		for (const { user_id: userId } of pendingUsersResult.rows) {
+			// eslint-disable-next-line no-await-in-loop -- Sequential within transaction
+			await tx.query(
+				`INSERT INTO user_pools (pool_id, user_id)
+         VALUES (:poolId, :userId)
+         ON CONFLICT (pool_id, user_id) DO NOTHING`,
+				{ poolId, userId },
+			);
+		}
+
+		const {
+			rows: { length: resolvedUsers },
+		} = pendingUsersResult;
+
+		// Delete all resolved pending records
+		await tx.query(
+			`DELETE FROM pending_pool_keys WHERE pool_key = ANY(:keysToResolve)`,
+			{ keysToResolve },
+		);
+
+		return { pool, resolvedUsers };
+	});
 }
 
 /**
@@ -413,12 +507,13 @@ export async function getUsersInPool(
 		last_name: string;
 		is_admin: boolean;
 		is_watcher: boolean;
+		is_meeting_admin: boolean;
 		is_disabled: boolean;
 		created_at: Date;
 		updated_at: Date;
 	}>(
 		`SELECT u.id, u.username, u.voter_id, u.first_name, u.last_name,
-            u.is_admin, u.is_watcher, u.is_disabled, u.created_at, u.updated_at
+            u.is_admin, u.is_watcher, u.is_meeting_admin, u.is_disabled, u.created_at, u.updated_at
      FROM users u
      INNER JOIN user_pools up ON u.id = up.user_id
      WHERE up.pool_id = :poolId
@@ -435,6 +530,7 @@ export async function getUsersInPool(
 		lastName: row.last_name,
 		isAdmin: row.is_admin,
 		isWatcher: row.is_watcher,
+		isMeetingAdmin: row.is_meeting_admin,
 		isDisabled: row.is_disabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,

@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 import { useRouter } from "vue-router";
-import { getMeeting, updateMeeting, getPools } from "../../services/api";
+import {
+	getMeeting,
+	updateMeeting,
+	getPools,
+	getMeetingVoterPools,
+	updateMeetingVoterPools,
+	createPool,
+} from "../../services/api";
 import { useAuth } from "../../composables/useAuth";
 import type { Pool } from "@mcdc-convention-voting/shared";
 
@@ -31,12 +38,44 @@ const formData = ref({
 	endDate: EMPTY_STRING,
 	quorumVotingPoolId: EMPTY_STRING,
 	watcherPoolId: EMPTY_STRING,
-	adminPoolId: EMPTY_STRING,
+	meetingAdminPoolId: EMPTY_STRING,
 });
 
 const loading = ref(false);
 const saving = ref(false);
 const error = ref<string | null>(null);
+
+// Voter pools state
+const selectedVoterPoolIds = ref<Set<number>>(new Set());
+const loadingVoterPools = ref(false);
+
+// Create pool modal state
+const showCreatePoolModal = ref(false);
+const createPoolName = ref(EMPTY_STRING);
+const createPoolKey = ref(EMPTY_STRING);
+const createPoolDescription = ref(EMPTY_STRING);
+const createPoolLoading = ref(false);
+
+// Check if a pool is the quorum pool (always checked/disabled)
+const isQuorumPool = computed(() => (poolId: number): boolean => {
+	const quorumId = Number.parseInt(
+		formData.value.quorumVotingPoolId,
+		DECIMAL_RADIX,
+	);
+	return !Number.isNaN(quorumId) && poolId === quorumId;
+});
+
+// Sync quorum pool changes to selectedVoterPoolIds
+watch(
+	() => formData.value.quorumVotingPoolId,
+	(newQuorumPoolId) => {
+		const newId = Number.parseInt(newQuorumPoolId, DECIMAL_RADIX);
+		if (!Number.isNaN(newId)) {
+			selectedVoterPoolIds.value.add(newId);
+			selectedVoterPoolIds.value = new Set(selectedVoterPoolIds.value);
+		}
+	},
+);
 
 function formatDateForInput(date: Date | string): string {
 	const d = new Date(date);
@@ -89,16 +128,115 @@ async function loadMeeting(): Promise<void> {
 					meeting.watcherPoolId === null
 						? EMPTY_STRING
 						: String(meeting.watcherPoolId),
-				adminPoolId:
-					meeting.adminPoolId === null
+				meetingAdminPoolId:
+					meeting.meetingAdminPoolId === null
 						? EMPTY_STRING
-						: String(meeting.adminPoolId),
+						: String(meeting.meetingAdminPoolId),
 			};
 		}
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to load meeting";
 	} finally {
 		loading.value = false;
+	}
+}
+
+async function loadVoterPools(): Promise<void> {
+	const meetingId = Number.parseInt(props.id, DECIMAL_RADIX);
+	if (Number.isNaN(meetingId)) return;
+
+	loadingVoterPools.value = true;
+	try {
+		const response = await getMeetingVoterPools(meetingId);
+		if (response.data !== undefined) {
+			selectedVoterPoolIds.value = new Set(response.data);
+		}
+	} catch {
+		// Non-critical: voter pools section can still work
+		// Error is ignored as this is a secondary data load
+	} finally {
+		loadingVoterPools.value = false;
+	}
+}
+
+function toggleVoterPool(poolId: number): void {
+	// Cannot toggle the quorum pool - it's always checked
+	if (isQuorumPool.value(poolId)) return;
+
+	if (selectedVoterPoolIds.value.has(poolId)) {
+		selectedVoterPoolIds.value.delete(poolId);
+	} else {
+		selectedVoterPoolIds.value.add(poolId);
+	}
+	// Force reactivity
+	selectedVoterPoolIds.value = new Set(selectedVoterPoolIds.value);
+}
+
+/**
+ * Generate a pool key from meeting name (client-side)
+ * Matches the backend pattern: slugify + suffix
+ */
+function generatePoolKeyFromName(name: string, suffix = "pool"): string {
+	const slug = name
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/(?:^-|-$)/g, "");
+	return `${slug}-${suffix}`;
+}
+
+function openCreatePoolModal(): void {
+	const meetingName = formData.value.name;
+	const suggestedKey = generatePoolKeyFromName(meetingName, "voters");
+
+	createPoolKey.value = suggestedKey;
+	createPoolName.value = `${meetingName} - Additional Voters`;
+	createPoolDescription.value = EMPTY_STRING;
+	showCreatePoolModal.value = true;
+}
+
+function closeCreatePoolModal(): void {
+	showCreatePoolModal.value = false;
+	createPoolKey.value = EMPTY_STRING;
+	createPoolName.value = EMPTY_STRING;
+	createPoolDescription.value = EMPTY_STRING;
+}
+
+async function handleCreatePool(): Promise<void> {
+	if (createPoolName.value.trim() === EMPTY_STRING) {
+		error.value = "Pool name is required";
+		return;
+	}
+	if (createPoolKey.value.trim() === EMPTY_STRING) {
+		error.value = "Pool key is required";
+		return;
+	}
+
+	createPoolLoading.value = true;
+	error.value = null;
+
+	try {
+		const trimmedDescription = createPoolDescription.value.trim();
+		const result = await createPool({
+			poolKey: createPoolKey.value.trim(),
+			poolName: createPoolName.value.trim(),
+			description:
+				trimmedDescription === EMPTY_STRING ? undefined : trimmedDescription,
+		});
+
+		if (result.data !== undefined) {
+			// Refresh pools list
+			await loadPools();
+
+			// Auto-check the new pool
+			selectedVoterPoolIds.value.add(result.data.id);
+			selectedVoterPoolIds.value = new Set(selectedVoterPoolIds.value);
+		}
+
+		closeCreatePoolModal();
+	} catch (err) {
+		error.value = err instanceof Error ? err.message : "Failed to create pool";
+	} finally {
+		createPoolLoading.value = false;
 	}
 }
 
@@ -109,7 +247,7 @@ interface FormDataType {
 	endDate: string;
 	quorumVotingPoolId: string;
 	watcherPoolId: string;
-	adminPoolId: string;
+	meetingAdminPoolId: string;
 }
 
 function validateFormData(data: FormDataType): string | null {
@@ -164,13 +302,20 @@ async function handleSubmit(): Promise<void> {
 				formData.value.watcherPoolId === EMPTY_STRING
 					? null
 					: Number.parseInt(formData.value.watcherPoolId, DECIMAL_RADIX),
-			adminPoolId:
-				formData.value.adminPoolId === EMPTY_STRING
+			meetingAdminPoolId:
+				formData.value.meetingAdminPoolId === EMPTY_STRING
 					? null
-					: Number.parseInt(formData.value.adminPoolId, DECIMAL_RADIX),
+					: Number.parseInt(formData.value.meetingAdminPoolId, DECIMAL_RADIX),
 		};
 
 		await updateMeeting(meetingId, meetingData);
+
+		// Save voter pools (quorum pool automatically included by backend)
+		await updateMeetingVoterPools(
+			meetingId,
+			Array.from(selectedVoterPoolIds.value),
+		);
+
 		void router.push("/admin/meetings");
 	} catch (err) {
 		error.value =
@@ -187,6 +332,7 @@ function cancel(): void {
 onMounted(() => {
 	void loadPools();
 	void loadMeeting();
+	void loadVoterPools();
 });
 </script>
 
@@ -278,13 +424,13 @@ onMounted(() => {
 			</div>
 
 			<div class="form-group">
-				<label for="adminPoolId">
-					Admin Pool
+				<label for="meetingAdminPoolId">
+					Meeting Admin Pool
 					<span class="optional">(optional)</span>
 				</label>
 				<select
-					id="adminPoolId"
-					v-model="formData.adminPoolId"
+					id="meetingAdminPoolId"
+					v-model="formData.meetingAdminPoolId"
 					:disabled="loadingPools || !isAdmin"
 				>
 					<option value="">
@@ -299,8 +445,53 @@ onMounted(() => {
 					always have access)
 				</p>
 				<p v-if="!isAdmin" class="field-restriction">
-					Only global administrators can change the Admin Pool.
+					Only global administrators can change the Meeting Admin Pool.
 				</p>
+			</div>
+
+			<div class="form-group">
+				<label>
+					Voter Pools
+					<span class="optional">(voters from these pools can vote)</span>
+				</label>
+				<p class="field-description">
+					Select which pools can vote in this meeting. The quorum pool is always
+					included.
+				</p>
+
+				<div v-if="loadingPools || loadingVoterPools" class="loading-inline">
+					Loading pools...
+				</div>
+
+				<div v-else class="voter-pools-grid">
+					<label
+						v-for="pool in pools"
+						:key="pool.id"
+						class="pool-checkbox"
+						:class="{ 'pool-checkbox-disabled': isQuorumPool(pool.id) }"
+					>
+						<input
+							type="checkbox"
+							:checked="
+								selectedVoterPoolIds.has(pool.id) || isQuorumPool(pool.id)
+							"
+							:disabled="isQuorumPool(pool.id)"
+							@change="toggleVoterPool(pool.id)"
+						/>
+						<span class="pool-name">{{ pool.poolName }}</span>
+						<span v-if="isQuorumPool(pool.id)" class="quorum-badge"
+							>(Quorum Pool)</span
+						>
+					</label>
+				</div>
+
+				<button
+					type="button"
+					class="btn btn-small btn-outline"
+					@click="openCreatePoolModal"
+				>
+					+ Create New Pool
+				</button>
 			</div>
 
 			<div class="form-actions">
@@ -312,6 +503,64 @@ onMounted(() => {
 				</button>
 			</div>
 		</form>
+
+		<!-- Create Pool Modal -->
+		<div v-if="showCreatePoolModal" class="modal" @click="closeCreatePoolModal">
+			<div class="modal-content" @click.stop>
+				<h3>Create New Pool</h3>
+				<p>Create a new voter pool for this meeting.</p>
+
+				<div class="form-group">
+					<label for="newPoolName">
+						Pool Name <span class="required">*</span>
+					</label>
+					<input
+						id="newPoolName"
+						v-model="createPoolName"
+						type="text"
+						placeholder="Display name for the pool"
+					/>
+				</div>
+
+				<div class="form-group">
+					<label for="newPoolKey">
+						Pool Key <span class="required">*</span>
+					</label>
+					<input
+						id="newPoolKey"
+						v-model="createPoolKey"
+						type="text"
+						placeholder="Unique identifier (auto-generated)"
+					/>
+					<p class="field-description">
+						Unique identifier used for CSV imports and API references
+					</p>
+				</div>
+
+				<div class="form-group">
+					<label for="newPoolDescription">Description</label>
+					<textarea
+						id="newPoolDescription"
+						v-model="createPoolDescription"
+						rows="2"
+						placeholder="Optional description"
+					/>
+				</div>
+
+				<div class="modal-actions">
+					<button
+						class="btn btn-primary"
+						:disabled="createPoolLoading"
+						@click="handleCreatePool"
+					>
+						{{ createPoolLoading ? "Creating..." : "Create Pool" }}
+					</button>
+					<button class="btn btn-secondary" @click="closeCreatePoolModal">
+						Cancel
+					</button>
+				</div>
+			</div>
+		</div>
 	</div>
 </template>
 
@@ -434,5 +683,117 @@ h2 {
 	font-size: 0.875rem;
 	color: #e65100;
 	font-style: italic;
+}
+
+/* Voter pools grid */
+.voter-pools-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+	gap: 0.75rem;
+	margin-bottom: 1rem;
+	padding: 1rem;
+	background-color: #f8f9fa;
+	border-radius: 4px;
+	max-height: 300px;
+	overflow-y: auto;
+}
+
+.pool-checkbox {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem;
+	background-color: white;
+	border-radius: 4px;
+	cursor: pointer;
+	border: 1px solid #e0e0e0;
+	transition: border-color 0.2s;
+}
+
+.pool-checkbox:hover:not(.pool-checkbox-disabled) {
+	border-color: #1976d2;
+}
+
+.pool-checkbox-disabled {
+	background-color: #e3f2fd;
+	cursor: not-allowed;
+}
+
+.pool-checkbox input[type="checkbox"] {
+	width: auto;
+	margin: 0;
+}
+
+.pool-name {
+	flex: 1;
+	font-size: 0.875rem;
+}
+
+.quorum-badge {
+	font-size: 0.75rem;
+	color: #1976d2;
+	font-weight: 500;
+}
+
+.btn-small {
+	padding: 0.5rem 1rem;
+	font-size: 0.875rem;
+}
+
+.btn-outline {
+	background-color: transparent;
+	border: 1px solid #1976d2;
+	color: #1976d2;
+}
+
+.btn-outline:hover {
+	background-color: #e3f2fd;
+}
+
+.loading-inline {
+	padding: 1rem;
+	color: #666;
+	text-align: center;
+}
+
+/* Modal styles */
+.modal {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 1000;
+}
+
+.modal-content {
+	background-color: white;
+	padding: 2rem;
+	border-radius: 8px;
+	max-width: 500px;
+	width: 90%;
+	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.modal-content h3 {
+	margin: 0 0 1rem 0;
+	color: #2c3e50;
+}
+
+.modal-content > p {
+	margin: 0 0 1.5rem 0;
+	color: #666;
+	line-height: 1.5;
+}
+
+.modal-actions {
+	display: flex;
+	gap: 1rem;
+	justify-content: flex-end;
+	margin-top: 1.5rem;
 }
 </style>

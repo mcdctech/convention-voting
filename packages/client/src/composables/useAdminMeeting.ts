@@ -33,7 +33,7 @@ export function useAdminMeeting(): {
 		() => currentMeeting.value?.meeting.id ?? null,
 	);
 	const joinedMeetingAdminPoolId = computed(
-		() => currentMeeting.value?.meeting.adminPoolId ?? null,
+		() => currentMeeting.value?.meeting.meetingAdminPoolId ?? null,
 	);
 
 	/**
