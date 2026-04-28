@@ -18,6 +18,9 @@ import type {
 const FIRST_ROW = 0;
 const EMPTY_ARRAY_LENGTH = 0;
 
+// Role validation constants
+const MAX_ALLOWED_SPECIAL_ROLES = 1;
+
 // Pagination constants
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 50;
@@ -54,17 +57,33 @@ async function validateAndPrepareUserCreation(
 	finalUsername: string;
 	finalIsAdmin: boolean;
 	finalIsWatcher: boolean;
+	finalIsMeetingAdmin: boolean;
 }> {
-	const { voterId, firstName, lastName, username, isAdmin, isWatcher } =
-		request;
+	const {
+		voterId,
+		firstName,
+		lastName,
+		username,
+		isAdmin,
+		isWatcher,
+		isMeetingAdmin,
+	} = request;
 
 	// Normalize role flags to booleans
 	const finalIsAdmin = isAdmin === true;
 	const finalIsWatcher = isWatcher === true;
+	const finalIsMeetingAdmin = isMeetingAdmin === true;
 
-	// Validate role exclusivity
-	if (finalIsAdmin && finalIsWatcher) {
-		throw new Error("User cannot be both admin and watcher");
+	// Validate role exclusivity - only one special role allowed
+	const { length: roleCount } = [
+		finalIsAdmin,
+		finalIsWatcher,
+		finalIsMeetingAdmin,
+	].filter(Boolean);
+	if (roleCount > MAX_ALLOWED_SPECIAL_ROLES) {
+		throw new Error(
+			"User can only have one role: admin, watcher, or meeting_admin",
+		);
 	}
 
 	// Check if voter ID already exists
@@ -83,17 +102,23 @@ async function validateAndPrepareUserCreation(
 		throw new Error(`Username ${finalUsername} already exists`);
 	}
 
-	return { finalUsername, finalIsAdmin, finalIsWatcher };
+	return { finalUsername, finalIsAdmin, finalIsWatcher, finalIsMeetingAdmin };
 }
 
 /**
  * Create a single user
  */
 export async function createUser(request: CreateUserRequest): Promise<User> {
-	const { voterId, firstName, lastName, poolKeys } = request;
+	const { voterId, firstName, lastName, poolKeys, password } = request;
 
-	const { finalUsername, finalIsAdmin, finalIsWatcher } =
+	const { finalUsername, finalIsAdmin, finalIsWatcher, finalIsMeetingAdmin } =
 		await validateAndPrepareUserCreation(request);
+
+	// Hash password if provided
+	const passwordHash =
+		password !== undefined && password !== ""
+			? await hashPassword(password)
+			: null;
 
 	const result = await db.query<{
 		id: string;
@@ -108,16 +133,18 @@ export async function createUser(request: CreateUserRequest): Promise<User> {
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`INSERT INTO users (username, voter_id, first_name, last_name, password_hash, is_admin, is_watcher)
-     VALUES (:username, :voterId, :firstName, :lastName, NULL, :isAdmin, :isWatcher)
+		`INSERT INTO users (username, voter_id, first_name, last_name, password_hash, is_admin, is_watcher, is_meeting_admin)
+     VALUES (:username, :voterId, :firstName, :lastName, :passwordHash, :isAdmin, :isWatcher, :isMeetingAdmin)
      RETURNING id, username, voter_id, first_name, last_name, is_admin, is_watcher, is_meeting_admin, is_disabled, created_at, updated_at`,
 		{
 			username: finalUsername,
 			voterId,
 			firstName,
 			lastName,
+			passwordHash,
 			isAdmin: finalIsAdmin,
 			isWatcher: finalIsWatcher,
+			isMeetingAdmin: finalIsMeetingAdmin,
 		},
 	);
 
@@ -606,7 +633,8 @@ export async function updateUser(
 	userId: string,
 	updates: UpdateUserRequest,
 ): Promise<User> {
-	const { voterId, firstName, lastName, username, poolKeys } = updates;
+	const { voterId, firstName, lastName, username, poolKeys, password } =
+		updates;
 
 	// Build dynamic update query
 	const setClauses: string[] = [];
@@ -652,6 +680,13 @@ export async function updateUser(
 		}
 		setClauses.push(`username = :username`);
 		values.username = username;
+	}
+
+	// Handle password update
+	if (password !== undefined && password !== "") {
+		const passwordHash = await hashPassword(password);
+		setClauses.push(`password_hash = :passwordHash`);
+		values.passwordHash = passwordHash;
 	}
 
 	if (setClauses.length === EMPTY_ARRAY_LENGTH && poolKeys === undefined) {

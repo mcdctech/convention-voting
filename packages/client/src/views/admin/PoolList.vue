@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from "vue";
 import { useRouter } from "vue-router";
 import { getPools, disablePool, enablePool } from "../../services/api";
 import TablePagination from "../../components/TablePagination.vue";
@@ -26,6 +26,10 @@ const poolToDisable = ref<number | null>(null);
 // Modal state for enable
 const showEnableModal = ref(false);
 const poolToEnable = ref<number | null>(null);
+
+// Scroll shadow indicator state
+const scrollWrapper = ref<HTMLElement | null>(null);
+const canScrollRight = ref(false);
 
 async function loadPools(): Promise<void> {
 	loading.value = true;
@@ -110,8 +114,45 @@ function goToPage(page: number): void {
 	void loadPools();
 }
 
+// Check if there's horizontal scroll content to the right
+function updateScrollShadow(): void {
+	const wrapper = scrollWrapper.value;
+	if (wrapper === null) {
+		canScrollRight.value = false;
+		return;
+	}
+	const scrollThreshold = 1;
+	canScrollRight.value =
+		wrapper.scrollWidth - wrapper.scrollLeft - wrapper.clientWidth >
+		scrollThreshold;
+}
+
+// Handle scroll events on the wrapper
+function handleScrollEvent(): void {
+	updateScrollShadow();
+}
+
 onMounted(() => {
 	void loadPools();
+
+	// Check scroll shadow after DOM is ready
+	void nextTick(() => {
+		updateScrollShadow();
+	});
+
+	// Update on window resize
+	window.addEventListener("resize", updateScrollShadow);
+});
+
+onUnmounted(() => {
+	window.removeEventListener("resize", updateScrollShadow);
+});
+
+// Update scroll shadow when pools change
+watch(pools, () => {
+	void nextTick(() => {
+		updateScrollShadow();
+	});
 });
 </script>
 
@@ -140,59 +181,73 @@ onMounted(() => {
 		</div>
 
 		<div v-else class="table-container">
-			<table class="pools-table">
-				<thead>
-					<tr>
-						<th>Pool Key</th>
-						<th>Pool Name</th>
-						<th>Description</th>
-						<th>Users</th>
-						<th>Status</th>
-						<th>Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					<tr v-for="pool in pools" :key="pool.id">
-						<td class="pool-key">
-							{{ pool.poolKey }}
-						</td>
-						<td>{{ pool.poolName }}</td>
-						<td class="description">
-							{{ pool.description || "—" }}
-						</td>
-						<td class="user-count">
-							{{ pool.userCount }}
-						</td>
-						<td>
-							<span class="status-badge" :class="{ disabled: pool.isDisabled }">
-								{{ pool.isDisabled ? "Disabled" : "Active" }}
-							</span>
-						</td>
-						<td class="actions-cell">
-							<button class="btn btn-small" @click="editPool(pool.id)">
-								Edit
-							</button>
-							<button class="btn btn-small" @click="viewPoolUsers(pool.id)">
-								View Users
-							</button>
-							<button
-								v-if="!pool.isDisabled"
-								class="btn btn-small btn-warning"
-								@click="requestDisable(pool.id)"
-							>
-								Disable
-							</button>
-							<button
-								v-else
-								class="btn btn-small btn-success"
-								@click="requestEnable(pool.id)"
-							>
-								Enable
-							</button>
-						</td>
-					</tr>
-				</tbody>
-			</table>
+			<div
+				class="table-scroll-container"
+				:class="{ 'has-scroll-right': canScrollRight }"
+			>
+				<div
+					ref="scrollWrapper"
+					class="table-scroll-wrapper"
+					@scroll="handleScrollEvent"
+				>
+					<table class="pools-table">
+						<thead>
+							<tr>
+								<th>Pool Key</th>
+								<th>Pool Name</th>
+								<th>Description</th>
+								<th>Users</th>
+								<th>Status</th>
+								<th>Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr v-for="pool in pools" :key="pool.id">
+								<td class="pool-key">
+									{{ pool.poolKey }}
+								</td>
+								<td>{{ pool.poolName }}</td>
+								<td class="description">
+									{{ pool.description || "—" }}
+								</td>
+								<td class="user-count">
+									{{ pool.userCount }}
+								</td>
+								<td>
+									<span
+										class="status-badge"
+										:class="{ disabled: pool.isDisabled }"
+									>
+										{{ pool.isDisabled ? "Disabled" : "Active" }}
+									</span>
+								</td>
+								<td class="actions-cell">
+									<button class="btn btn-small" @click="editPool(pool.id)">
+										Edit
+									</button>
+									<button class="btn btn-small" @click="viewPoolUsers(pool.id)">
+										View Users
+									</button>
+									<button
+										v-if="!pool.isDisabled"
+										class="btn btn-small btn-warning"
+										@click="requestDisable(pool.id)"
+									>
+										Disable
+									</button>
+									<button
+										v-else
+										class="btn btn-small btn-success"
+										@click="requestEnable(pool.id)"
+									>
+										Enable
+									</button>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
 
 			<TablePagination
 				:current-page="currentPage"
@@ -292,8 +347,36 @@ onMounted(() => {
 	overflow: hidden;
 }
 
+/* Container for shadow indicator - doesn't scroll */
+.table-scroll-container {
+	position: relative;
+	overflow: hidden;
+}
+
+/* Dynamic shadow indicator when there's content to scroll right */
+.table-scroll-container.has-scroll-right::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	width: 30px;
+	background: linear-gradient(to left, rgba(0, 0, 0, 0.1) 0%, transparent 100%);
+	pointer-events: none;
+	z-index: 2;
+}
+
+/* Inner wrapper that handles both horizontal and vertical scrolling */
+.table-scroll-wrapper {
+	overflow-x: auto;
+	overflow-y: auto;
+	max-height: 70vh;
+	-webkit-overflow-scrolling: touch;
+}
+
 .pools-table {
 	width: 100%;
+	min-width: 800px;
 	border-collapse: collapse;
 }
 
@@ -304,6 +387,9 @@ onMounted(() => {
 	font-weight: 600;
 	color: #2c3e50;
 	border-bottom: 2px solid #dee2e6;
+	position: sticky;
+	top: 0;
+	z-index: 1;
 }
 
 .pools-table td {

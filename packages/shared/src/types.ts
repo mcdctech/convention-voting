@@ -116,6 +116,7 @@ export interface CreateUserRequest {
 	isWatcher?: boolean; // Optional, defaults to false
 	isMeetingAdmin?: boolean; // Optional, defaults to false
 	isDisabled?: boolean; // Optional, defaults to false
+	password?: string; // Optional password for immediate authentication
 }
 
 /**
@@ -127,6 +128,7 @@ export interface UpdateUserRequest {
 	lastName?: string;
 	username?: string;
 	poolKeys?: string[]; // Optional pool keys to associate with user
+	password?: string; // Optional new password to set
 }
 
 /**

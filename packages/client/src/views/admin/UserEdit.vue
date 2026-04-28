@@ -30,7 +30,10 @@ const formData = ref({
 	firstName: EMPTY_STRING,
 	lastName: EMPTY_STRING,
 	username: EMPTY_STRING,
+	password: EMPTY_STRING,
 });
+
+const showPassword = ref(false);
 
 // Pool management
 const userPools = ref<Pool[]>([]);
@@ -120,6 +123,9 @@ async function handleSubmit(): Promise<void> {
 			lastName: formData.value.lastName.trim(),
 			username: formData.value.username.trim(),
 			poolKeys,
+			...(formData.value.password.trim() !== EMPTY_STRING && {
+				password: formData.value.password,
+			}),
 		};
 
 		await updateUser(props.id, userData);
@@ -186,11 +192,44 @@ onMounted(() => {
 				<input id="username" v-model="formData.username" type="text" required />
 			</div>
 
+			<div class="form-group">
+				<label for="password">
+					New Password
+					<span class="optional">(leave blank to keep current)</span>
+				</label>
+				<div class="password-input-wrapper">
+					<input
+						id="password"
+						v-model="formData.password"
+						:type="showPassword ? 'text' : 'password'"
+						placeholder="Enter new password to change"
+					/>
+					<button
+						type="button"
+						class="password-toggle"
+						@click="showPassword = !showPassword"
+					>
+						{{ showPassword ? "Hide" : "Show" }}
+					</button>
+				</div>
+			</div>
+
 			<div class="user-info">
 				<p>
 					<strong>Status:</strong> {{ user.isDisabled ? "Disabled" : "Active" }}
 				</p>
-				<p><strong>Admin:</strong> {{ user.isAdmin ? "Yes" : "No" }}</p>
+				<p>
+					<strong>User Role:</strong>
+					{{
+						user.isAdmin
+							? "Global Admin"
+							: user.isMeetingAdmin
+								? "Meeting Admin"
+								: user.isWatcher
+									? "Watcher"
+									: "Voter"
+					}}
+				</p>
 				<p>
 					<strong>Created:</strong>
 					{{ new Date(user.createdAt).toLocaleString() }}
@@ -283,6 +322,12 @@ h2 {
 	color: #c62828;
 }
 
+.optional {
+	font-size: 0.875rem;
+	font-weight: 400;
+	color: #757575;
+}
+
 .form-group input,
 .form-group select {
 	width: 100%;
@@ -296,6 +341,31 @@ h2 {
 .form-group select:focus {
 	outline: none;
 	border-color: #1976d2;
+}
+
+.password-input-wrapper {
+	display: flex;
+	gap: 0.5rem;
+}
+
+.password-input-wrapper input {
+	flex: 1;
+}
+
+.password-toggle {
+	padding: 0.75rem 1rem;
+	border: 1px solid #e0e0e0;
+	border-radius: 4px;
+	background-color: #f5f5f5;
+	color: #2c3e50;
+	font-size: 0.875rem;
+	cursor: pointer;
+	transition: background-color 0.2s;
+	white-space: nowrap;
+}
+
+.password-toggle:hover {
+	background-color: #e0e0e0;
 }
 
 .user-info {

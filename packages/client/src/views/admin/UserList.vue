@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from "vue";
 import { useRouter } from "vue-router";
 import {
 	getUsers,
@@ -40,6 +40,10 @@ const generatedPassword = ref<{
 	username: string;
 	password: string;
 } | null>(null);
+
+// Scroll shadow indicator state
+const scrollWrapper = ref<HTMLElement | null>(null);
+const canScrollRight = ref(false);
 
 const showDisableModal = ref(false);
 const userToDisable = ref<string | null>(null);
@@ -202,9 +206,56 @@ function closePasswordModal(): void {
 	generatedPassword.value = null;
 }
 
+// Check if there's horizontal scroll content to the right
+function updateScrollShadow(): void {
+	const wrapper = scrollWrapper.value;
+	if (wrapper === null) {
+		canScrollRight.value = false;
+		return;
+	}
+	// Show shadow if there's more content to scroll right
+	const scrollThreshold = 1;
+	canScrollRight.value =
+		wrapper.scrollWidth - wrapper.scrollLeft - wrapper.clientWidth >
+		scrollThreshold;
+}
+
+// Handle scroll events on the wrapper
+function handleScrollEvent(): void {
+	updateScrollShadow();
+}
+
 onMounted(() => {
 	void loadPools();
 	// Don't load users on mount - wait for pool selection
+
+	// Check scroll shadow after DOM is ready
+	void nextTick(() => {
+		updateScrollShadow();
+	});
+});
+
+onUnmounted(() => {
+	// Cleanup scroll listener if wrapper exists
+	if (scrollWrapper.value !== null) {
+		scrollWrapper.value.removeEventListener("scroll", handleScrollEvent);
+	}
+});
+
+// Update scroll shadow when users change (table size may change)
+watch(users, () => {
+	void nextTick(() => {
+		updateScrollShadow();
+	});
+});
+
+// Also update on window resize
+onMounted(() => {
+	window.addEventListener("resize", updateScrollShadow);
+});
+
+onUnmounted(() => {
+	window.removeEventListener("resize", updateScrollShadow);
 });
 </script>
 
@@ -284,79 +335,97 @@ onMounted(() => {
 				Select a pool to view users.
 			</div>
 
-			<table v-if="shouldShowUsers" class="users-table">
-				<thead>
-					<tr>
-						<th>Username</th>
-						<th>Name</th>
-						<th>Voter ID</th>
-						<th>Pools</th>
-						<th>Status</th>
-						<th>Role</th>
-						<th>Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					<tr v-for="user in users" :key="user.id">
-						<td>{{ user.username }}</td>
-						<td>{{ user.firstName }} {{ user.lastName }}</td>
-						<td>{{ user.voterId ?? "N/A" }}</td>
-						<td class="pools-cell">
-							{{
-								user.poolNames && user.poolNames.length > 0
-									? user.poolNames.join(", ")
-									: "—"
-							}}
-						</td>
-						<td>
-							<span
-								:class="user.isDisabled ? 'status-disabled' : 'status-active'"
-							>
-								{{ user.isDisabled ? "Disabled" : "Active" }}
-							</span>
-						</td>
-						<td>
-							<span
-								:class="{
-									'role-admin': user.isAdmin,
-									'role-watcher': user.isWatcher,
-									'role-voter': !user.isAdmin && !user.isWatcher,
-								}"
-							>
-								{{
-									user.isAdmin ? "Admin" : user.isWatcher ? "Watcher" : "Voter"
-								}}
-							</span>
-						</td>
-						<td class="actions">
-							<button class="btn btn-small" @click="editUser(user.id)">
-								Edit
-							</button>
-							<button
-								v-if="!user.isDisabled && user.id !== currentUser?.id"
-								class="btn btn-small btn-warning"
-								@click="requestDisable(user.id)"
-							>
-								Disable
-							</button>
-							<button
-								v-else
-								class="btn btn-small btn-success"
-								@click="handleEnable(user.id)"
-							>
-								Enable
-							</button>
-							<button
-								v-if="user.id !== currentUser?.id"
-								class="btn btn-small btn-secondary"
-								@click="requestResetPassword(user.id)"
-							>
-								Reset Password
-							</button>
-						</td>
-					</tr>
-				</tbody>
-			</table>
+			<div
+				v-if="shouldShowUsers"
+				class="table-scroll-container"
+				:class="{ 'has-scroll-right': canScrollRight }"
+			>
+				<div
+					ref="scrollWrapper"
+					class="table-scroll-wrapper"
+					@scroll="handleScrollEvent"
+				>
+					<table class="users-table">
+						<thead>
+							<tr>
+								<th>Username</th>
+								<th>Name</th>
+								<th>Voter ID</th>
+								<th>Pools</th>
+								<th>Status</th>
+								<th>Role</th>
+								<th>Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr v-for="user in users" :key="user.id">
+								<td>{{ user.username }}</td>
+								<td>{{ user.firstName }} {{ user.lastName }}</td>
+								<td>{{ user.voterId ?? "N/A" }}</td>
+								<td class="pools-cell">
+									{{
+										user.poolNames && user.poolNames.length > 0
+											? user.poolNames.join(", ")
+											: "—"
+									}}
+								</td>
+								<td>
+									<span
+										:class="
+											user.isDisabled ? 'status-disabled' : 'status-active'
+										"
+									>
+										{{ user.isDisabled ? "Disabled" : "Active" }}
+									</span>
+								</td>
+								<td>
+									<span
+										:class="{
+											'role-admin': user.isAdmin,
+											'role-watcher': user.isWatcher,
+											'role-voter': !user.isAdmin && !user.isWatcher,
+										}"
+									>
+										{{
+											user.isAdmin
+												? "Admin"
+												: user.isWatcher
+													? "Watcher"
+													: "Voter"
+										}}
+									</span>
+								</td>
+								<td class="actions">
+									<button class="btn btn-small" @click="editUser(user.id)">
+										Edit
+									</button>
+									<button
+										v-if="!user.isDisabled && user.id !== currentUser?.id"
+										class="btn btn-small btn-warning"
+										@click="requestDisable(user.id)"
+									>
+										Disable
+									</button>
+									<button
+										v-else
+										class="btn btn-small btn-success"
+										@click="handleEnable(user.id)"
+									>
+										Enable
+									</button>
+									<button
+										v-if="user.id !== currentUser?.id"
+										class="btn btn-small btn-secondary"
+										@click="requestResetPassword(user.id)"
+									>
+										Reset Password
+									</button>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
 
 			<TablePagination
 				v-if="shouldShowUsers"
@@ -471,6 +540,33 @@ onMounted(() => {
 	overflow: hidden;
 }
 
+/* Container for shadow indicator - doesn't scroll */
+.table-scroll-container {
+	position: relative;
+	overflow: hidden;
+}
+
+/* Dynamic shadow indicator when there's content to scroll right */
+.table-scroll-container.has-scroll-right::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	width: 30px;
+	background: linear-gradient(to left, rgba(0, 0, 0, 0.1) 0%, transparent 100%);
+	pointer-events: none;
+	z-index: 2;
+}
+
+/* Inner wrapper that handles both horizontal and vertical scrolling */
+.table-scroll-wrapper {
+	overflow-x: auto;
+	overflow-y: auto;
+	max-height: 70vh;
+	-webkit-overflow-scrolling: touch;
+}
+
 .table-header {
 	padding: 1rem;
 	border-bottom: 1px solid #dee2e6;
@@ -549,6 +645,7 @@ onMounted(() => {
 
 .users-table {
 	width: 100%;
+	min-width: 900px;
 	border-collapse: collapse;
 }
 
@@ -563,6 +660,9 @@ onMounted(() => {
 	background-color: #f8f9fa;
 	font-weight: 600;
 	color: #2c3e50;
+	position: sticky;
+	top: 0;
+	z-index: 1;
 }
 
 .users-table tbody tr:hover {
@@ -612,7 +712,7 @@ onMounted(() => {
 .actions {
 	display: flex;
 	gap: 0.5rem;
-	flex-wrap: wrap;
+	white-space: nowrap;
 }
 
 .btn {
