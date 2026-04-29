@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from "vue";
 import { useRouter } from "vue-router";
 import { getMeetings, deleteMeeting } from "../../services/api";
 import { useAuth } from "../../composables/useAuth";
@@ -36,6 +36,10 @@ const totalPages = computed(() =>
 // Modal state for delete
 const showDeleteModal = ref(false);
 const meetingToDelete = ref<number | null>(null);
+
+// Scroll shadow indicator state
+const scrollWrapper = ref<HTMLElement | null>(null);
+const canScrollRight = ref(false);
 
 async function loadMeetings(): Promise<void> {
 	loading.value = true;
@@ -103,8 +107,45 @@ function goToPage(page: number): void {
 	void loadMeetings();
 }
 
+// Check if there's horizontal scroll content to the right
+function updateScrollShadow(): void {
+	const wrapper = scrollWrapper.value;
+	if (wrapper === null) {
+		canScrollRight.value = false;
+		return;
+	}
+	const scrollThreshold = 1;
+	canScrollRight.value =
+		wrapper.scrollWidth - wrapper.scrollLeft - wrapper.clientWidth >
+		scrollThreshold;
+}
+
+// Handle scroll events on the wrapper
+function handleScrollEvent(): void {
+	updateScrollShadow();
+}
+
 onMounted(() => {
 	void loadMeetings();
+
+	// Check scroll shadow after DOM is ready
+	void nextTick(() => {
+		updateScrollShadow();
+	});
+
+	// Update on window resize
+	window.addEventListener("resize", updateScrollShadow);
+});
+
+onUnmounted(() => {
+	window.removeEventListener("resize", updateScrollShadow);
+});
+
+// Update scroll shadow when meetings change
+watch(filteredMeetings, () => {
+	void nextTick(() => {
+		updateScrollShadow();
+	});
 });
 </script>
 
@@ -136,48 +177,65 @@ onMounted(() => {
 		</div>
 
 		<div v-else class="table-container">
-			<table class="meetings-table">
-				<thead>
-					<tr>
-						<th>Name</th>
-						<th>Description</th>
-						<th>Start Date</th>
-						<th>End Date</th>
-						<th>Quorum Pool</th>
-						<th>Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					<tr v-for="meeting in filteredMeetings" :key="meeting.id">
-						<td class="meeting-name">
-							{{ meeting.name }}
-						</td>
-						<td class="description">
-							{{ meeting.description || "—" }}
-						</td>
-						<td>{{ formatDate(meeting.startDate) }}</td>
-						<td>{{ formatDate(meeting.endDate) }}</td>
-						<td>{{ meeting.quorumVotingPoolName }}</td>
-						<td class="actions-cell">
-							<button class="btn btn-small" @click="viewMotions(meeting.id)">
-								Motions
-							</button>
-							<button class="btn btn-small" @click="viewQuorum(meeting.id)">
-								Quorum
-							</button>
-							<button class="btn btn-small" @click="editMeeting(meeting.id)">
-								Edit
-							</button>
-							<button
-								class="btn btn-small btn-danger"
-								@click="requestDelete(meeting.id)"
-							>
-								Delete
-							</button>
-						</td>
-					</tr>
-				</tbody>
-			</table>
+			<div
+				class="table-scroll-container"
+				:class="{ 'has-scroll-right': canScrollRight }"
+			>
+				<div
+					ref="scrollWrapper"
+					class="table-scroll-wrapper"
+					@scroll="handleScrollEvent"
+				>
+					<table class="meetings-table">
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th>Description</th>
+								<th>Start Date</th>
+								<th>End Date</th>
+								<th>Quorum Pool</th>
+								<th>Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr v-for="meeting in filteredMeetings" :key="meeting.id">
+								<td class="meeting-name">
+									{{ meeting.name }}
+								</td>
+								<td class="description">
+									{{ meeting.description || "—" }}
+								</td>
+								<td>{{ formatDate(meeting.startDate) }}</td>
+								<td>{{ formatDate(meeting.endDate) }}</td>
+								<td>{{ meeting.quorumVotingPoolName }}</td>
+								<td class="actions-cell">
+									<button
+										class="btn btn-small"
+										@click="viewMotions(meeting.id)"
+									>
+										Motions
+									</button>
+									<button class="btn btn-small" @click="viewQuorum(meeting.id)">
+										Quorum
+									</button>
+									<button
+										class="btn btn-small"
+										@click="editMeeting(meeting.id)"
+									>
+										Edit
+									</button>
+									<button
+										class="btn btn-small btn-danger"
+										@click="requestDelete(meeting.id)"
+									>
+										Delete
+									</button>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
 
 			<TablePagination
 				:current-page="currentPage"
@@ -272,8 +330,36 @@ onMounted(() => {
 	overflow: hidden;
 }
 
+/* Container for shadow indicator - doesn't scroll */
+.table-scroll-container {
+	position: relative;
+	overflow: hidden;
+}
+
+/* Dynamic shadow indicator when there's content to scroll right */
+.table-scroll-container.has-scroll-right::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	width: 30px;
+	background: linear-gradient(to left, rgba(0, 0, 0, 0.1) 0%, transparent 100%);
+	pointer-events: none;
+	z-index: 2;
+}
+
+/* Inner wrapper that handles both horizontal and vertical scrolling */
+.table-scroll-wrapper {
+	overflow-x: auto;
+	overflow-y: auto;
+	max-height: 70vh;
+	-webkit-overflow-scrolling: touch;
+}
+
 .meetings-table {
 	width: 100%;
+	min-width: 900px;
 	border-collapse: collapse;
 }
 
@@ -284,6 +370,9 @@ onMounted(() => {
 	font-weight: 600;
 	color: #2c3e50;
 	border-bottom: 2px solid #dee2e6;
+	position: sticky;
+	top: 0;
+	z-index: 1;
 }
 
 .meetings-table td {
