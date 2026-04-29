@@ -55,6 +55,7 @@ async function loadUser(): Promise<void> {
 				firstName,
 				lastName,
 				username,
+				password: EMPTY_STRING,
 			};
 		}
 	} catch (err) {

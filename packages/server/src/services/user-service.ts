@@ -513,20 +513,31 @@ export async function getUserById(userId: string): Promise<User | null> {
 }
 
 /**
+ * Options for building user list query parts
+ */
+interface BuildUserListQueryOptions {
+	search?: string;
+	poolId?: number;
+	noPool?: boolean;
+	includeDisabled?: boolean;
+	role?: UserRoleFilter;
+}
+
+/**
  * Build query clauses and parameters for user listing
  */
-function buildUserListQueryParts(
-	search?: string,
-	poolId?: number,
-): {
+// eslint-disable-next-line complexity -- Role filtering requires multiple branches
+function buildUserListQueryParts(options: BuildUserListQueryOptions): {
 	whereClause: string;
 	poolJoin: string;
 	params: Record<string, unknown>;
 } {
+	const { search, poolId, noPool, includeDisabled, role } = options;
 	const searchTerm =
 		search === undefined || search.trim() === "" ? null : search.trim();
 	const hasSearch = searchTerm !== null;
 	const hasPoolFilter = poolId !== undefined;
+	const hasNoPoolFilter = noPool === true;
 
 	const whereConditions: string[] = [];
 	const params: Record<string, unknown> = {};
@@ -540,6 +551,35 @@ function buildUserListQueryParts(
 	if (hasPoolFilter) {
 		whereConditions.push("filter_up.pool_id = :pool_id");
 		params.pool_id = poolId;
+	}
+	// Filter for users with no pool assignments
+	if (hasNoPoolFilter) {
+		whereConditions.push(
+			"NOT EXISTS (SELECT 1 FROM user_pools up_check WHERE up_check.user_id = u.id)",
+		);
+	}
+	// Filter out disabled users unless explicitly including them
+	if (includeDisabled !== true) {
+		whereConditions.push("u.is_disabled = FALSE");
+	}
+	// Filter by user role
+	if (role !== undefined && role !== "all") {
+		switch (role) {
+			case "admin":
+				whereConditions.push("u.is_admin = TRUE");
+				break;
+			case "meeting_admin":
+				whereConditions.push("u.is_meeting_admin = TRUE");
+				break;
+			case "watcher":
+				whereConditions.push("u.is_watcher = TRUE");
+				break;
+			case "voter":
+				whereConditions.push(
+					"u.is_admin = FALSE AND u.is_meeting_admin = FALSE AND u.is_watcher = FALSE",
+				);
+				break;
+		}
 	}
 
 	const whereClause =
@@ -555,19 +595,47 @@ function buildUserListQueryParts(
 }
 
 /**
+ * User role filter type
+ */
+type UserRoleFilter = "all" | "admin" | "meeting_admin" | "watcher" | "voter";
+
+/**
+ * Options for listing users
+ */
+interface ListUsersOptions {
+	page?: number;
+	limit?: number;
+	search?: string;
+	poolId?: number;
+	noPool?: boolean;
+	includeDisabled?: boolean;
+	role?: UserRoleFilter;
+}
+
+/**
  * List users with pagination and optional search/pool filter
+ * @param options - Filter options including pagination, search, pool filter, noPool flag, disabled filter, and role filter
  */
 export async function listUsers(
-	page = DEFAULT_PAGE,
-	limit = DEFAULT_LIMIT,
-	search?: string,
-	poolId?: number,
+	options: ListUsersOptions = {},
 ): Promise<{ users: User[]; total: number }> {
-	const offset = (page - PAGE_OFFSET_ADJUSTMENT) * limit;
-	const { whereClause, poolJoin, params } = buildUserListQueryParts(
+	const {
+		page = DEFAULT_PAGE,
+		limit = DEFAULT_LIMIT,
 		search,
 		poolId,
-	);
+		noPool,
+		includeDisabled,
+		role,
+	} = options;
+	const offset = (page - PAGE_OFFSET_ADJUSTMENT) * limit;
+	const { whereClause, poolJoin, params } = buildUserListQueryParts({
+		search,
+		poolId,
+		noPool,
+		includeDisabled,
+		role,
+	});
 
 	// Add pagination params
 	const queryParams = { ...params, limit, offset };

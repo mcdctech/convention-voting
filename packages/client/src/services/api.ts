@@ -234,14 +234,40 @@ export async function uploadUsersCSV(
 }
 
 /**
- * Get paginated list of users with optional search and pool filter
+ * User role filter type
  */
+type UserRoleFilter = "all" | "admin" | "meeting_admin" | "watcher" | "voter";
+
+/**
+ * Options for filtering users
+ */
+interface GetUsersOptions {
+	page?: number;
+	limit?: number;
+	search?: string;
+	poolId?: number;
+	noPool?: boolean;
+	includeDisabled?: boolean;
+	role?: UserRoleFilter;
+}
+
+/**
+ * Get paginated list of users with optional search and pool filter
+ * @param options - Filter options including pagination, search, pool filter, noPool flag, disabled filter, and role filter
+ */
+// eslint-disable-next-line complexity -- Multiple filter parameter checks
 export async function getUsers(
-	page = DEFAULT_PAGE,
-	limit = DEFAULT_PAGE_LIMIT,
-	search?: string,
-	poolId?: number,
+	options: GetUsersOptions = {},
 ): Promise<PaginatedResponse<User>> {
+	const {
+		page = DEFAULT_PAGE,
+		limit = DEFAULT_PAGE_LIMIT,
+		search,
+		poolId,
+		noPool,
+		includeDisabled,
+		role,
+	} = options;
 	const params = new URLSearchParams({
 		page: String(page),
 		limit: String(limit),
@@ -251,6 +277,15 @@ export async function getUsers(
 	}
 	if (poolId !== undefined) {
 		params.set("poolId", String(poolId));
+	}
+	if (noPool === true) {
+		params.set("noPool", "true");
+	}
+	if (includeDisabled === true) {
+		params.set("includeDisabled", "true");
+	}
+	if (role !== undefined && role !== "all") {
+		params.set("role", role);
 	}
 	return await apiRequest<PaginatedResponse<User>>(
 		`${API_PREFIX}/admin/users?${params.toString()}`,
