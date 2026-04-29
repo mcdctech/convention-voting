@@ -228,7 +228,15 @@ adminRouter.post(
 /**
  * GET /api/admin/users
  * List all users with pagination and optional search/pool filter
+ * Query params:
+ * - page, limit: pagination
+ * - search: search term for name, username, or voter ID
+ * - poolId: filter by specific pool ID
+ * - noPool: if "true", only return users not assigned to any pool
+ * - includeDisabled: if "true", include disabled users (default: false)
+ * - role: filter by user role ("all", "admin", "meeting_admin", "watcher", "voter")
  */
+// eslint-disable-next-line complexity -- Query parameter parsing requires multiple validation steps
 adminRouter.get("/users", requireAdmin, async (req: Request, res: Response) => {
 	try {
 		const pageParam =
@@ -251,10 +259,38 @@ adminRouter.get("/users", requireAdmin, async (req: Request, res: Response) => {
 			poolIdParsed === undefined || isNaN(poolIdParsed)
 				? undefined
 				: poolIdParsed;
+		const noPoolParam =
+			typeof req.query.noPool === "string" ? req.query.noPool : undefined;
+		const noPool = noPoolParam === "true";
+		const includeDisabledParam =
+			typeof req.query.includeDisabled === "string"
+				? req.query.includeDisabled
+				: undefined;
+		const includeDisabled = includeDisabledParam === "true";
+		const roleParam =
+			typeof req.query.role === "string" ? req.query.role : undefined;
+		type UserRoleFilter =
+			| "all"
+			| "admin"
+			| "meeting_admin"
+			| "watcher"
+			| "voter";
+		const isValidRole = (value: string): value is UserRoleFilter =>
+			["all", "admin", "meeting_admin", "watcher", "voter"].includes(value);
+		const role =
+			roleParam !== undefined && isValidRole(roleParam) ? roleParam : undefined;
 		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
 		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
 
-		const { users, total } = await listUsers(page, limit, searchParam, poolId);
+		const { users, total } = await listUsers({
+			page,
+			limit,
+			search: searchParam,
+			poolId,
+			noPool,
+			includeDisabled,
+			role,
+		});
 
 		const response: UserListResponse = {
 			data: users,

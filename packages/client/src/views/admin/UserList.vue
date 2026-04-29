@@ -4,13 +4,18 @@ import { useRouter } from "vue-router";
 import {
 	getUsers,
 	getPools,
+	getMeetings,
 	disableUser,
 	enableUser,
 	resetUserPassword,
 } from "../../services/api";
 import TablePagination from "../../components/TablePagination.vue";
 import { useAuth } from "../../composables/useAuth";
-import type { User, Pool } from "@mcdc-convention-voting/shared";
+import type {
+	User,
+	Pool,
+	MeetingWithPool,
+} from "@mcdc-convention-voting/shared";
 
 const router = useRouter();
 const { currentUser } = useAuth();
@@ -20,6 +25,7 @@ const USERS_PER_PAGE = 50;
 const INITIAL_PAGE = 1;
 const INITIAL_TOTAL = 0;
 const MAX_POOLS = 1000;
+const MAX_MEETINGS = 1000;
 
 const users = ref<User[]>([]);
 const loading = ref(false);
@@ -29,12 +35,25 @@ const totalUsers = ref(INITIAL_TOTAL);
 const searchQuery = ref("");
 
 // Pool filter state
-// Special values: "none" = show no users, "all" = show all users, number = filter by pool
-const POOL_FILTER_NONE = "none";
+// Special values:
+// - "view-no-users" = show no users (default)
+// - "all" = show all users
+// - "no-pool" = show users not assigned to any pool
+// - number = filter by specific pool ID
+const POOL_FILTER_VIEW_NO_USERS = "view-no-users";
 const POOL_FILTER_ALL = "all";
+const POOL_FILTER_NO_POOL = "no-pool";
 const pools = ref<Pool[]>([]);
+const meetings = ref<MeetingWithPool[]>([]);
 const loadingPools = ref(false);
-const selectedPoolFilter = ref<string>(POOL_FILTER_NONE);
+const loadingMeetings = ref(false);
+const selectedPoolFilter = ref<string>(POOL_FILTER_VIEW_NO_USERS);
+const showOnlyQuorumPools = ref(false);
+
+// User filtering state
+const suppressDisabledUsers = ref(true); // Checked by default
+type UserRoleFilter = "all" | "admin" | "meeting_admin" | "watcher" | "voter";
+const selectedRoleFilter = ref<UserRoleFilter>("all");
 
 const generatedPassword = ref<{
 	username: string;
@@ -52,10 +71,29 @@ const userToResetPassword = ref<string | null>(null);
 
 const totalPages = computed(() => Math.ceil(totalUsers.value / USERS_PER_PAGE));
 
-// Whether users should be displayed (not "none")
+// Whether users should be displayed (not "view-no-users")
 const shouldShowUsers = computed(
-	() => selectedPoolFilter.value !== POOL_FILTER_NONE,
+	() => selectedPoolFilter.value !== POOL_FILTER_VIEW_NO_USERS,
 );
+
+// Get set of quorum pool IDs from meetings
+const quorumPoolIds = computed(
+	(): Set<number> => new Set(meetings.value.map((m) => m.quorumVotingPoolId)),
+);
+
+// Filter pools: exclude disabled, optionally filter to quorum-only, sort alphabetically
+const filteredPools = computed((): Pool[] => {
+	let filtered = pools.value.filter((pool) => !pool.isDisabled);
+
+	if (showOnlyQuorumPools.value) {
+		filtered = filtered.filter((pool) => quorumPoolIds.value.has(pool.id));
+	}
+
+	// Sort alphabetically by pool name
+	return filtered.sort((a, b) =>
+		a.poolName.toLowerCase().localeCompare(b.poolName.toLowerCase()),
+	);
+});
 
 async function loadPools(): Promise<void> {
 	loadingPools.value = true;
@@ -69,9 +107,21 @@ async function loadPools(): Promise<void> {
 	}
 }
 
+async function loadMeetings(): Promise<void> {
+	loadingMeetings.value = true;
+	try {
+		const response = await getMeetings(INITIAL_PAGE, MAX_MEETINGS);
+		meetings.value = response.data;
+	} catch {
+		// Silently fail - quorum filter won't work but pools will still show
+	} finally {
+		loadingMeetings.value = false;
+	}
+}
+
 async function loadUsers(): Promise<void> {
-	// Don't load users if "none" is selected
-	if (selectedPoolFilter.value === POOL_FILTER_NONE) {
+	// Don't load users if "view-no-users" is selected
+	if (selectedPoolFilter.value === POOL_FILTER_VIEW_NO_USERS) {
 		users.value = [];
 		totalUsers.value = INITIAL_TOTAL;
 		return;
@@ -83,17 +133,34 @@ async function loadUsers(): Promise<void> {
 	try {
 		const search = searchQuery.value.trim();
 		const searchParam = search === "" ? undefined : search;
-		// "all" means no pool filter, otherwise parse the pool ID
-		const poolId =
-			selectedPoolFilter.value === POOL_FILTER_ALL
-				? undefined
-				: parseInt(selectedPoolFilter.value, 10);
-		const response = await getUsers(
-			currentPage.value,
-			USERS_PER_PAGE,
-			searchParam,
+
+		// Determine filter parameters based on selection
+		let poolId: number | undefined = undefined;
+		let noPool: boolean | undefined = undefined;
+
+		if (selectedPoolFilter.value === POOL_FILTER_ALL) {
+			// Show all users - no filters
+			poolId = undefined;
+			noPool = undefined;
+		} else if (selectedPoolFilter.value === POOL_FILTER_NO_POOL) {
+			// Show users not assigned to any pool
+			poolId = undefined;
+			noPool = true;
+		} else {
+			// Filter by specific pool ID
+			poolId = parseInt(selectedPoolFilter.value, 10);
+			noPool = undefined;
+		}
+
+		const response = await getUsers({
+			page: currentPage.value,
+			limit: USERS_PER_PAGE,
+			search: searchParam,
 			poolId,
-		);
+			noPool,
+			includeDisabled: !suppressDisabledUsers.value,
+			role: selectedRoleFilter.value,
+		});
 		const { data, pagination } = response;
 		users.value = data;
 		totalUsers.value = pagination.total;
@@ -225,8 +292,43 @@ function handleScrollEvent(): void {
 	updateScrollShadow();
 }
 
+// Handle quorum pools checkbox change
+function handleQuorumPoolsChange(): void {
+	// Reset pool filter to default when toggling quorum filter
+	// This ensures we don't have a non-quorum pool selected when switching to quorum-only mode
+	if (
+		showOnlyQuorumPools.value &&
+		selectedPoolFilter.value !== POOL_FILTER_VIEW_NO_USERS &&
+		selectedPoolFilter.value !== POOL_FILTER_ALL &&
+		selectedPoolFilter.value !== POOL_FILTER_NO_POOL
+	) {
+		// Check if current selection is still valid
+		const currentPoolId = parseInt(selectedPoolFilter.value, 10);
+		if (!quorumPoolIds.value.has(currentPoolId)) {
+			selectedPoolFilter.value = POOL_FILTER_VIEW_NO_USERS;
+		}
+	}
+}
+
+// Handle suppress disabled users checkbox change
+function handleSuppressDisabledChange(): void {
+	if (shouldShowUsers.value) {
+		currentPage.value = INITIAL_PAGE;
+		void loadUsers();
+	}
+}
+
+// Handle role filter change
+function handleRoleFilterChange(): void {
+	if (shouldShowUsers.value) {
+		currentPage.value = INITIAL_PAGE;
+		void loadUsers();
+	}
+}
+
 onMounted(() => {
 	void loadPools();
+	void loadMeetings();
 	// Don't load users on mount - wait for pool selection
 
 	// Check scroll shadow after DOM is ready
@@ -282,24 +384,67 @@ onUnmounted(() => {
 		<div v-if="!loading && !error" class="table-container">
 			<div class="table-header">
 				<div class="filter-row">
-					<div class="pool-filter">
-						<label for="pool-select">Filter by Pool:</label>
-						<select
-							id="pool-select"
-							v-model="selectedPoolFilter"
-							:disabled="loading || loadingPools"
-							@change="handlePoolChange"
-						>
-							<option value="all">All Users</option>
-							<option
-								v-for="pool in pools"
-								:key="pool.id"
-								:value="String(pool.id)"
+					<div class="pool-filter-group">
+						<div class="pool-filter">
+							<label for="pool-select">Filter by Pool:</label>
+							<select
+								id="pool-select"
+								v-model="selectedPoolFilter"
+								:disabled="loading || loadingPools"
+								@change="handlePoolChange"
 							>
-								{{ pool.poolName }}
-							</option>
-							<option value="none">None</option>
-						</select>
+								<option :value="POOL_FILTER_ALL">All</option>
+								<option :value="POOL_FILTER_NO_POOL">None (No Pool)</option>
+								<option :value="POOL_FILTER_VIEW_NO_USERS">
+									View No Users
+								</option>
+								<option
+									v-for="pool in filteredPools"
+									:key="pool.id"
+									:value="String(pool.id)"
+								>
+									{{ pool.poolName }}
+								</option>
+							</select>
+						</div>
+						<div class="quorum-filter">
+							<label class="checkbox-label">
+								<input
+									v-model="showOnlyQuorumPools"
+									type="checkbox"
+									:disabled="loadingMeetings"
+									@change="handleQuorumPoolsChange"
+								/>
+								Show only quorum pools
+							</label>
+						</div>
+						<div class="disabled-filter">
+							<label class="checkbox-label">
+								<input
+									v-model="suppressDisabledUsers"
+									type="checkbox"
+									@change="handleSuppressDisabledChange"
+								/>
+								Suppress Disabled Users
+							</label>
+						</div>
+					</div>
+					<div class="role-filter-group">
+						<div class="role-filter">
+							<label for="role-select">User Type:</label>
+							<select
+								id="role-select"
+								v-model="selectedRoleFilter"
+								:disabled="loading"
+								@change="handleRoleFilterChange"
+							>
+								<option value="all">All</option>
+								<option value="admin">Global Admin</option>
+								<option value="meeting_admin">Meeting Admin</option>
+								<option value="watcher">Watcher</option>
+								<option value="voter">Voter</option>
+							</select>
+						</div>
 					</div>
 					<div class="search-box">
 						<input
@@ -332,7 +477,7 @@ onUnmounted(() => {
 			</div>
 
 			<div v-if="!shouldShowUsers" class="select-pool-message">
-				Select a pool to view users.
+				Select a filter option to view users.
 			</div>
 
 			<div
@@ -382,16 +527,22 @@ onUnmounted(() => {
 									<span
 										:class="{
 											'role-admin': user.isAdmin,
+											'role-meeting-admin': user.isMeetingAdmin,
 											'role-watcher': user.isWatcher,
-											'role-voter': !user.isAdmin && !user.isWatcher,
+											'role-voter':
+												!user.isAdmin &&
+												!user.isMeetingAdmin &&
+												!user.isWatcher,
 										}"
 									>
 										{{
 											user.isAdmin
 												? "Admin"
-												: user.isWatcher
-													? "Watcher"
-													: "Voter"
+												: user.isMeetingAdmin
+													? "Meeting Admin"
+													: user.isWatcher
+														? "Watcher"
+														: "Voter"
 										}}
 									</span>
 								</td>
@@ -578,6 +729,12 @@ onUnmounted(() => {
 	gap: 1rem;
 }
 
+.pool-filter-group {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
 .pool-filter {
 	display: flex;
 	align-items: center;
@@ -606,6 +763,68 @@ onUnmounted(() => {
 
 .pool-filter select:disabled {
 	background-color: #f5f5f5;
+	cursor: not-allowed;
+}
+
+.quorum-filter,
+.disabled-filter {
+	display: flex;
+	align-items: center;
+}
+
+.role-filter-group {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+.role-filter {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.role-filter label {
+	font-weight: 500;
+	color: #2c3e50;
+}
+
+.role-filter select {
+	padding: 0.5rem 0.75rem;
+	border: 1px solid #dee2e6;
+	border-radius: 4px;
+	font-size: 0.875rem;
+	min-width: 150px;
+	background-color: white;
+}
+
+.role-filter select:focus {
+	outline: none;
+	border-color: #1976d2;
+	box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+.role-filter select:disabled {
+	background-color: #f5f5f5;
+	cursor: not-allowed;
+}
+
+.checkbox-label {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	cursor: pointer;
+	font-size: 0.875rem;
+	color: #2c3e50;
+}
+
+.checkbox-label input[type="checkbox"] {
+	width: 1rem;
+	height: 1rem;
+	cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"]:disabled {
 	cursor: not-allowed;
 }
 
@@ -687,6 +906,16 @@ onUnmounted(() => {
 	font-weight: 600;
 	background-color: #e3f2fd;
 	color: #1565c0;
+}
+
+.role-meeting-admin {
+	display: inline-block;
+	padding: 0.25rem 0.5rem;
+	border-radius: 4px;
+	font-size: 0.75rem;
+	font-weight: 600;
+	background-color: #fff3e0;
+	color: #e65100;
 }
 
 .role-watcher {
