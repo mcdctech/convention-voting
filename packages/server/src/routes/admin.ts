@@ -6,6 +6,7 @@ import multer from "multer";
 import { HTTP_STATUS } from "@pdc/http-status-codes";
 import {
 	ParticipantRole,
+	PoolType,
 	type CreateUserRequest,
 	type UpdateUserRequest,
 	type UserListResponse,
@@ -56,6 +57,7 @@ import {
 	addUserToPool,
 	removeUserFromPool,
 	getPoolsForUser,
+	type ListPoolsOptions,
 } from "../services/pool-service.js";
 import {
 	createMeeting,
@@ -146,6 +148,30 @@ function validatePoolKeyFormat(poolKey: string): string | undefined {
 	}
 	return undefined;
 }
+
+/**
+ * Parse poolType query parameter
+ * @returns PoolType value, "null" for null filter, or undefined if not specified
+ */
+function parsePoolTypeParam(param: unknown): PoolType | "null" | undefined {
+	if (typeof param !== "string") {
+		return undefined;
+	}
+	// Compare against string values to avoid unsafe enum comparison
+	switch (param) {
+		case "null":
+			return "null";
+		case "voter":
+			return PoolType.Voter;
+		case "watcher":
+			return PoolType.Watcher;
+		case "meeting_admin":
+			return PoolType.MeetingAdmin;
+		default:
+			return undefined;
+	}
+}
+
 const DECIMAL_RADIX = 10;
 
 /**
@@ -726,7 +752,13 @@ adminRouter.post(
 
 /**
  * GET /api/admin/pools
- * List all pools with pagination
+ * List all pools with pagination and optional filters
+ * Query params:
+ * - page: Page number (default: 1)
+ * - limit: Items per page (default: 50)
+ * - includeDisabled: Include disabled pools (default: false)
+ * - onlyQuorumPools: Show only quorum pools (default: false)
+ * - poolType: Filter by pool type (voter, watcher, meeting_admin, null)
  */
 adminRouter.get("/pools", requireAdmin, async (req: Request, res: Response) => {
 	try {
@@ -741,7 +773,21 @@ adminRouter.get("/pools", requireAdmin, async (req: Request, res: Response) => {
 		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
 		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
 
-		const { pools, total } = await listPools(page, limit);
+		// Parse filter parameters from query
+		const { query } = req;
+		const includeDisabled = query.includeDisabled === "true";
+		const onlyQuorumPools = query.onlyQuorumPools === "true";
+		const poolType = parsePoolTypeParam(query.poolType);
+
+		const options: ListPoolsOptions = {
+			page,
+			limit,
+			includeDisabled,
+			onlyQuorumPools,
+			poolType,
+		};
+
+		const { pools, total } = await listPools(options);
 
 		const response: PoolListResponse = {
 			data: pools,

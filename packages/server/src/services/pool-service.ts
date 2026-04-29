@@ -1,15 +1,16 @@
 /**
  * Pool management service
  */
+import {
+	PoolType,
+	type Pool,
+	type CreatePoolRequest,
+	type UpdatePoolRequest,
+	type User,
+} from "@mcdc-convention-voting/shared";
 import { db, withTransaction } from "../database/db.js";
 import { recordPendingPoolKeys } from "./pending-pool-service.js";
 import type { TinyPg } from "tinypg";
-import type {
-	Pool,
-	CreatePoolRequest,
-	UpdatePoolRequest,
-	User,
-} from "@mcdc-convention-voting/shared";
 
 // Array index constants
 const FIRST_ROW = 0;
@@ -19,6 +20,186 @@ const EMPTY_ARRAY_LENGTH = 0;
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 50;
 const PAGE_OFFSET_ADJUSTMENT = 1;
+
+// Radix for parseInt
+const DECIMAL_RADIX = 10;
+
+/**
+ * Database row type for pools
+ */
+interface PoolDbRow {
+	id: number;
+	pool_key: string;
+	pool_name: string;
+	description: string | null;
+	pool_type: string | null;
+	is_disabled: boolean;
+	created_at: Date;
+	updated_at: Date;
+}
+
+/**
+ * Extended pool row with computed fields
+ */
+interface PoolDbRowWithComputed extends PoolDbRow {
+	user_count?: string;
+	is_quorum_pool?: boolean;
+}
+
+/**
+ * Filter options for listing pools
+ */
+export interface ListPoolsOptions {
+	page?: number;
+	limit?: number;
+	includeDisabled?: boolean;
+	onlyQuorumPools?: boolean;
+	poolType?: PoolType | "null" | null;
+}
+
+/**
+ * Map database pool_type string to PoolType enum
+ */
+function mapPoolType(dbPoolType: string | null): PoolType | null {
+	if (dbPoolType === null) {
+		return null;
+	}
+	switch (dbPoolType) {
+		case "voter":
+			return PoolType.Voter;
+		case "watcher":
+			return PoolType.Watcher;
+		case "meeting_admin":
+			return PoolType.MeetingAdmin;
+		default:
+			return null;
+	}
+}
+
+/**
+ * Map a database row to a Pool object
+ */
+function mapRowToPool(row: PoolDbRowWithComputed): Pool {
+	return {
+		id: row.id,
+		poolKey: row.pool_key,
+		poolName: row.pool_name,
+		description: row.description,
+		poolType: mapPoolType(row.pool_type),
+		isDisabled: row.is_disabled,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+		...(row.user_count !== undefined && {
+			userCount: parseInt(row.user_count, DECIMAL_RADIX),
+		}),
+		...(row.is_quorum_pool !== undefined && {
+			isQuorumPool: row.is_quorum_pool,
+		}),
+	};
+}
+
+/**
+ * Build WHERE clause and params for pool filtering
+ */
+function buildPoolFilterClauses(options: ListPoolsOptions): {
+	clauses: string[];
+	params: Record<string, unknown>;
+} {
+	const {
+		includeDisabled = false,
+		onlyQuorumPools = false,
+		poolType,
+	} = options;
+	const clauses: string[] = [];
+	const params: Record<string, unknown> = {};
+
+	if (!includeDisabled) {
+		clauses.push("p.is_disabled = FALSE");
+	}
+
+	if (onlyQuorumPools) {
+		clauses.push(
+			"EXISTS(SELECT 1 FROM meetings m WHERE m.quorum_voting_pool_id = p.id)",
+		);
+	}
+
+	if (poolType !== undefined) {
+		if (poolType === "null" || poolType === null) {
+			clauses.push("p.pool_type IS NULL");
+		} else {
+			clauses.push("p.pool_type = :poolType");
+			params.poolType = poolType;
+		}
+	}
+
+	return { clauses, params };
+}
+
+/**
+ * Build SET clauses for pool update
+ */
+function buildPoolUpdateClauses(
+	updates: UpdatePoolRequest,
+	poolId: number,
+): { clauses: string[]; values: Record<string, unknown> } {
+	const { poolKey, poolName, description, poolType } = updates;
+	const clauses: string[] = [];
+	const values: Record<string, unknown> = { poolId };
+
+	if (poolKey !== undefined) {
+		clauses.push("pool_key = :newPoolKey");
+		values.newPoolKey = poolKey;
+	}
+	if (poolName !== undefined) {
+		clauses.push("pool_name = :poolName");
+		values.poolName = poolName;
+	}
+	if (description !== undefined) {
+		clauses.push("description = :description");
+		values.description = description;
+	}
+	if (poolType !== undefined) {
+		clauses.push("pool_type = :poolType");
+		values.poolType = poolType;
+	}
+
+	return { clauses, values };
+}
+
+/**
+ * Resolve pending pool key assignments after a pool key change
+ */
+async function resolvePendingPoolAssignments(
+	tx: TinyPg,
+	poolId: number,
+	keysToResolve: string[],
+): Promise<number> {
+	// Find all users with pending assignments for the keys
+	const pendingUsersResult = await tx.query<{ user_id: string }>(
+		`SELECT DISTINCT user_id FROM pending_pool_keys
+     WHERE pool_key = ANY(:keysToResolve)`,
+		{ keysToResolve },
+	);
+
+	// Add each user to the pool
+	for (const { user_id: userId } of pendingUsersResult.rows) {
+		// eslint-disable-next-line no-await-in-loop -- Sequential within transaction
+		await tx.query(
+			`INSERT INTO user_pools (pool_id, user_id)
+       VALUES (:poolId, :userId)
+       ON CONFLICT (pool_id, user_id) DO NOTHING`,
+			{ poolId, userId },
+		);
+	}
+
+	// Delete all resolved pending records
+	await tx.query(
+		`DELETE FROM pending_pool_keys WHERE pool_key = ANY(:keysToResolve)`,
+		{ keysToResolve },
+	);
+
+	return pendingUsersResult.rows.length;
+}
 
 /**
  * Check if a pool key already exists
@@ -70,104 +251,64 @@ export async function generatePoolKeyFromMeetingName(
  * Get pool by ID
  */
 export async function getPoolById(poolId: number): Promise<Pool | null> {
-	const result = await db.query<{
-		id: number;
-		pool_key: string;
-		pool_name: string;
-		description: string | null;
-		is_disabled: boolean;
-		created_at: Date;
-		updated_at: Date;
-	}>("SELECT * FROM pools WHERE id = :poolId", { poolId });
+	const result = await db.query<PoolDbRowWithComputed>(
+		`SELECT p.*,
+		   EXISTS(SELECT 1 FROM meetings m WHERE m.quorum_voting_pool_id = p.id) as is_quorum_pool
+		 FROM pools p
+		 WHERE p.id = :poolId`,
+		{ poolId },
+	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
 		return null;
 	}
 
-	const {
-		rows: [row],
-	} = result;
-	return {
-		id: row.id,
-		poolKey: row.pool_key,
-		poolName: row.pool_name,
-		description: row.description,
-		isDisabled: row.is_disabled,
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-	};
+	return mapRowToPool(result.rows[FIRST_ROW]);
 }
 
 /**
  * Get pool by key
  */
 export async function getPoolByKey(poolKey: string): Promise<Pool | null> {
-	const result = await db.query<{
-		id: number;
-		pool_key: string;
-		pool_name: string;
-		description: string | null;
-		is_disabled: boolean;
-		created_at: Date;
-		updated_at: Date;
-	}>("SELECT * FROM pools WHERE pool_key = :poolKey", { poolKey });
+	const result = await db.query<PoolDbRowWithComputed>(
+		`SELECT p.*,
+		   EXISTS(SELECT 1 FROM meetings m WHERE m.quorum_voting_pool_id = p.id) as is_quorum_pool
+		 FROM pools p
+		 WHERE p.pool_key = :poolKey`,
+		{ poolKey },
+	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
 		return null;
 	}
 
-	const {
-		rows: [row],
-	} = result;
-	return {
-		id: row.id,
-		poolKey: row.pool_key,
-		poolName: row.pool_name,
-		description: row.description,
-		isDisabled: row.is_disabled,
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-	};
+	return mapRowToPool(result.rows[FIRST_ROW]);
 }
 
 /**
  * Create a single pool
  */
 export async function createPool(request: CreatePoolRequest): Promise<Pool> {
-	const { poolKey, poolName, description } = request;
+	const { poolKey, poolName, description, poolType } = request;
 
 	// Check if pool key already exists
 	if (await poolKeyExists(poolKey)) {
 		throw new Error(`Pool with key ${poolKey} already exists`);
 	}
 
-	const result = await db.query<{
-		id: number;
-		pool_key: string;
-		pool_name: string;
-		description: string | null;
-		is_disabled: boolean;
-		created_at: Date;
-		updated_at: Date;
-	}>(
-		`INSERT INTO pools (pool_key, pool_name, description)
-     VALUES (:poolKey, :poolName, :description)
+	const result = await db.query<PoolDbRow>(
+		`INSERT INTO pools (pool_key, pool_name, description, pool_type)
+     VALUES (:poolKey, :poolName, :description, :poolType)
      RETURNING *`,
-		{ poolKey, poolName, description: description ?? null },
+		{
+			poolKey,
+			poolName,
+			description: description ?? null,
+			poolType: poolType ?? null,
+		},
 	);
 
-	const {
-		rows: [row],
-	} = result;
-	return {
-		id: row.id,
-		poolKey: row.pool_key,
-		poolName: row.pool_name,
-		description: row.description,
-		isDisabled: row.is_disabled,
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-	};
+	return mapRowToPool(result.rows[FIRST_ROW]);
 }
 
 /**
@@ -175,90 +316,68 @@ export async function createPool(request: CreatePoolRequest): Promise<Pool> {
  * Used for idempotent CSV uploads - if pool_key exists, updates the pool instead of erroring
  */
 export async function upsertPool(request: CreatePoolRequest): Promise<Pool> {
-	const { poolKey, poolName, description } = request;
+	const { poolKey, poolName, description, poolType } = request;
 
-	const result = await db.query<{
-		id: number;
-		pool_key: string;
-		pool_name: string;
-		description: string | null;
-		is_disabled: boolean;
-		created_at: Date;
-		updated_at: Date;
-	}>(
-		`INSERT INTO pools (pool_key, pool_name, description)
-     VALUES (:poolKey, :poolName, :description)
+	const result = await db.query<PoolDbRow>(
+		`INSERT INTO pools (pool_key, pool_name, description, pool_type)
+     VALUES (:poolKey, :poolName, :description, :poolType)
      ON CONFLICT (pool_key) DO UPDATE SET
        pool_name = EXCLUDED.pool_name,
        description = EXCLUDED.description,
+       pool_type = EXCLUDED.pool_type,
        updated_at = NOW()
      RETURNING *`,
-		{ poolKey, poolName, description: description ?? null },
+		{
+			poolKey,
+			poolName,
+			description: description ?? null,
+			poolType: poolType ?? null,
+		},
 	);
 
-	const {
-		rows: [row],
-	} = result;
-	return {
-		id: row.id,
-		poolKey: row.pool_key,
-		poolName: row.pool_name,
-		description: row.description,
-		isDisabled: row.is_disabled,
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-	};
+	return mapRowToPool(result.rows[FIRST_ROW]);
 }
 
 /**
- * List pools with pagination
+ * List pools with pagination and filtering
  */
 export async function listPools(
-	page = DEFAULT_PAGE,
-	limit = DEFAULT_LIMIT,
+	options: ListPoolsOptions = {},
 ): Promise<{ pools: Pool[]; total: number }> {
+	const { page = DEFAULT_PAGE, limit = DEFAULT_LIMIT } = options;
 	const offset = (page - PAGE_OFFSET_ADJUSTMENT) * limit;
 
-	// Get total count
-	const countResult = await db.query<{ count: string }>(
-		"SELECT COUNT(*) as count FROM pools",
-	);
-	const total = parseInt(countResult.rows[FIRST_ROW].count, 10);
+	// Build WHERE clauses using helper
+	const { clauses, params } = buildPoolFilterClauses(options);
+	params.limit = limit;
+	params.offset = offset;
 
-	// Get paginated pools with user counts
-	const result = await db.query<{
-		id: number;
-		pool_key: string;
-		pool_name: string;
-		description: string | null;
-		is_disabled: boolean;
-		created_at: Date;
-		updated_at: Date;
-		user_count: string;
-	}>(
+	const whereClause =
+		clauses.length > EMPTY_ARRAY_LENGTH ? `WHERE ${clauses.join(" AND ")}` : "";
+
+	// Get total count with filters
+	const countResult = await db.query<{ count: string }>(
+		`SELECT COUNT(*) as count FROM pools p ${whereClause}`,
+		params,
+	);
+	const total = parseInt(countResult.rows[FIRST_ROW].count, DECIMAL_RADIX);
+
+	// Get paginated pools with user counts and quorum flag
+	const result = await db.query<PoolDbRowWithComputed>(
 		`SELECT
        p.*,
-       COUNT(up.user_id)::text as user_count
+       COUNT(up.user_id)::text as user_count,
+       EXISTS(SELECT 1 FROM meetings m WHERE m.quorum_voting_pool_id = p.id) as is_quorum_pool
      FROM pools p
      LEFT JOIN user_pools up ON p.id = up.pool_id
+     ${whereClause}
      GROUP BY p.id
      ORDER BY p.created_at DESC
      LIMIT :limit OFFSET :offset`,
-		{ limit, offset },
+		params,
 	);
 
-	const pools = result.rows.map((row) => ({
-		id: row.id,
-		poolKey: row.pool_key,
-		poolName: row.pool_name,
-		description: row.description,
-		isDisabled: row.is_disabled,
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-		userCount: parseInt(row.user_count, 10),
-	}));
-
-	return { pools, total };
+	return { pools: result.rows.map(mapRowToPool), total };
 }
 
 /**
@@ -282,7 +401,7 @@ export async function updatePool(
 	poolId: number,
 	updates: UpdatePoolRequest,
 ): Promise<UpdatePoolResult> {
-	const { poolKey: newPoolKey, poolName, description } = updates;
+	const { poolKey: newPoolKey } = updates;
 
 	return await withTransaction(async (tx) => {
 		// Get current pool data before updating
@@ -291,20 +410,21 @@ export async function updatePool(
 			pool_key: string;
 		}>("SELECT id, pool_key FROM pools WHERE id = :poolId", { poolId });
 
-		if (currentPoolResult.rows.length === EMPTY_ARRAY_LENGTH) {
+		const { rows: poolRows } = currentPoolResult;
+		if (poolRows.length === EMPTY_ARRAY_LENGTH) {
 			throw new Error(`Pool with ID ${poolId} not found`);
 		}
 
-		const {
-			rows: [{ pool_key: oldPoolKey }],
-		} = currentPoolResult;
+		const [{ pool_key: oldPoolKey }] = poolRows;
 
-		// Build dynamic update query
-		const setClauses: string[] = [];
-		const values: Record<string, unknown> = { poolId };
+		// Build dynamic update query using helper
+		const { clauses: setClauses, values } = buildPoolUpdateClauses(
+			updates,
+			poolId,
+		);
 
+		// Check for pool key conflict if changing
 		if (newPoolKey !== undefined) {
-			// Check if new pool key already exists (on a different pool)
 			const existingPool = await tx.query<{ id: number }>(
 				"SELECT id FROM pools WHERE pool_key = :newPoolKey AND id != :poolId",
 				{ newPoolKey, poolId },
@@ -312,91 +432,32 @@ export async function updatePool(
 			if (existingPool.rows.length > EMPTY_ARRAY_LENGTH) {
 				throw new Error(`Pool key ${newPoolKey} already exists`);
 			}
-			setClauses.push(`pool_key = :newPoolKey`);
-			values.newPoolKey = newPoolKey;
-		}
-
-		if (poolName !== undefined) {
-			setClauses.push(`pool_name = :poolName`);
-			values.poolName = poolName;
-		}
-
-		if (description !== undefined) {
-			setClauses.push(`description = :description`);
-			values.description = description;
 		}
 
 		if (setClauses.length === EMPTY_ARRAY_LENGTH) {
 			throw new Error("No fields to update");
 		}
 
-		// Add updated_at
-		setClauses.push(`updated_at = NOW()`);
+		setClauses.push("updated_at = NOW()");
 
 		// Update the pool
-		const result = await tx.query<{
-			id: number;
-			pool_key: string;
-			pool_name: string;
-			description: string | null;
-			is_disabled: boolean;
-			created_at: Date;
-			updated_at: Date;
-		}>(
-			`UPDATE pools
-       SET ${setClauses.join(", ")}
-       WHERE id = :poolId
-       RETURNING *`,
+		const result = await tx.query<PoolDbRow>(
+			`UPDATE pools SET ${setClauses.join(", ")} WHERE id = :poolId RETURNING *`,
 			values,
 		);
 
-		const {
-			rows: [row],
-		} = result;
-		const pool: Pool = {
-			id: row.id,
-			poolKey: row.pool_key,
-			poolName: row.pool_name,
-			description: row.description,
-			isDisabled: row.is_disabled,
-			createdAt: row.created_at,
-			updatedAt: row.updated_at,
-		};
+		const pool = mapRowToPool(result.rows[FIRST_ROW]);
 
 		// Resolve pending assignments if pool key was changed
 		if (newPoolKey === undefined || newPoolKey === oldPoolKey) {
 			return { pool, resolvedUsers: 0 };
 		}
 
-		// Collect pool keys to resolve: both OLD and NEW keys
 		const keysToResolve = [oldPoolKey, newPoolKey];
-
-		// Find all users with pending assignments for either key
-		const pendingUsersResult = await tx.query<{ user_id: string }>(
-			`SELECT DISTINCT user_id FROM pending_pool_keys
-       WHERE pool_key = ANY(:keysToResolve)`,
-			{ keysToResolve },
-		);
-
-		// Add each user to the pool
-		for (const { user_id: userId } of pendingUsersResult.rows) {
-			// eslint-disable-next-line no-await-in-loop -- Sequential within transaction
-			await tx.query(
-				`INSERT INTO user_pools (pool_id, user_id)
-         VALUES (:poolId, :userId)
-         ON CONFLICT (pool_id, user_id) DO NOTHING`,
-				{ poolId, userId },
-			);
-		}
-
-		const {
-			rows: { length: resolvedUsers },
-		} = pendingUsersResult;
-
-		// Delete all resolved pending records
-		await tx.query(
-			`DELETE FROM pending_pool_keys WHERE pool_key = ANY(:keysToResolve)`,
-			{ keysToResolve },
+		const resolvedUsers = await resolvePendingPoolAssignments(
+			tx,
+			poolId,
+			keysToResolve,
 		);
 
 		return { pool, resolvedUsers };
@@ -407,15 +468,7 @@ export async function updatePool(
  * Disable a pool
  */
 export async function disablePool(poolId: number): Promise<Pool> {
-	const result = await db.query<{
-		id: number;
-		pool_key: string;
-		pool_name: string;
-		description: string | null;
-		is_disabled: boolean;
-		created_at: Date;
-		updated_at: Date;
-	}>(
+	const result = await db.query<PoolDbRow>(
 		`UPDATE pools
      SET is_disabled = TRUE, updated_at = NOW()
      WHERE id = :poolId
@@ -427,33 +480,14 @@ export async function disablePool(poolId: number): Promise<Pool> {
 		throw new Error(`Pool with ID ${poolId} not found`);
 	}
 
-	const {
-		rows: [row],
-	} = result;
-	return {
-		id: row.id,
-		poolKey: row.pool_key,
-		poolName: row.pool_name,
-		description: row.description,
-		isDisabled: row.is_disabled,
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-	};
+	return mapRowToPool(result.rows[FIRST_ROW]);
 }
 
 /**
  * Enable a pool
  */
 export async function enablePool(poolId: number): Promise<Pool> {
-	const result = await db.query<{
-		id: number;
-		pool_key: string;
-		pool_name: string;
-		description: string | null;
-		is_disabled: boolean;
-		created_at: Date;
-		updated_at: Date;
-	}>(
+	const result = await db.query<PoolDbRow>(
 		`UPDATE pools
      SET is_disabled = FALSE, updated_at = NOW()
      WHERE id = :poolId
@@ -465,18 +499,7 @@ export async function enablePool(poolId: number): Promise<Pool> {
 		throw new Error(`Pool with ID ${poolId} not found`);
 	}
 
-	const {
-		rows: [row],
-	} = result;
-	return {
-		id: row.id,
-		poolKey: row.pool_key,
-		poolName: row.pool_name,
-		description: row.description,
-		isDisabled: row.is_disabled,
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-	};
+	return mapRowToPool(result.rows[FIRST_ROW]);
 }
 
 /**
@@ -543,17 +566,8 @@ export async function getUsersInPool(
  * Get pools for a user
  */
 export async function getPoolsForUser(userId: string): Promise<Pool[]> {
-	const result = await db.query<{
-		id: number;
-		pool_key: string;
-		pool_name: string;
-		description: string | null;
-		is_disabled: boolean;
-		created_at: Date;
-		updated_at: Date;
-	}>(
-		`SELECT p.id, p.pool_key, p.pool_name, p.description,
-            p.is_disabled, p.created_at, p.updated_at
+	const result = await db.query<PoolDbRow>(
+		`SELECT p.*
      FROM pools p
      INNER JOIN user_pools up ON p.id = up.pool_id
      WHERE up.user_id = :userId
@@ -561,15 +575,7 @@ export async function getPoolsForUser(userId: string): Promise<Pool[]> {
 		{ userId },
 	);
 
-	return result.rows.map((row) => ({
-		id: row.id,
-		poolKey: row.pool_key,
-		poolName: row.pool_name,
-		description: row.description,
-		isDisabled: row.is_disabled,
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-	}));
+	return result.rows.map(mapRowToPool);
 }
 
 /**

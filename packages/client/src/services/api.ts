@@ -2,6 +2,7 @@
  * API service for communicating with the backend
  */
 import type {
+	PoolType,
 	User,
 	CreateUserRequest,
 	BulkPasswordResponse,
@@ -455,14 +456,45 @@ export async function uploadPoolsCSV(
 }
 
 /**
- * Get paginated list of pools
+ * Options for getPools query
+ */
+export interface GetPoolsOptions {
+	page?: number;
+	limit?: number;
+	includeDisabled?: boolean;
+	onlyQuorumPools?: boolean;
+	poolType?: PoolType | "null";
+}
+
+/**
+ * Get paginated list of pools with optional filters
  */
 export async function getPools(
-	page = DEFAULT_PAGE,
-	limit = DEFAULT_PAGE_LIMIT,
+	options: GetPoolsOptions = {},
 ): Promise<PaginatedResponse<Pool>> {
+	const {
+		page = DEFAULT_PAGE,
+		limit = DEFAULT_PAGE_LIMIT,
+		includeDisabled,
+		onlyQuorumPools,
+		poolType,
+	} = options;
+
+	const params = new URLSearchParams();
+	params.set("page", String(page));
+	params.set("limit", String(limit));
+	if (includeDisabled === true) {
+		params.set("includeDisabled", "true");
+	}
+	if (onlyQuorumPools === true) {
+		params.set("onlyQuorumPools", "true");
+	}
+	if (poolType !== undefined) {
+		params.set("poolType", poolType);
+	}
+
 	return await apiRequest<PaginatedResponse<Pool>>(
-		`${API_PREFIX}/admin/pools?page=${page}&limit=${limit}`,
+		`${API_PREFIX}/admin/pools?${params.toString()}`,
 	);
 }
 
