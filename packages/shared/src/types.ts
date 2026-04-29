@@ -83,6 +83,25 @@ export interface PaginatedResponse<T> {
 export type UserType = "voter" | "admin" | "watcher" | "meeting_admin";
 
 /**
+ * Pool type enum
+ * Categorizes pools by their intended purpose
+ *
+ * Database enum (pool_type):
+ * - 'voter': Pool for quorum counting and voting
+ * - 'watcher': Pool for observers who can view but not vote
+ * - 'meeting_admin': Pool for meeting administrators
+ *
+ * NULL/not specified: Legacy or general-purpose pools
+ *
+ * IMPORTANT: Keep this enum in sync with database migrations
+ */
+export enum PoolType {
+	Voter = "voter",
+	Watcher = "watcher",
+	MeetingAdmin = "meeting_admin",
+}
+
+/**
  * CSV row format for bulk user upload
  */
 export interface UserCSVRow {
@@ -188,11 +207,13 @@ export type UserListResponse = PaginatedResponse<User>;
  * - pool_key: VARCHAR(255) NOT NULL UNIQUE
  * - pool_name: VARCHAR(255) NOT NULL
  * - description: TEXT (nullable)
+ * - pool_type: pool_type ENUM (nullable, 'voter', 'watcher', 'meeting_admin')
  * - is_disabled: BOOLEAN NOT NULL DEFAULT FALSE
  * - created_at: TIMESTAMP WITH TIME ZONE
  * - updated_at: TIMESTAMP WITH TIME ZONE
  *
  * Note: userCount is computed from user_pools join, not stored in database
+ * Note: isQuorumPool is computed from meetings table reference, not stored in pools
  *
  * IMPORTANT: Keep this type in sync with database migrations
  */
@@ -201,10 +222,12 @@ export interface Pool {
 	poolKey: string;
 	poolName: string;
 	description: string | null;
+	poolType: PoolType | null;
 	isDisabled: boolean;
 	createdAt: Date;
 	updatedAt: Date;
 	userCount?: number; // Optional: computed from user_pools join
+	isQuorumPool?: boolean; // Optional: computed from meetings reference
 }
 
 /**
@@ -252,6 +275,7 @@ export interface CreatePoolRequest {
 	poolKey: string;
 	poolName: string;
 	description?: string;
+	poolType?: PoolType | null;
 }
 
 /**
@@ -261,6 +285,7 @@ export interface UpdatePoolRequest {
 	poolKey?: string;
 	poolName?: string;
 	description?: string;
+	poolType?: PoolType | null;
 }
 
 /**

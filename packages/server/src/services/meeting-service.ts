@@ -3,6 +3,7 @@
  */
 import {
 	MotionStatus,
+	PoolType,
 	type Choice,
 	type ChoiceResult,
 	type CreateChoiceRequest,
@@ -101,6 +102,7 @@ async function autoCreateMeetingPools(meetingName: string): Promise<{
 		poolKey: watcherPoolKey,
 		poolName: `${meetingName} - Watchers`,
 		description: `Watchers for meeting: ${meetingName}`,
+		poolType: PoolType.Watcher,
 	});
 
 	// Create meeting admin pool
@@ -108,6 +110,7 @@ async function autoCreateMeetingPools(meetingName: string): Promise<{
 		poolKey: meetingAdminPoolKey,
 		poolName: `${meetingName} - Meeting Admins`,
 		description: `Meeting administrators for: ${meetingName}`,
+		poolType: PoolType.MeetingAdmin,
 	});
 
 	return { watcherPool, meetingAdminPool };

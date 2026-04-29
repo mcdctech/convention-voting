@@ -81,7 +81,11 @@ async function loadUserPools(): Promise<void> {
 
 async function loadAllPools(): Promise<void> {
 	try {
-		const response = await getPools(FIRST_PAGE, MAX_POOLS_TO_LOAD);
+		// includeDisabled defaults to false, so disabled pools are filtered out
+		const response = await getPools({
+			page: FIRST_PAGE,
+			limit: MAX_POOLS_TO_LOAD,
+		});
 		const { data } = response;
 		allPools.value = data;
 	} catch (err) {

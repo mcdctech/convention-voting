@@ -98,7 +98,7 @@ const filteredPools = computed((): Pool[] => {
 async function loadPools(): Promise<void> {
 	loadingPools.value = true;
 	try {
-		const response = await getPools(INITIAL_PAGE, MAX_POOLS);
+		const response = await getPools({ page: INITIAL_PAGE, limit: MAX_POOLS });
 		pools.value = response.data;
 	} catch {
 		// Silently fail - dropdown will be empty

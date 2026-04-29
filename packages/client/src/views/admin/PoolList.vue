@@ -17,6 +17,10 @@ const error = ref<string | null>(null);
 const currentPage = ref(INITIAL_PAGE);
 const totalPools = ref(INITIAL_TOTAL);
 
+// Filter state
+const showOnlyQuorumPools = ref(false);
+const showDisabledPools = ref(false);
+
 const totalPages = computed(() => Math.ceil(totalPools.value / POOLS_PER_PAGE));
 
 // Modal state for disable
@@ -36,7 +40,12 @@ async function loadPools(): Promise<void> {
 	error.value = null;
 
 	try {
-		const response = await getPools(currentPage.value, POOLS_PER_PAGE);
+		const response = await getPools({
+			page: currentPage.value,
+			limit: POOLS_PER_PAGE,
+			includeDisabled: showDisabledPools.value,
+			onlyQuorumPools: showOnlyQuorumPools.value,
+		});
 		const { data, pagination } = response;
 		pools.value = data;
 		totalPools.value = pagination.total;
@@ -45,6 +54,11 @@ async function loadPools(): Promise<void> {
 	} finally {
 		loading.value = false;
 	}
+}
+
+function handleFilterChange(): void {
+	currentPage.value = INITIAL_PAGE;
+	void loadPools();
 }
 
 function editPool(poolId: number): void {
@@ -170,6 +184,25 @@ watch(pools, () => {
 			</div>
 		</div>
 
+		<div class="filters">
+			<label class="filter-checkbox">
+				<input
+					v-model="showOnlyQuorumPools"
+					type="checkbox"
+					@change="handleFilterChange"
+				/>
+				Show only quorum pools
+			</label>
+			<label class="filter-checkbox">
+				<input
+					v-model="showDisabledPools"
+					type="checkbox"
+					@change="handleFilterChange"
+				/>
+				Show disabled pools
+			</label>
+		</div>
+
 		<div v-if="error" class="error">
 			{{ error }}
 		</div>
@@ -197,6 +230,7 @@ watch(pools, () => {
 								<th>Pool Name</th>
 								<th>Description</th>
 								<th>Users</th>
+								<th>Quorum Pool</th>
 								<th>Status</th>
 								<th>Actions</th>
 							</tr>
@@ -212,6 +246,12 @@ watch(pools, () => {
 								</td>
 								<td class="user-count">
 									{{ pool.userCount }}
+								</td>
+								<td class="quorum-indicator">
+									<span v-if="pool.isQuorumPool" class="quorum-badge">
+										Yes
+									</span>
+									<span v-else>—</span>
 								</td>
 								<td>
 									<span
@@ -315,6 +355,31 @@ watch(pools, () => {
 .actions {
 	display: flex;
 	gap: 1rem;
+}
+
+.filters {
+	display: flex;
+	gap: 2rem;
+	margin-bottom: 1rem;
+	padding: 1rem;
+	background-color: white;
+	border-radius: 8px;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.filter-checkbox {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	cursor: pointer;
+	font-size: 0.9375rem;
+	color: #2c3e50;
+}
+
+.filter-checkbox input[type="checkbox"] {
+	width: 1rem;
+	height: 1rem;
+	cursor: pointer;
 }
 
 .error {
@@ -427,6 +492,20 @@ watch(pools, () => {
 .status-badge.disabled {
 	background-color: #f8d7da;
 	color: #721c24;
+}
+
+.quorum-indicator {
+	text-align: center;
+}
+
+.quorum-badge {
+	display: inline-block;
+	padding: 0.25rem 0.75rem;
+	border-radius: 12px;
+	font-size: 0.875rem;
+	font-weight: 500;
+	background-color: #cce5ff;
+	color: #004085;
 }
 
 .actions-cell {

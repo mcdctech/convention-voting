@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
 import { useRouter } from "vue-router";
+import { PoolType } from "@mcdc-convention-voting/shared";
 import {
 	getMeeting,
 	updateMeeting,
@@ -30,6 +31,30 @@ const PAD_CHAR = "0";
 
 const pools = ref<Pool[]>([]);
 const loadingPools = ref(false);
+
+// Pools eligible for quorum voting (voter type or legacy null type)
+const quorumEligiblePools = computed(() =>
+	pools.value.filter(
+		(pool) => pool.poolType === null || pool.poolType === PoolType.Voter,
+	),
+);
+
+// Pools eligible as voter pools (same criteria as quorum pools)
+const voterEligiblePools = computed(() =>
+	pools.value.filter(
+		(pool) => pool.poolType === null || pool.poolType === PoolType.Voter,
+	),
+);
+
+// Pools eligible as watcher pools (watcher type only)
+const watcherEligiblePools = computed(() =>
+	pools.value.filter((pool) => pool.poolType === PoolType.Watcher),
+);
+
+// Pools eligible as meeting admin pools (meeting_admin type only)
+const meetingAdminEligiblePools = computed(() =>
+	pools.value.filter((pool) => pool.poolType === PoolType.MeetingAdmin),
+);
 
 const formData = ref({
 	name: EMPTY_STRING,
@@ -94,8 +119,12 @@ function formatDateForInput(date: Date | string): string {
 async function loadPools(): Promise<void> {
 	loadingPools.value = true;
 	try {
-		const response = await getPools(INITIAL_PAGE, ALL_POOLS_LIMIT);
-		pools.value = response.data.filter((pool) => !pool.isDisabled);
+		// includeDisabled defaults to false, so disabled pools are filtered out
+		const response = await getPools({
+			page: INITIAL_PAGE,
+			limit: ALL_POOLS_LIMIT,
+		});
+		pools.value = response.data;
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to load pools";
 	} finally {
@@ -395,10 +424,18 @@ onMounted(() => {
 					<option value="">
 						{{ loadingPools ? "Loading pools..." : "Select a pool" }}
 					</option>
-					<option v-for="pool in pools" :key="pool.id" :value="pool.id">
+					<option
+						v-for="pool in quorumEligiblePools"
+						:key="pool.id"
+						:value="pool.id"
+					>
 						{{ pool.poolName }}
 					</option>
 				</select>
+				<p class="field-description">
+					Only pools with "Voter" type or unspecified type can be used as quorum
+					pools.
+				</p>
 			</div>
 
 			<div class="form-group">
@@ -414,12 +451,17 @@ onMounted(() => {
 					<option value="">
 						{{ loadingPools ? "Loading pools..." : "No watcher pool" }}
 					</option>
-					<option v-for="pool in pools" :key="pool.id" :value="pool.id">
+					<option
+						v-for="pool in watcherEligiblePools"
+						:key="pool.id"
+						:value="pool.id"
+					>
 						{{ pool.poolName }}
 					</option>
 				</select>
 				<p class="field-description">
-					Optional pool of users who can observe this meeting as watchers
+					Optional pool of users who can observe this meeting as watchers. Only
+					pools with "Watcher" type are shown.
 				</p>
 			</div>
 
@@ -436,13 +478,17 @@ onMounted(() => {
 					<option value="">
 						{{ loadingPools ? "Loading pools..." : "No admin pool" }}
 					</option>
-					<option v-for="pool in pools" :key="pool.id" :value="pool.id">
+					<option
+						v-for="pool in meetingAdminEligiblePools"
+						:key="pool.id"
+						:value="pool.id"
+					>
 						{{ pool.poolName }}
 					</option>
 				</select>
 				<p class="field-description">
 					Optional pool of users who can administer this meeting (global admins
-					always have access)
+					always have access). Only pools with "Meeting Admin" type are shown.
 				</p>
 				<p v-if="!isAdmin" class="field-restriction">
 					Only global administrators can change the Meeting Admin Pool.
@@ -455,7 +501,8 @@ onMounted(() => {
 					<span class="optional">(voters from these pools can vote)</span>
 				</label>
 				<p class="field-description">
-					Select which pools can vote in this meeting. The quorum pool is always
+					Select which pools can vote in this meeting. Only pools with "Voter"
+					type or unspecified type are shown. The quorum pool is always
 					included.
 				</p>
 
@@ -465,7 +512,7 @@ onMounted(() => {
 
 				<div v-else class="voter-pools-grid">
 					<label
-						v-for="pool in pools"
+						v-for="pool in voterEligiblePools"
 						:key="pool.id"
 						class="pool-checkbox"
 						:class="{ 'pool-checkbox-disabled': isQuorumPool(pool.id) }"

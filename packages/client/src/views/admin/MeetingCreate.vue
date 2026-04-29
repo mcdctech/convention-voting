@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
+import { PoolType } from "@mcdc-convention-voting/shared";
 import { createMeeting, getPools } from "../../services/api";
 import type { Pool } from "@mcdc-convention-voting/shared";
 
@@ -13,6 +14,13 @@ const INITIAL_PAGE = 1;
 
 const pools = ref<Pool[]>([]);
 const loadingPools = ref(false);
+
+// Pools eligible for quorum voting (voter type or legacy null type)
+const quorumEligiblePools = computed(() =>
+	pools.value.filter(
+		(pool) => pool.poolType === null || pool.poolType === PoolType.Voter,
+	),
+);
 
 const formData = ref({
 	name: EMPTY_STRING,
@@ -28,8 +36,12 @@ const error = ref<string | null>(null);
 async function loadPools(): Promise<void> {
 	loadingPools.value = true;
 	try {
-		const response = await getPools(INITIAL_PAGE, ALL_POOLS_LIMIT);
-		pools.value = response.data.filter((pool) => !pool.isDisabled);
+		// includeDisabled defaults to false, so disabled pools are filtered out
+		const response = await getPools({
+			page: INITIAL_PAGE,
+			limit: ALL_POOLS_LIMIT,
+		});
+		pools.value = response.data;
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to load pools";
 	} finally {
@@ -174,12 +186,17 @@ onMounted(() => {
 					<option value="">
 						{{ loadingPools ? "Loading pools..." : "Select a pool" }}
 					</option>
-					<option v-for="pool in pools" :key="pool.id" :value="pool.id">
+					<option
+						v-for="pool in quorumEligiblePools"
+						:key="pool.id"
+						:value="pool.id"
+					>
 						{{ pool.poolName }}
 					</option>
 				</select>
 				<p class="field-description">
-					The pool used to determine quorum for this meeting
+					The pool used to determine quorum for this meeting. Only pools with
+					"Voter" type or unspecified type can be used as quorum pools.
 				</p>
 			</div>
 

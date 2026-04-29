@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
+import { PoolType } from "@mcdc-convention-voting/shared";
 import { getPool, updatePool } from "../../services/api";
 import type { Pool } from "@mcdc-convention-voting/shared";
 
@@ -13,6 +14,20 @@ const router = useRouter();
 // Constants
 const EMPTY_STRING = "";
 
+// Helper function to convert string to PoolType
+function parsePoolType(value: string): PoolType | null {
+	switch (value) {
+		case "voter":
+			return PoolType.Voter;
+		case "watcher":
+			return PoolType.Watcher;
+		case "meeting_admin":
+			return PoolType.MeetingAdmin;
+		default:
+			return null;
+	}
+}
+
 const pool = ref<Pool | null>(null);
 const loading = ref(false);
 const saving = ref(false);
@@ -22,6 +37,7 @@ const formData = ref({
 	poolKey: EMPTY_STRING,
 	poolName: EMPTY_STRING,
 	description: EMPTY_STRING,
+	poolType: EMPTY_STRING as string,
 });
 
 async function loadPool(): Promise<void> {
@@ -39,11 +55,12 @@ async function loadPool(): Promise<void> {
 		if (response.data !== undefined) {
 			const { data: poolData } = response;
 			pool.value = poolData;
-			const { poolKey, poolName, description } = poolData;
+			const { poolKey, poolName, description, poolType } = poolData;
 			formData.value = {
 				poolKey,
 				poolName,
 				description: description ?? EMPTY_STRING,
+				poolType: poolType ?? EMPTY_STRING,
 			};
 		}
 	} catch (err) {
@@ -64,6 +81,15 @@ async function handleSubmit(): Promise<void> {
 		return;
 	}
 
+	const poolTypeValue = parsePoolType(formData.value.poolType);
+
+	// Quorum pools must have Pool Type set to "Voter"
+	if (pool.value?.isQuorumPool === true && poolTypeValue !== PoolType.Voter) {
+		error.value =
+			"This pool is assigned as a quorum pool for one or more meetings. Quorum pools must have Pool Type set to 'Voter'.";
+		return;
+	}
+
 	saving.value = true;
 
 	try {
@@ -74,6 +100,7 @@ async function handleSubmit(): Promise<void> {
 			...(formData.value.description.trim() !== EMPTY_STRING && {
 				description: formData.value.description.trim(),
 			}),
+			poolType: poolTypeValue,
 		};
 
 		await updatePool(poolId, poolData);
@@ -135,6 +162,24 @@ onMounted(() => {
 				<textarea id="description" v-model="formData.description" rows="3" />
 				<p class="field-description">
 					Optional description or notes about this pool
+				</p>
+			</div>
+
+			<div class="form-group">
+				<label for="poolType"> Pool Type </label>
+				<select id="poolType" v-model="formData.poolType">
+					<option value="">Not specified</option>
+					<option :value="PoolType.Voter">Voter</option>
+					<option :value="PoolType.Watcher">Watcher</option>
+					<option :value="PoolType.MeetingAdmin">Meeting Admin</option>
+				</select>
+				<p class="field-description">
+					Categorize this pool by its purpose. Pools used as quorum pools must
+					be set to "Voter" type or "Not specified".
+				</p>
+				<p v-if="pool?.isQuorumPool" class="quorum-warning">
+					This pool is currently assigned as a quorum pool for one or more
+					meetings.
 				</p>
 			</div>
 
@@ -224,7 +269,8 @@ h2 {
 }
 
 .form-group input,
-.form-group textarea {
+.form-group textarea,
+.form-group select {
 	width: 100%;
 	padding: 0.75rem;
 	border: 1px solid #e0e0e0;
@@ -234,9 +280,19 @@ h2 {
 }
 
 .form-group input:focus,
-.form-group textarea:focus {
+.form-group textarea:focus,
+.form-group select:focus {
 	outline: none;
 	border-color: #1976d2;
+}
+
+.quorum-warning {
+	margin-top: 0.5rem;
+	padding: 0.5rem;
+	background-color: #fff3cd;
+	color: #856404;
+	border-radius: 4px;
+	font-size: 0.875rem;
 }
 
 .pool-info {
