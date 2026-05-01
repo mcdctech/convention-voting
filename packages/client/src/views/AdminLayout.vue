@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import { useAuth } from "../composables/useAuth";
 import { useAdminMeeting } from "../composables/useAdminMeeting";
 import { useMobileNav } from "../composables/useMobileNav";
@@ -8,6 +8,7 @@ import NavDropdown from "../components/NavDropdown.vue";
 import NavHamburger from "../components/NavHamburger.vue";
 import MobileNavOverlay from "../components/MobileNavOverlay.vue";
 
+const router = useRouter();
 const { currentUser, isAdmin, isMeetingAdmin, logout } = useAuth();
 const { isJoined, currentMeeting, loadCurrentMeeting, leaveMeeting } =
 	useAdminMeeting();
@@ -24,19 +25,26 @@ const adminRoleLabel = computed(() => {
 	return "Admin";
 });
 
-// Users and Pools menus are global-admin only; scoped meeting admins only see
-// the Meetings dropdown for the meeting(s) they can administer.
-const showAdminMenus = computed(() => isAdmin.value);
+// Users and Pools menus are shown for:
+// - Global admins (always)
+// - Meeting admins when focused on a meeting
+const showAdminMenus = computed(
+	() => isAdmin.value || (isMeetingAdmin.value && isJoined.value),
+);
 
 // Handle leaving the current meeting
 async function handleLeaveMeeting(): Promise<void> {
 	await leaveMeeting();
+	// Redirect to meeting selection page after leaving
+	void router.push("/admin/meetings/select");
 }
 
 // Handle leaving from mobile nav (also close nav)
 async function handleLeaveMeetingMobile(): Promise<void> {
 	await leaveMeeting();
 	closeNav();
+	// Redirect to meeting selection page after leaving
+	void router.push("/admin/meetings/select");
 }
 
 // Load current meeting state on mount
@@ -49,9 +57,18 @@ onMounted(() => {
 	<div class="admin-layout">
 		<header class="admin-header">
 			<div class="header-top">
-				<RouterLink to="/admin" class="logo-link">
-					<h1>MCDC Convention Voting - {{ adminRoleLabel }}</h1>
-				</RouterLink>
+				<div class="header-left">
+					<RouterLink to="/admin" class="logo-link">
+						<h1>MCDC Convention Voting - {{ adminRoleLabel }}</h1>
+					</RouterLink>
+					<div
+						v-if="isJoined && currentMeeting"
+						class="meeting-focus-badge desktop-only"
+					>
+						<span class="badge-label">Focused:</span>
+						<span class="badge-name">{{ currentMeeting.meeting.name }}</span>
+					</div>
+				</div>
 				<div class="header-right desktop-only">
 					<span v-if="currentUser" class="user-name">
 						{{ currentUser.firstName }} {{ currentUser.lastName }}
@@ -271,9 +288,34 @@ onMounted(() => {
 	margin-bottom: 1rem;
 }
 
+.header-left {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	flex-wrap: wrap;
+}
+
 .admin-header h1 {
 	margin: 0;
 	font-size: 1.5rem;
+}
+
+.meeting-focus-badge {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.375rem 0.75rem;
+	background-color: #2196f3;
+	border-radius: 16px;
+	font-size: 0.8125rem;
+}
+
+.meeting-focus-badge .badge-label {
+	opacity: 0.85;
+}
+
+.meeting-focus-badge .badge-name {
+	font-weight: 600;
 }
 
 .logo-link {

@@ -3,13 +3,14 @@
  */
 
 const FIRST_CHARACTER_INDEX = 0;
+const EMPTY_STRING_LENGTH = 0;
 const INITIAL_COUNTER = 2;
 const COUNTER_INCREMENT = 1;
 
 /**
  * Generate a username from first and last name
- * Format: first initial + last name (lowercase)
- * Example: John Doe -> jdoe
+ * Format: first initial + last name (lowercase, alphanumeric)
+ * Example: John Doe -> jdoe, Test 100080 -> t100080
  *
  * @param firstName User's first name
  * @param lastName User's last name
@@ -20,9 +21,14 @@ export function generateBaseUsername(
 	lastName: string,
 ): string {
 	const firstInitial = firstName.charAt(FIRST_CHARACTER_INDEX).toLowerCase();
-	const lastNameClean = lastName.toLowerCase().replace(/[^a-z]/g, "");
+	// Allow both letters and numbers, remove only special characters and spaces
+	const lastNameClean = lastName.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-	return `${firstInitial}${lastNameClean}`;
+	// Fallback to "user" if lastName becomes empty after cleaning
+	const lastNamePart =
+		lastNameClean.length > EMPTY_STRING_LENGTH ? lastNameClean : "user";
+
+	return `${firstInitial}${lastNamePart}`;
 }
 
 /**

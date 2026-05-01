@@ -55,6 +55,7 @@ export interface ListPoolsOptions {
 	includeDisabled?: boolean;
 	onlyQuorumPools?: boolean;
 	poolType?: PoolType | "null" | null;
+	forMeetingId?: number; // Filter to pools associated with a specific meeting
 }
 
 /**
@@ -109,6 +110,7 @@ function buildPoolFilterClauses(options: ListPoolsOptions): {
 		includeDisabled = false,
 		onlyQuorumPools = false,
 		poolType,
+		forMeetingId,
 	} = options;
 	const clauses: string[] = [];
 	const params: Record<string, unknown> = {};
@@ -130,6 +132,17 @@ function buildPoolFilterClauses(options: ListPoolsOptions): {
 			clauses.push("p.pool_type = :poolType");
 			params.poolType = poolType;
 		}
+	}
+
+	// Filter to pools associated with a specific meeting
+	if (forMeetingId !== undefined) {
+		clauses.push(`(
+			EXISTS(SELECT 1 FROM meetings m WHERE m.id = :forMeetingId AND m.quorum_voting_pool_id = p.id)
+			OR EXISTS(SELECT 1 FROM meetings m WHERE m.id = :forMeetingId AND m.watcher_pool_id = p.id)
+			OR EXISTS(SELECT 1 FROM meetings m WHERE m.id = :forMeetingId AND m.meeting_admin_pool_id = p.id)
+			OR EXISTS(SELECT 1 FROM meeting_voter_pools mvp WHERE mvp.meeting_id = :forMeetingId AND mvp.pool_id = p.id)
+		)`);
+		params.forMeetingId = forMeetingId;
 	}
 
 	return { clauses, params };

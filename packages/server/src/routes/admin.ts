@@ -101,13 +101,18 @@ import {
 } from "../services/pending-pool-service.js";
 import {
 	getJoinableMeetingsForAdmin,
-	getAllActiveMeetings,
+	getAllMeetingsForAdmin,
 	joinMeetingAsAdmin,
 	leaveCurrentMeeting,
 	getCurrentMeetingInfo,
 } from "../services/meeting-participant-service.js";
+import {
+	// canMeetingAdminAccessPool, // TODO: will be used when updating pool routes
+	canMeetingAdminAccessUser,
+} from "../services/auth-service.js";
 import { requireAdmin } from "../middleware/auth-middleware.js";
 import {
+	requireAdminOrMeetingAdmin,
 	requireMeetingAdmin,
 	requireMeetingAdminForChoice,
 	requireMeetingAdminForMotion,
@@ -261,81 +266,102 @@ adminRouter.post(
  * - noPool: if "true", only return users not assigned to any pool
  * - includeDisabled: if "true", include disabled users (default: false)
  * - role: filter by user role ("all", "admin", "meeting_admin", "watcher", "voter")
+ * - forMeetingId: filter to users in pools associated with a specific meeting
  */
-// eslint-disable-next-line complexity -- Query parameter parsing requires multiple validation steps
-adminRouter.get("/users", requireAdmin, async (req: Request, res: Response) => {
-	try {
-		const pageParam =
-			typeof req.query.page === "string"
-				? req.query.page
-				: String(DEFAULT_PAGE);
-		const limitParam =
-			typeof req.query.limit === "string"
-				? req.query.limit
-				: String(DEFAULT_LIMIT);
-		const searchParam =
-			typeof req.query.search === "string" ? req.query.search : undefined;
-		const poolIdParam =
-			typeof req.query.poolId === "string" ? req.query.poolId : undefined;
-		const poolIdParsed =
-			poolIdParam === undefined
-				? undefined
-				: parseInt(poolIdParam, DECIMAL_RADIX);
-		const poolId =
-			poolIdParsed === undefined || isNaN(poolIdParsed)
-				? undefined
-				: poolIdParsed;
-		const noPoolParam =
-			typeof req.query.noPool === "string" ? req.query.noPool : undefined;
-		const noPool = noPoolParam === "true";
-		const includeDisabledParam =
-			typeof req.query.includeDisabled === "string"
-				? req.query.includeDisabled
-				: undefined;
-		const includeDisabled = includeDisabledParam === "true";
-		const roleParam =
-			typeof req.query.role === "string" ? req.query.role : undefined;
-		type UserRoleFilter =
-			| "all"
-			| "admin"
-			| "meeting_admin"
-			| "watcher"
-			| "voter";
-		const isValidRole = (value: string): value is UserRoleFilter =>
-			["all", "admin", "meeting_admin", "watcher", "voter"].includes(value);
-		const role =
-			roleParam !== undefined && isValidRole(roleParam) ? roleParam : undefined;
-		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
-		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
 
-		const { users, total } = await listUsers({
-			page,
-			limit,
-			search: searchParam,
-			poolId,
-			noPool,
-			includeDisabled,
-			role,
-		});
+adminRouter.get(
+	"/users",
+	requireAdminOrMeetingAdmin,
+	// eslint-disable-next-line complexity -- user filtering has many parameters to parse
+	async (req: Request, res: Response) => {
+		try {
+			const pageParam =
+				typeof req.query.page === "string"
+					? req.query.page
+					: String(DEFAULT_PAGE);
+			const limitParam =
+				typeof req.query.limit === "string"
+					? req.query.limit
+					: String(DEFAULT_LIMIT);
+			const searchParam =
+				typeof req.query.search === "string" ? req.query.search : undefined;
+			const poolIdParam =
+				typeof req.query.poolId === "string" ? req.query.poolId : undefined;
+			const poolIdParsed =
+				poolIdParam === undefined
+					? undefined
+					: parseInt(poolIdParam, DECIMAL_RADIX);
+			const poolId =
+				poolIdParsed === undefined || isNaN(poolIdParsed)
+					? undefined
+					: poolIdParsed;
+			const noPoolParam =
+				typeof req.query.noPool === "string" ? req.query.noPool : undefined;
+			const noPool = noPoolParam === "true";
+			const includeDisabledParam =
+				typeof req.query.includeDisabled === "string"
+					? req.query.includeDisabled
+					: undefined;
+			const includeDisabled = includeDisabledParam === "true";
+			const roleParam =
+				typeof req.query.role === "string" ? req.query.role : undefined;
+			type UserRoleFilter =
+				| "all"
+				| "admin"
+				| "meeting_admin"
+				| "watcher"
+				| "voter";
+			const isValidRole = (value: string): value is UserRoleFilter =>
+				["all", "admin", "meeting_admin", "watcher", "voter"].includes(value);
+			const role =
+				roleParam !== undefined && isValidRole(roleParam)
+					? roleParam
+					: undefined;
+			const forMeetingIdParam =
+				typeof req.query.forMeetingId === "string"
+					? req.query.forMeetingId
+					: undefined;
+			const forMeetingIdParsed =
+				forMeetingIdParam === undefined
+					? undefined
+					: Number.parseInt(forMeetingIdParam, DECIMAL_RADIX);
+			const forMeetingId =
+				forMeetingIdParsed === undefined || Number.isNaN(forMeetingIdParsed)
+					? undefined
+					: forMeetingIdParsed;
+			const page = Number.parseInt(pageParam, DECIMAL_RADIX);
+			const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
 
-		const response: UserListResponse = {
-			data: users,
-			pagination: {
+			const { users, total } = await listUsers({
 				page,
 				limit,
-				total,
-				totalPages: Math.ceil(total / limit),
-			},
-		};
+				search: searchParam,
+				poolId,
+				noPool,
+				includeDisabled,
+				role,
+				forMeetingId,
+			});
 
-		res.json(response);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to list users: ${message}` });
-	}
-});
+			const response: UserListResponse = {
+				data: users,
+				pagination: {
+					page,
+					limit,
+					total,
+					totalPages: Math.ceil(total / limit),
+				},
+			};
+
+			res.json(response);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to list users: ${message}` });
+		}
+	},
+);
 
 /**
  * POST /api/admin/users
@@ -343,11 +369,24 @@ adminRouter.get("/users", requireAdmin, async (req: Request, res: Response) => {
  */
 adminRouter.post(
 	"/users",
-	requireAdmin,
+	requireAdminOrMeetingAdmin,
+	// eslint-disable-next-line complexity -- additional validation for meeting admins
 	async (req: Request, res: Response) => {
 		try {
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
 			const request: CreateUserRequest = req.body;
+
+			// Meeting admins cannot create global admin users
+			if (
+				req.user?.isAdmin === false &&
+				req.user.isMeetingAdmin &&
+				request.isAdmin === true
+			) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
+					error: "Meeting admins cannot create global admin users",
+				});
+				return;
+			}
 
 			// Validate required fields
 			if (
@@ -435,9 +474,24 @@ adminRouter.get(
  */
 adminRouter.get(
 	"/users/:id",
-	requireAdmin,
+	requireAdminOrMeetingAdmin,
 	async (req: Request, res: Response) => {
 		try {
+			// Meeting admins must have access to this user
+			if (req.user?.isAdmin === false && req.user.isMeetingAdmin) {
+				const canAccess = await canMeetingAdminAccessUser(
+					req.user.id,
+					req.params.id,
+				);
+				if (!canAccess) {
+					res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
+						error:
+							"Meeting admins can only view users in their authorized meetings",
+					});
+					return;
+				}
+			}
+
 			const user = await getUserById(req.params.id);
 
 			if (user === null) {
@@ -463,9 +517,24 @@ adminRouter.get(
  */
 adminRouter.put(
 	"/users/:id",
-	requireAdmin,
+	requireAdminOrMeetingAdmin,
 	async (req: Request, res: Response) => {
 		try {
+			// Meeting admins must have access to this user
+			if (req.user?.isAdmin === false && req.user.isMeetingAdmin) {
+				const canAccess = await canMeetingAdminAccessUser(
+					req.user.id,
+					req.params.id,
+				);
+				if (!canAccess) {
+					res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
+						error:
+							"Meeting admins can only modify users in their authorized meetings",
+					});
+					return;
+				}
+			}
+
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
 			const updates: UpdateUserRequest = req.body;
 			const user = await updateUser(req.params.id, updates);
@@ -759,54 +828,64 @@ adminRouter.post(
  * - includeDisabled: Include disabled pools (default: false)
  * - onlyQuorumPools: Show only quorum pools (default: false)
  * - poolType: Filter by pool type (voter, watcher, meeting_admin, null)
+ * - forMeetingId: Filter to pools associated with a specific meeting
  */
-adminRouter.get("/pools", requireAdmin, async (req: Request, res: Response) => {
-	try {
-		const pageParam =
-			typeof req.query.page === "string"
-				? req.query.page
-				: String(DEFAULT_PAGE);
-		const limitParam =
-			typeof req.query.limit === "string"
-				? req.query.limit
-				: String(DEFAULT_LIMIT);
-		const page = Number.parseInt(pageParam, DECIMAL_RADIX);
-		const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
+adminRouter.get(
+	"/pools",
+	requireAdminOrMeetingAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const pageParam =
+				typeof req.query.page === "string"
+					? req.query.page
+					: String(DEFAULT_PAGE);
+			const limitParam =
+				typeof req.query.limit === "string"
+					? req.query.limit
+					: String(DEFAULT_LIMIT);
+			const page = Number.parseInt(pageParam, DECIMAL_RADIX);
+			const limit = Number.parseInt(limitParam, DECIMAL_RADIX);
 
-		// Parse filter parameters from query
-		const { query } = req;
-		const includeDisabled = query.includeDisabled === "true";
-		const onlyQuorumPools = query.onlyQuorumPools === "true";
-		const poolType = parsePoolTypeParam(query.poolType);
+			// Parse filter parameters from query
+			const { query } = req;
+			const includeDisabled = query.includeDisabled === "true";
+			const onlyQuorumPools = query.onlyQuorumPools === "true";
+			const poolType = parsePoolTypeParam(query.poolType);
+			const forMeetingId =
+				typeof query.forMeetingId === "string"
+					? Number.parseInt(query.forMeetingId, DECIMAL_RADIX)
+					: undefined;
 
-		const options: ListPoolsOptions = {
-			page,
-			limit,
-			includeDisabled,
-			onlyQuorumPools,
-			poolType,
-		};
-
-		const { pools, total } = await listPools(options);
-
-		const response: PoolListResponse = {
-			data: pools,
-			pagination: {
+			const options: ListPoolsOptions = {
 				page,
 				limit,
-				total,
-				totalPages: Math.ceil(total / limit),
-			},
-		};
+				includeDisabled,
+				onlyQuorumPools,
+				poolType,
+				forMeetingId,
+			};
 
-		res.json(response);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
-		res
-			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to list pools: ${message}` });
-	}
-});
+			const { pools, total } = await listPools(options);
+
+			const response: PoolListResponse = {
+				data: pools,
+				pagination: {
+					page,
+					limit,
+					total,
+					totalPages: Math.ceil(total / limit),
+				},
+			};
+
+			res.json(response);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to list pools: ${message}` });
+		}
+	},
+);
 
 /**
  * POST /api/admin/pools
@@ -1023,10 +1102,25 @@ adminRouter.delete(
  */
 adminRouter.get(
 	"/pools/:id",
-	requireAdmin,
+	requireAdminOrMeetingAdmin,
 	async (req: Request, res: Response) => {
 		try {
 			const poolId = parseInt(req.params.id, 10);
+
+			// Meeting admins must have access to this pool
+			if (req.user?.isAdmin === false && req.user.isMeetingAdmin) {
+				const { canMeetingAdminAccessPool } =
+					await import("../services/auth-service.js");
+				const canAccess = await canMeetingAdminAccessPool(req.user.id, poolId);
+				if (!canAccess) {
+					res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
+						error:
+							"Meeting admins can only view pools for their authorized meetings",
+					});
+					return;
+				}
+			}
+
 			const pool = await getPoolById(poolId);
 
 			if (pool === null) {
@@ -1131,10 +1225,25 @@ adminRouter.post(
  */
 adminRouter.get(
 	"/pools/:id/users",
-	requireAdmin,
+	requireAdminOrMeetingAdmin,
 	async (req: Request, res: Response) => {
 		try {
 			const poolId = parseInt(req.params.id, 10);
+
+			// Meeting admins must have access to this pool
+			if (req.user?.isAdmin === false && req.user.isMeetingAdmin) {
+				const { canMeetingAdminAccessPool } =
+					await import("../services/auth-service.js");
+				const canAccess = await canMeetingAdminAccessPool(req.user.id, poolId);
+				if (!canAccess) {
+					res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
+						error:
+							"Meeting admins can only view pools for their authorized meetings",
+					});
+					return;
+				}
+			}
+
 			const pageParam =
 				typeof req.query.page === "string"
 					? req.query.page
@@ -1174,13 +1283,27 @@ adminRouter.get(
  */
 adminRouter.post(
 	"/pools/:id/users/:userId",
-	requireAdmin,
+	requireAdminOrMeetingAdmin,
 	async (req: Request, res: Response) => {
 		try {
 			const {
 				params: { id, userId },
 			} = req;
 			const poolId = parseInt(id, 10);
+
+			// Meeting admins must have access to this pool
+			if (req.user?.isAdmin === false && req.user.isMeetingAdmin) {
+				const { canMeetingAdminAccessPool } =
+					await import("../services/auth-service.js");
+				const canAccess = await canMeetingAdminAccessPool(req.user.id, poolId);
+				if (!canAccess) {
+					res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
+						error:
+							"Meeting admins can only manage pools for their authorized meetings",
+					});
+					return;
+				}
+			}
 
 			await addUserToPool(poolId, userId);
 			res.json({ success: true, message: "User added to pool successfully" });
@@ -1199,13 +1322,28 @@ adminRouter.post(
  */
 adminRouter.delete(
 	"/pools/:id/users/:userId",
-	requireAdmin,
+	requireAdminOrMeetingAdmin,
+	// eslint-disable-next-line complexity -- Meeting admin authorization and self-removal checks
 	async (req: Request, res: Response) => {
 		try {
 			const {
 				params: { id, userId },
 			} = req;
 			const poolId = parseInt(id, 10);
+
+			// Meeting admins must have access to this pool
+			if (req.user?.isAdmin === false && req.user.isMeetingAdmin) {
+				const { canMeetingAdminAccessPool } =
+					await import("../services/auth-service.js");
+				const canAccess = await canMeetingAdminAccessPool(req.user.id, poolId);
+				if (!canAccess) {
+					res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
+						error:
+							"Meeting admins can only manage pools for their authorized meetings",
+					});
+					return;
+				}
+			}
 
 			// Check if user is removing themselves from their joined meeting's admin pool
 			if (userId === req.user?.id) {
@@ -1244,12 +1382,25 @@ adminRouter.delete(
  */
 adminRouter.get(
 	"/users/:id/pools",
-	requireAdmin,
+	requireAdminOrMeetingAdmin,
 	async (req: Request, res: Response) => {
 		try {
 			const {
 				params: { id },
 			} = req;
+
+			// Meeting admins must have access to this user
+			if (req.user?.isAdmin === false && req.user.isMeetingAdmin) {
+				const canAccess = await canMeetingAdminAccessUser(req.user.id, id);
+				if (!canAccess) {
+					res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
+						error:
+							"Meeting admins can only view pools for users in their authorized meetings",
+					});
+					return;
+				}
+			}
+
 			const pools = await getPoolsForUser(id);
 			res.json({ success: true, data: pools });
 		} catch (error) {
@@ -1379,7 +1530,7 @@ adminRouter.get("/meetings", async (req: Request, res: Response) => {
 /**
  * GET /api/admin/meetings/joinable
  * Get list of meetings the current user can administer
- * For global admins, this returns all active meetings
+ * For global admins, this returns all meetings (regardless of activity status)
  * For meeting admins, this returns meetings where they are in the admin pool
  */
 adminRouter.get("/meetings/joinable", async (req: Request, res: Response) => {
@@ -1392,10 +1543,10 @@ adminRouter.get("/meetings/joinable", async (req: Request, res: Response) => {
 			return;
 		}
 
-		// Global admins can join any active meeting
+		// Global admins can join any meeting
 		// Meeting admins can only join meetings where they are in the admin pool
 		const meetings = req.user.isAdmin
-			? await getAllActiveMeetings()
+			? await getAllMeetingsForAdmin()
 			: await getJoinableMeetingsForAdmin(req.user.id);
 		res.json({ success: true, data: { data: meetings } });
 	} catch (error) {

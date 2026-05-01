@@ -15,8 +15,8 @@ const EMPTY_ARRAY_LENGTH = 0;
 const DEFAULT_JWT_EXPIRES_IN = "24h";
 
 /**
- * Check if user is a meeting admin for any active meeting
- * Returns true if user is in the admin_pool of any currently active meeting
+ * Check if user is a meeting admin for any meeting
+ * Returns true if user is in the admin_pool of any meeting (no date filter)
  */
 async function isUserMeetingAdminForAnyMeeting(
 	userId: string,
@@ -26,8 +26,6 @@ async function isUserMeetingAdminForAnyMeeting(
 			SELECT 1 FROM user_pools up
 			INNER JOIN meetings m ON m.meeting_admin_pool_id = up.pool_id
 			WHERE up.user_id = :userId
-			  AND NOW() >= m.start_date
-			  AND NOW() <= m.end_date
 		) as exists`,
 		{ userId },
 	);
@@ -281,4 +279,94 @@ export async function getAuthUserById(
 		isWatcher: row.is_watcher,
 		isMeetingAdmin,
 	};
+}
+
+/**
+ * Check if a meeting admin can access a specific user
+ * Meeting admins can access users who are:
+ * - Not global admins
+ * - Either in pools associated with their meetings OR have no pool assignments yet
+ */
+export async function canMeetingAdminAccessUser(
+	meetingAdminId: string,
+	targetUserId: string,
+): Promise<boolean> {
+	// First check if the target user is a global admin (never accessible by meeting admins)
+	const userResult = await db.query<{ is_admin: boolean }>(
+		`SELECT is_admin FROM users WHERE id = :targetUserId`,
+		{ targetUserId },
+	);
+
+	if (
+		userResult.rows.length === EMPTY_ARRAY_LENGTH ||
+		userResult.rows[EMPTY_ARRAY_LENGTH].is_admin
+	) {
+		return false;
+	}
+
+	// Check if user has any pool assignments
+	const poolCountResult = await db.query<{ count: number }>(
+		`SELECT COUNT(*) as count FROM user_pools WHERE user_id = :targetUserId`,
+		{ targetUserId },
+	);
+
+	const {
+		rows: [{ count: poolCount }],
+	} = poolCountResult;
+
+	// If user has no pools, meeting admin can access them
+	if (poolCount === EMPTY_ARRAY_LENGTH) {
+		return true;
+	}
+
+	// Otherwise, check if the target user is in any pool associated with meetings
+	// where the meeting admin is authorized
+	const result = await db.query<{ exists: boolean }>(
+		`SELECT EXISTS(
+			SELECT 1 FROM user_pools up
+			INNER JOIN pools p ON p.id = up.pool_id
+			INNER JOIN meetings m ON (
+				m.quorum_voting_pool_id = p.id OR
+				m.watcher_pool_id = p.id OR
+				m.meeting_admin_pool_id = p.id
+			)
+			INNER JOIN user_pools admin_up ON admin_up.pool_id = m.meeting_admin_pool_id
+			WHERE up.user_id = :targetUserId
+			AND admin_up.user_id = :meetingAdminId
+		) as exists`,
+		{ targetUserId, meetingAdminId },
+	);
+
+	const {
+		rows: [row],
+	} = result;
+	return row.exists;
+}
+
+/**
+ * Check if a meeting admin can access a specific pool
+ * Meeting admins can only access pools associated with their authorized meetings
+ */
+export async function canMeetingAdminAccessPool(
+	meetingAdminId: string,
+	poolId: number,
+): Promise<boolean> {
+	const result = await db.query<{ exists: boolean }>(
+		`SELECT EXISTS(
+			SELECT 1 FROM meetings m
+			INNER JOIN user_pools admin_up ON admin_up.pool_id = m.meeting_admin_pool_id
+			WHERE (
+				m.quorum_voting_pool_id = :poolId OR
+				m.watcher_pool_id = :poolId OR
+				m.meeting_admin_pool_id = :poolId
+			)
+			AND admin_up.user_id = :meetingAdminId
+		) as exists`,
+		{ poolId, meetingAdminId },
+	);
+
+	const {
+		rows: [row],
+	} = result;
+	return row.exists;
 }

@@ -521,6 +521,7 @@ interface BuildUserListQueryOptions {
 	noPool?: boolean;
 	includeDisabled?: boolean;
 	role?: UserRoleFilter;
+	forMeetingId?: number; // Filter to users in pools associated with a specific meeting
 }
 
 /**
@@ -532,7 +533,8 @@ function buildUserListQueryParts(options: BuildUserListQueryOptions): {
 	poolJoin: string;
 	params: Record<string, unknown>;
 } {
-	const { search, poolId, noPool, includeDisabled, role } = options;
+	const { search, poolId, noPool, includeDisabled, role, forMeetingId } =
+		options;
 	const searchTerm =
 		search === undefined || search.trim() === "" ? null : search.trim();
 	const hasSearch = searchTerm !== null;
@@ -581,6 +583,20 @@ function buildUserListQueryParts(options: BuildUserListQueryOptions): {
 				break;
 		}
 	}
+	// Filter to users in pools associated with a specific meeting
+	if (forMeetingId !== undefined) {
+		whereConditions.push(`EXISTS (
+			SELECT 1 FROM user_pools meeting_up
+			INNER JOIN pools meeting_p ON meeting_up.pool_id = meeting_p.id
+			WHERE meeting_up.user_id = u.id AND (
+				EXISTS(SELECT 1 FROM meetings m WHERE m.id = :forMeetingId AND m.quorum_voting_pool_id = meeting_p.id)
+				OR EXISTS(SELECT 1 FROM meetings m WHERE m.id = :forMeetingId AND m.watcher_pool_id = meeting_p.id)
+				OR EXISTS(SELECT 1 FROM meetings m WHERE m.id = :forMeetingId AND m.meeting_admin_pool_id = meeting_p.id)
+				OR EXISTS(SELECT 1 FROM meeting_voter_pools mvp WHERE mvp.meeting_id = :forMeetingId AND mvp.pool_id = meeting_p.id)
+			)
+		)`);
+		params.forMeetingId = forMeetingId;
+	}
 
 	const whereClause =
 		whereConditions.length > EMPTY_ARRAY_LENGTH
@@ -610,6 +626,7 @@ interface ListUsersOptions {
 	noPool?: boolean;
 	includeDisabled?: boolean;
 	role?: UserRoleFilter;
+	forMeetingId?: number; // Filter to users in pools associated with a specific meeting
 }
 
 /**
@@ -627,6 +644,7 @@ export async function listUsers(
 		noPool,
 		includeDisabled,
 		role,
+		forMeetingId,
 	} = options;
 	const offset = (page - PAGE_OFFSET_ADJUSTMENT) * limit;
 	const { whereClause, poolJoin, params } = buildUserListQueryParts({
@@ -635,6 +653,7 @@ export async function listUsers(
 		noPool,
 		includeDisabled,
 		role,
+		forMeetingId,
 	});
 
 	// Add pagination params

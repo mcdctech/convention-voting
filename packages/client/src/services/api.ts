@@ -250,6 +250,7 @@ interface GetUsersOptions {
 	noPool?: boolean;
 	includeDisabled?: boolean;
 	role?: UserRoleFilter;
+	forMeetingId?: number;
 }
 
 /**
@@ -268,6 +269,7 @@ export async function getUsers(
 		noPool,
 		includeDisabled,
 		role,
+		forMeetingId,
 	} = options;
 	const params = new URLSearchParams({
 		page: String(page),
@@ -287,6 +289,9 @@ export async function getUsers(
 	}
 	if (role !== undefined && role !== "all") {
 		params.set("role", role);
+	}
+	if (forMeetingId !== undefined) {
+		params.set("forMeetingId", String(forMeetingId));
 	}
 	return await apiRequest<PaginatedResponse<User>>(
 		`${API_PREFIX}/admin/users?${params.toString()}`,
@@ -464,6 +469,7 @@ export interface GetPoolsOptions {
 	includeDisabled?: boolean;
 	onlyQuorumPools?: boolean;
 	poolType?: PoolType | "null";
+	forMeetingId?: number;
 }
 
 /**
@@ -478,6 +484,7 @@ export async function getPools(
 		includeDisabled,
 		onlyQuorumPools,
 		poolType,
+		forMeetingId,
 	} = options;
 
 	const params = new URLSearchParams();
@@ -491,6 +498,9 @@ export async function getPools(
 	}
 	if (poolType !== undefined) {
 		params.set("poolType", poolType);
+	}
+	if (forMeetingId !== undefined) {
+		params.set("forMeetingId", String(forMeetingId));
 	}
 
 	return await apiRequest<PaginatedResponse<Pool>>(

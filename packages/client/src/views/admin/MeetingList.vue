@@ -160,10 +160,15 @@ watch(filteredMeetings, () => {
 			</div>
 		</div>
 
-		<!-- Joined meeting indicator -->
-		<div v-if="isJoined" class="joined-indicator">
-			Currently viewing joined meeting. Use the menu to leave and see all
-			meetings.
+		<!-- Meeting focus indicator -->
+		<div v-if="isJoined && currentMeeting" class="focus-indicator">
+			<span class="focus-label">
+				Focused on:
+				<strong>{{ currentMeeting.meeting.name }}</strong>
+			</span>
+			<span class="focus-hint">
+				Use the Meetings menu to leave and see all meetings
+			</span>
 		</div>
 
 		<div v-if="error" class="error">
@@ -290,14 +295,30 @@ watch(filteredMeetings, () => {
 	gap: 1rem;
 }
 
-.joined-indicator {
-	background-color: #e3f2fd;
-	color: #1565c0;
-	padding: 0.75rem 1rem;
-	border-radius: 4px;
+.focus-indicator {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 1rem;
 	margin-bottom: 1rem;
-	font-size: 0.875rem;
+	padding: 0.75rem 1rem;
+	background-color: #e3f2fd;
 	border: 1px solid #90caf9;
+	border-radius: 8px;
+	color: #1565c0;
+}
+
+.focus-label {
+	font-size: 0.9375rem;
+}
+
+.focus-label strong {
+	color: #0d47a1;
+}
+
+.focus-hint {
+	font-size: 0.875rem;
+	color: #1976d2;
 }
 
 .error {

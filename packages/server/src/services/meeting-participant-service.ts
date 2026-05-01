@@ -547,10 +547,10 @@ export async function joinMeetingAsWatcher(
 // ============================================================================
 
 /**
- * Get active meetings that a user can join as a meeting admin
- * Returns meetings where:
- * - Meeting is currently active (now between start_date and end_date)
- * - User is in the meeting's admin_pool
+ * Get meetings that a user can join as a meeting admin
+ * Returns meetings where the user is in the meeting's admin_pool.
+ * Meeting activity status (start/end dates) is not considered - admins
+ * can join any meeting to edit it regardless of whether it's active.
  */
 export async function getJoinableMeetingsForAdmin(
 	userId: string,
@@ -568,10 +568,8 @@ export async function getJoinableMeetingsForAdmin(
 		 INNER JOIN pools p ON m.meeting_admin_pool_id = p.id
 		 INNER JOIN user_pools up ON up.pool_id = m.meeting_admin_pool_id
 		 WHERE up.user_id = :userId
-		   AND NOW() >= m.start_date
-		   AND NOW() <= m.end_date
 		   AND m.meeting_admin_pool_id IS NOT NULL
-		 ORDER BY m.start_date ASC`,
+		 ORDER BY m.start_date DESC`,
 		{ userId },
 	);
 
@@ -587,11 +585,11 @@ export async function getJoinableMeetingsForAdmin(
 }
 
 /**
- * Get all active meetings for global admins
- * Returns all meetings that are currently active (now between start_date and end_date)
- * This is used for global admins who can join any meeting
+ * Get all meetings for global admins
+ * Returns all meetings regardless of activity status.
+ * Global admins can join any meeting to focus their UI and edit it.
  */
-export async function getAllActiveMeetings(): Promise<JoinableMeeting[]> {
+export async function getAllMeetingsForAdmin(): Promise<JoinableMeeting[]> {
 	const result = await db.query<{
 		id: number;
 		name: string;
@@ -603,9 +601,7 @@ export async function getAllActiveMeetings(): Promise<JoinableMeeting[]> {
 		`SELECT m.id, m.name, m.description, m.start_date, m.end_date, p.pool_name
 		 FROM meetings m
 		 INNER JOIN pools p ON m.quorum_voting_pool_id = p.id
-		 WHERE NOW() >= m.start_date
-		   AND NOW() <= m.end_date
-		 ORDER BY m.start_date ASC`,
+		 ORDER BY m.start_date DESC`,
 		{},
 	);
 
@@ -624,7 +620,7 @@ export async function getAllActiveMeetings(): Promise<JoinableMeeting[]> {
  * Join a meeting as a meeting admin
  * - Leaves any current meeting first
  * - Creates new participation record (no quorum counting for admins)
- * - Global admins can join any active meeting
+ * - Global admins can join any meeting (no date restrictions)
  * - Meeting admins must be in the meeting's admin pool
  */
 export async function joinMeetingAsAdmin(
@@ -632,8 +628,9 @@ export async function joinMeetingAsAdmin(
 	meetingId: number,
 	isGlobalAdmin = false,
 ): Promise<{ participant: MeetingParticipant; meeting: MeetingWithPool }> {
-	// Verify meeting exists and is active
+	// Verify meeting exists
 	// Global admins can join any meeting; meeting admins need an admin pool
+	// No date filter: admins can join past/future meetings for editing
 	const meetingQuery = isGlobalAdmin
 		? `SELECT m.*,
 		        qp.pool_name as quorum_pool_name,
@@ -643,9 +640,7 @@ export async function joinMeetingAsAdmin(
 		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
 		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
 		 LEFT JOIN pools ap ON m.meeting_admin_pool_id = ap.id
-		 WHERE m.id = :meetingId
-		   AND NOW() >= m.start_date
-		   AND NOW() <= m.end_date`
+		 WHERE m.id = :meetingId`
 		: `SELECT m.*,
 		        qp.pool_name as quorum_pool_name,
 		        wp.pool_name as watcher_pool_name,
@@ -655,8 +650,6 @@ export async function joinMeetingAsAdmin(
 		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
 		 LEFT JOIN pools ap ON m.meeting_admin_pool_id = ap.id
 		 WHERE m.id = :meetingId
-		   AND NOW() >= m.start_date
-		   AND NOW() <= m.end_date
 		   AND m.meeting_admin_pool_id IS NOT NULL`;
 
 	const meetingResult = await db.query<{
@@ -679,8 +672,8 @@ export async function joinMeetingAsAdmin(
 	if (meetingResult.rows.length === EMPTY_ARRAY_LENGTH) {
 		throw new Error(
 			isGlobalAdmin
-				? "Meeting not found or not currently active"
-				: "Meeting not found, not currently active, or does not allow meeting admins",
+				? "Meeting not found"
+				: "Meeting not found or does not have a meeting admin pool",
 		);
 	}
 
