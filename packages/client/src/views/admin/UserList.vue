@@ -11,6 +11,7 @@ import {
 } from "../../services/api";
 import TablePagination from "../../components/TablePagination.vue";
 import { useAuth } from "../../composables/useAuth";
+import { useAdminMeeting } from "../../composables/useAdminMeeting";
 import type {
 	User,
 	Pool,
@@ -19,6 +20,7 @@ import type {
 
 const router = useRouter();
 const { currentUser } = useAuth();
+const { isJoined, joinedMeetingId, currentMeeting } = useAdminMeeting();
 
 // Constants
 const USERS_PER_PAGE = 50;
@@ -54,6 +56,7 @@ const showOnlyQuorumPools = ref(false);
 const suppressDisabledUsers = ref(true); // Checked by default
 type UserRoleFilter = "all" | "admin" | "meeting_admin" | "watcher" | "voter";
 const selectedRoleFilter = ref<UserRoleFilter>("all");
+const showAllUsers = ref(false); // Override for meeting focus filter
 
 const generatedPassword = ref<{
 	username: string;
@@ -93,6 +96,23 @@ const filteredPools = computed((): Pool[] => {
 	return filtered.sort((a, b) =>
 		a.poolName.toLowerCase().localeCompare(b.poolName.toLowerCase()),
 	);
+});
+
+// Computed property for meeting focus filter
+const meetingFilterId = computed(() => {
+	// Apply meeting filter if joined and not overriding with "show all"
+	if (isJoined.value && !showAllUsers.value) {
+		return joinedMeetingId.value ?? undefined;
+	}
+	return undefined;
+});
+
+// Computed property for focused meeting's quorum pool ID
+const focusedQuorumPoolId = computed(() => {
+	if (isJoined.value && currentMeeting.value !== null) {
+		return currentMeeting.value.meeting.quorumVotingPoolId;
+	}
+	return undefined;
 });
 
 async function loadPools(): Promise<void> {
@@ -138,7 +158,12 @@ async function loadUsers(): Promise<void> {
 		let poolId: number | undefined = undefined;
 		let noPool: boolean | undefined = undefined;
 
-		if (selectedPoolFilter.value === POOL_FILTER_ALL) {
+		// When focused on a meeting and "show only quorum pools" is checked,
+		// filter to the focused meeting's quorum pool
+		if (showOnlyQuorumPools.value && focusedQuorumPoolId.value !== undefined) {
+			poolId = focusedQuorumPoolId.value;
+			noPool = undefined;
+		} else if (selectedPoolFilter.value === POOL_FILTER_ALL) {
 			// Show all users - no filters
 			poolId = undefined;
 			noPool = undefined;
@@ -160,6 +185,7 @@ async function loadUsers(): Promise<void> {
 			noPool,
 			includeDisabled: !suppressDisabledUsers.value,
 			role: selectedRoleFilter.value,
+			forMeetingId: meetingFilterId.value,
 		});
 		const { data, pagination } = response;
 		users.value = data;
@@ -351,6 +377,22 @@ watch(users, () => {
 	});
 });
 
+// Reload users when meeting focus changes
+watch(meetingFilterId, () => {
+	if (shouldShowUsers.value) {
+		currentPage.value = INITIAL_PAGE;
+		void loadUsers();
+	}
+});
+
+// Reload users when quorum pool filter changes (when focused on a meeting)
+watch(showOnlyQuorumPools, () => {
+	if (shouldShowUsers.value && isJoined.value) {
+		currentPage.value = INITIAL_PAGE;
+		void loadUsers();
+	}
+});
+
 // Also update on window resize
 onMounted(() => {
 	window.addEventListener("resize", updateScrollShadow);
@@ -375,6 +417,18 @@ onUnmounted(() => {
 			</div>
 		</div>
 
+		<!-- Meeting focus indicator -->
+		<div v-if="isJoined && currentMeeting" class="focus-indicator">
+			<span class="focus-label">
+				Showing users for:
+				<strong>{{ currentMeeting.meeting.name }}</strong>
+			</span>
+			<label class="checkbox-label override-toggle">
+				<input v-model="showAllUsers" type="checkbox" />
+				Show all users
+			</label>
+		</div>
+
 		<div v-if="loading" class="loading">Loading users...</div>
 
 		<div v-if="error" class="error">
@@ -393,11 +447,11 @@ onUnmounted(() => {
 								:disabled="loading || loadingPools"
 								@change="handlePoolChange"
 							>
-								<option :value="POOL_FILTER_ALL">All</option>
-								<option :value="POOL_FILTER_NO_POOL">None (No Pool)</option>
 								<option :value="POOL_FILTER_VIEW_NO_USERS">
 									View No Users
 								</option>
+								<option :value="POOL_FILTER_ALL">All</option>
+								<option :value="POOL_FILTER_NO_POOL">None (No Pool)</option>
 								<option
 									v-for="pool in filteredPools"
 									:key="pool.id"
@@ -415,7 +469,7 @@ onUnmounted(() => {
 									:disabled="loadingMeetings"
 									@change="handleQuorumPoolsChange"
 								/>
-								Show only quorum pools
+								Show only quorum pools in dropdown
 							</label>
 						</div>
 						<div class="disabled-filter">
@@ -558,7 +612,7 @@ onUnmounted(() => {
 										Disable
 									</button>
 									<button
-										v-else
+										v-if="user.isDisabled && user.id !== currentUser?.id"
 										class="btn btn-small btn-success"
 										@click="handleEnable(user.id)"
 									>
@@ -665,6 +719,31 @@ onUnmounted(() => {
 .header-actions {
 	display: flex;
 	gap: 1rem;
+}
+
+.focus-indicator {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 1rem;
+	margin-bottom: 1rem;
+	padding: 0.75rem 1rem;
+	background-color: #e3f2fd;
+	border: 1px solid #90caf9;
+	border-radius: 8px;
+	color: #1565c0;
+}
+
+.focus-label {
+	font-size: 0.9375rem;
+}
+
+.focus-label strong {
+	color: #0d47a1;
+}
+
+.override-toggle {
+	color: #1565c0;
 }
 
 .loading,

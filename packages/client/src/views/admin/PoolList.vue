@@ -2,10 +2,12 @@
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from "vue";
 import { useRouter } from "vue-router";
 import { getPools, disablePool, enablePool } from "../../services/api";
+import { useAdminMeeting } from "../../composables/useAdminMeeting";
 import TablePagination from "../../components/TablePagination.vue";
 import type { Pool } from "@mcdc-convention-voting/shared";
 
 const router = useRouter();
+const { isJoined, joinedMeetingId, currentMeeting } = useAdminMeeting();
 
 const POOLS_PER_PAGE = 50;
 const INITIAL_PAGE = 1;
@@ -20,6 +22,7 @@ const totalPools = ref(INITIAL_TOTAL);
 // Filter state
 const showOnlyQuorumPools = ref(false);
 const showDisabledPools = ref(false);
+const showAllPools = ref(false);
 
 const totalPages = computed(() => Math.ceil(totalPools.value / POOLS_PER_PAGE));
 
@@ -35,6 +38,15 @@ const poolToEnable = ref<number | null>(null);
 const scrollWrapper = ref<HTMLElement | null>(null);
 const canScrollRight = ref(false);
 
+// Computed property for meeting focus filter
+const meetingFilterId = computed(() => {
+	// Apply meeting filter if joined and not overriding with "show all"
+	if (isJoined.value && !showAllPools.value) {
+		return joinedMeetingId.value ?? undefined;
+	}
+	return undefined;
+});
+
 async function loadPools(): Promise<void> {
 	loading.value = true;
 	error.value = null;
@@ -45,6 +57,7 @@ async function loadPools(): Promise<void> {
 			limit: POOLS_PER_PAGE,
 			includeDisabled: showDisabledPools.value,
 			onlyQuorumPools: showOnlyQuorumPools.value,
+			forMeetingId: meetingFilterId.value,
 		});
 		const { data, pagination } = response;
 		pools.value = data;
@@ -168,6 +181,12 @@ watch(pools, () => {
 		updateScrollShadow();
 	});
 });
+
+// Reload pools when meeting focus changes
+watch(meetingFilterId, () => {
+	currentPage.value = INITIAL_PAGE;
+	void loadPools();
+});
 </script>
 
 <template>
@@ -182,6 +201,18 @@ watch(pools, () => {
 					Upload CSV
 				</router-link>
 			</div>
+		</div>
+
+		<!-- Meeting focus indicator -->
+		<div v-if="isJoined && currentMeeting" class="focus-indicator">
+			<span class="focus-label">
+				Showing pools for:
+				<strong>{{ currentMeeting.meeting.name }}</strong>
+			</span>
+			<label class="filter-checkbox override-toggle">
+				<input v-model="showAllPools" type="checkbox" />
+				Show all pools
+			</label>
 		</div>
 
 		<div class="filters">
@@ -230,7 +261,10 @@ watch(pools, () => {
 								<th>Pool Name</th>
 								<th>Description</th>
 								<th>Users</th>
-								<th>Quorum Pool</th>
+								<th class="multi-line-header">
+									<div>Pool Type</div>
+									<div>Quorum</div>
+								</th>
 								<th>Status</th>
 								<th>Actions</th>
 							</tr>
@@ -247,11 +281,34 @@ watch(pools, () => {
 								<td class="user-count">
 									{{ pool.userCount }}
 								</td>
-								<td class="quorum-indicator">
-									<span v-if="pool.isQuorumPool" class="quorum-badge">
-										Yes
-									</span>
-									<span v-else>—</span>
+								<td class="type-quorum-cell">
+									<div class="pool-type">
+										<span
+											v-if="pool.poolType === 'voter'"
+											class="type-badge voter"
+										>
+											Voter
+										</span>
+										<span
+											v-else-if="pool.poolType === 'watcher'"
+											class="type-badge watcher"
+										>
+											Watcher
+										</span>
+										<span
+											v-else-if="pool.poolType === 'meeting_admin'"
+											class="type-badge meeting-admin"
+										>
+											Meeting Admin
+										</span>
+										<span v-else class="type-badge-empty">—</span>
+									</div>
+									<div class="quorum-indicator">
+										<span v-if="pool.isQuorumPool" class="quorum-badge">
+											Yes
+										</span>
+										<span v-else>—</span>
+									</div>
 								</td>
 								<td>
 									<span
@@ -355,6 +412,31 @@ watch(pools, () => {
 .actions {
 	display: flex;
 	gap: 1rem;
+}
+
+.focus-indicator {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 1rem;
+	margin-bottom: 1rem;
+	padding: 0.75rem 1rem;
+	background-color: #e3f2fd;
+	border: 1px solid #90caf9;
+	border-radius: 8px;
+	color: #1565c0;
+}
+
+.focus-label {
+	font-size: 0.9375rem;
+}
+
+.focus-label strong {
+	color: #0d47a1;
+}
+
+.override-toggle {
+	color: #1565c0;
 }
 
 .filters {
@@ -492,6 +574,57 @@ watch(pools, () => {
 .status-badge.disabled {
 	background-color: #f8d7da;
 	color: #721c24;
+}
+
+.multi-line-header {
+	text-align: center;
+}
+
+.multi-line-header div {
+	padding: 0.125rem 0;
+}
+
+.multi-line-header div:first-child {
+	border-bottom: 1px solid #dee2e6;
+	padding-bottom: 0.25rem;
+	margin-bottom: 0.25rem;
+}
+
+.type-quorum-cell {
+	text-align: center;
+}
+
+.pool-type {
+	padding-bottom: 0.25rem;
+	margin-bottom: 0.25rem;
+	border-bottom: 1px solid #e9ecef;
+}
+
+.type-badge {
+	display: inline-block;
+	padding: 0.25rem 0.5rem;
+	border-radius: 12px;
+	font-size: 0.8125rem;
+	font-weight: 500;
+}
+
+.type-badge.voter {
+	background-color: #d4edda;
+	color: #155724;
+}
+
+.type-badge.watcher {
+	background-color: #fff3cd;
+	color: #856404;
+}
+
+.type-badge.meeting-admin {
+	background-color: #cce5ff;
+	color: #004085;
+}
+
+.type-badge-empty {
+	color: #6c757d;
 }
 
 .quorum-indicator {

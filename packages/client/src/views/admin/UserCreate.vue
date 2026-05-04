@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { createUser, getMeetings, addUserToPool } from "../../services/api";
-import type { Meeting } from "@mcdc-convention-voting/shared";
+import {
+	createUser,
+	getMeetings,
+	addUserToPool,
+	getPools,
+} from "../../services/api";
+import { useAdminMeeting } from "../../composables/useAdminMeeting";
+import type { Meeting, Pool } from "@mcdc-convention-voting/shared";
 
 const router = useRouter();
 
@@ -13,6 +19,9 @@ const EMPTY_ARRAY_LENGTH = 0;
 // User role options
 type UserRole = "voter" | "admin" | "watcher" | "meeting_admin";
 
+// Meeting admin composable
+const { currentMeeting, isJoined, joinedMeetingId } = useAdminMeeting();
+
 const formData = ref({
 	voterId: EMPTY_STRING,
 	firstName: EMPTY_STRING,
@@ -21,6 +30,7 @@ const formData = ref({
 	role: "voter" as UserRole,
 	password: EMPTY_STRING,
 	selectedMeetingAdminPoolId: null as number | null,
+	selectedPoolIds: [] as number[],
 });
 
 const showPassword = ref(false);
@@ -32,9 +42,18 @@ const error = ref<string | null>(null);
 const meetings = ref<Meeting[]>([]);
 const loadingMeetings = ref(false);
 
+// Pool selection state
+const pools = ref<Pool[]>([]);
+const loadingPools = ref(false);
+
 // Computed
 const isMeetingAdmin = computed(
 	(): boolean => formData.value.role === "meeting_admin",
+);
+
+// Determine quorum pool ID for the focused meeting
+const focusedMeetingQuorumPoolId = computed(
+	(): number | null => currentMeeting.value?.meeting.quorumVotingPoolId ?? null,
 );
 
 // Load meetings when role changes to meeting_admin
@@ -50,6 +69,18 @@ watch(
 	},
 );
 
+// Load pools when component mounts
+onMounted(async () => {
+	// Explicitly clear form to prevent browser autofill
+	formData.value.username = EMPTY_STRING;
+	formData.value.voterId = EMPTY_STRING;
+	formData.value.firstName = EMPTY_STRING;
+	formData.value.lastName = EMPTY_STRING;
+	formData.value.password = EMPTY_STRING;
+
+	await loadPools();
+});
+
 async function loadMeetings(): Promise<void> {
 	loadingMeetings.value = true;
 	try {
@@ -59,6 +90,35 @@ async function loadMeetings(): Promise<void> {
 		// Ignore error - meetings list is optional
 	} finally {
 		loadingMeetings.value = false;
+	}
+}
+
+async function loadPools(): Promise<void> {
+	loadingPools.value = true;
+	try {
+		// If a meeting is focused, only load pools for that meeting
+		const options =
+			isJoined.value && joinedMeetingId.value !== null
+				? { forMeetingId: joinedMeetingId.value, limit: 1000 }
+				: { limit: 1000 };
+
+		const response = await getPools(options);
+		pools.value = response.data;
+
+		// Auto-select the quorum pool for the focused meeting
+		if (
+			focusedMeetingQuorumPoolId.value !== null &&
+			!formData.value.selectedPoolIds.includes(focusedMeetingQuorumPoolId.value)
+		) {
+			formData.value.selectedPoolIds = [
+				...formData.value.selectedPoolIds,
+				focusedMeetingQuorumPoolId.value,
+			];
+		}
+	} catch {
+		// Ignore error - pools list is optional
+	} finally {
+		loadingPools.value = false;
 	}
 }
 
@@ -123,6 +183,16 @@ async function handleSubmit(): Promise<void> {
 			await addUserToPool(poolId, response.data.id);
 		}
 
+		// Add user to all selected pools
+		for (const selectedPoolId of formData.value.selectedPoolIds) {
+			// Skip if already added as meeting admin pool
+			if (selectedPoolId === poolId) {
+				continue;
+			}
+			// eslint-disable-next-line no-await-in-loop -- Sequential pool assignment required to ensure proper error handling per pool
+			await addUserToPool(selectedPoolId, response.data.id);
+		}
+
 		void router.push("/admin/users");
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to create user";
@@ -176,7 +246,15 @@ function cancel(): void {
 						>(optional - will be auto-generated if not provided)</span
 					>
 				</label>
-				<input id="username" v-model="formData.username" type="text" />
+				<input
+					id="username"
+					v-model="formData.username"
+					type="text"
+					name="new-user-username"
+					autocomplete="nope"
+					readonly
+					@focus="$event.target.removeAttribute('readonly')"
+				/>
 			</div>
 
 			<div class="form-group">
@@ -224,6 +302,57 @@ function cancel(): void {
 						Global Admins can manage all users, meetings, motions, and system
 						settings. They have access to all meetings. They cannot vote.
 					</template>
+				</p>
+			</div>
+
+			<!-- Pool selection (all user types) -->
+			<div class="form-group">
+				<label>
+					Assign to Pools
+					<span class="optional">(optional - can be assigned later)</span>
+				</label>
+				<div v-if="loadingPools" class="loading-state">Loading pools...</div>
+				<div v-else-if="pools.length === 0" class="info-message">
+					No pools available.
+					<template v-if="isJoined">
+						Create pools for this meeting first.
+					</template>
+				</div>
+				<div v-else class="checkbox-group">
+					<div
+						v-for="pool in pools"
+						:key="pool.id"
+						class="checkbox-item"
+						:class="{
+							'is-quorum-pool': pool.id === focusedMeetingQuorumPoolId,
+						}"
+					>
+						<input
+							:id="`pool-${pool.id}`"
+							v-model="formData.selectedPoolIds"
+							type="checkbox"
+							:value="pool.id"
+							:disabled="pool.id === focusedMeetingQuorumPoolId"
+						/>
+						<label :for="`pool-${pool.id}`">
+							{{ pool.name }}
+							<span
+								v-if="pool.id === focusedMeetingQuorumPoolId"
+								class="auto-selected"
+							>
+								(auto-selected for focused meeting)
+							</span>
+							<span v-if="pool.description" class="pool-description">
+								- {{ pool.description }}
+							</span>
+						</label>
+					</div>
+				</div>
+				<p
+					v-if="isJoined && focusedMeetingQuorumPoolId !== null"
+					class="field-help"
+				>
+					The quorum pool for the focused meeting is automatically selected.
 				</p>
 			</div>
 
@@ -399,5 +528,71 @@ h2 {
 
 .btn-secondary:hover:not(:disabled) {
 	background-color: #616161;
+}
+
+.loading-state {
+	padding: 0.75rem;
+	color: #757575;
+	font-style: italic;
+}
+
+.info-message {
+	padding: 0.75rem;
+	background-color: #e3f2fd;
+	color: #1565c0;
+	border-radius: 4px;
+	font-size: 0.875rem;
+}
+
+.checkbox-group {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
+.checkbox-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.5rem;
+}
+
+.checkbox-item.is-quorum-pool {
+	background-color: #e8f5e9;
+	padding: 0.5rem;
+	border-radius: 4px;
+	border: 1px solid #4caf50;
+}
+
+.checkbox-item input[type="checkbox"] {
+	margin-top: 0.25rem;
+	width: auto;
+	cursor: pointer;
+}
+
+.checkbox-item input[type="checkbox"]:disabled {
+	cursor: not-allowed;
+}
+
+.checkbox-item label {
+	margin-bottom: 0;
+	font-weight: 400;
+	cursor: pointer;
+	flex: 1;
+}
+
+.checkbox-item input[type="checkbox"]:disabled + label {
+	cursor: not-allowed;
+}
+
+.auto-selected {
+	font-size: 0.875rem;
+	color: #2e7d32;
+	font-weight: 500;
+}
+
+.pool-description {
+	font-size: 0.875rem;
+	color: #757575;
+	font-style: italic;
 }
 </style>

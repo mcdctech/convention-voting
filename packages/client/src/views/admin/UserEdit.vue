@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
+import { PoolType, type User, type Pool } from "@mcdc-convention-voting/shared";
 import {
 	getUser,
 	updateUser,
 	getUserPools,
 	getPools,
 } from "../../services/api";
-import type { User, Pool } from "@mcdc-convention-voting/shared";
+import { useAdminMeeting } from "../../composables/useAdminMeeting";
 
 const props = defineProps<{
 	id: string;
 }>();
 
 const router = useRouter();
+
+// Meeting context
+const { isJoined, joinedMeetingId } = useAdminMeeting();
 
 // Constants
 const EMPTY_STRING = "";
@@ -39,6 +43,41 @@ const showPassword = ref(false);
 const userPools = ref<Pool[]>([]);
 const allPools = ref<Pool[]>([]);
 const selectedPoolIds = ref<Set<number>>(new Set());
+
+/**
+ * Filter pools to show only pools appropriate for the user's role:
+ * - Voters: Only voter pools (pool_type = 'voter' or NULL)
+ * - Meeting Admins: Only meeting admin pools (pool_type = 'meeting_admin')
+ * - Watchers: Only watcher pools (pool_type = 'watcher')
+ * - Global Admins: All pools (but meeting admins can't edit global admins)
+ */
+const filteredPools = computed((): Pool[] => {
+	if (user.value === null) {
+		return [];
+	}
+
+	// Global admins can be in any pool type
+	if (user.value.isAdmin) {
+		return allPools.value;
+	}
+
+	// Meeting admins can only be in meeting admin pools
+	if (user.value.isMeetingAdmin) {
+		return allPools.value.filter(
+			(pool) => pool.poolType === PoolType.MeetingAdmin,
+		);
+	}
+
+	// Watchers can only be in watcher pools
+	if (user.value.isWatcher) {
+		return allPools.value.filter((pool) => pool.poolType === PoolType.Watcher);
+	}
+
+	// Voters can be in voter pools or legacy/general-purpose pools (NULL type)
+	return allPools.value.filter(
+		(pool) => pool.poolType === PoolType.Voter || pool.poolType === null,
+	);
+});
 
 async function loadUser(): Promise<void> {
 	loading.value = true;
@@ -81,11 +120,23 @@ async function loadUserPools(): Promise<void> {
 
 async function loadAllPools(): Promise<void> {
 	try {
-		// includeDisabled defaults to false, so disabled pools are filtered out
-		const response = await getPools({
+		// When a meeting is focused, only load pools for that meeting
+		// This applies to both global admins and meeting admins to prevent
+		// accidentally assigning users to wrong meeting's pools
+		const options: {
+			page: number;
+			limit: number;
+			forMeetingId?: number;
+		} = {
 			page: FIRST_PAGE,
 			limit: MAX_POOLS_TO_LOAD,
-		});
+		};
+
+		if (isJoined.value && joinedMeetingId.value !== null) {
+			options.forMeetingId = joinedMeetingId.value;
+		}
+
+		const response = await getPools(options);
 		const { data } = response;
 		allPools.value = data;
 	} catch (err) {
@@ -244,14 +295,20 @@ onMounted(() => {
 			<div class="form-section">
 				<h3>Pool Assignments</h3>
 				<p class="section-description">
-					Select which pools this user belongs to:
+					Select which pools this user belongs to
+					<template v-if="isJoined">
+						(filtered by user role and focused meeting)
+					</template>
+					<template v-else> (filtered by user role) </template>:
 				</p>
-				<div v-if="allPools.length === 0" class="no-pools">
-					No pools available. Create pools first.
+				<div v-if="filteredPools.length === 0" class="no-pools">
+					No pools available for this user role<template v-if="isJoined">
+						in the focused meeting</template
+					>. Create appropriate pools first.
 				</div>
 				<div v-else class="pool-checkboxes">
 					<label
-						v-for="pool in allPools"
+						v-for="pool in filteredPools"
 						:key="pool.id"
 						class="pool-checkbox-label"
 					>
