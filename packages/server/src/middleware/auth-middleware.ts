@@ -9,6 +9,7 @@ import type { Request, Response, NextFunction } from "express";
 const AUTH_HEADER = "authorization";
 const BEARER_PREFIX = "Bearer ";
 const BEARER_PREFIX_LENGTH = 7;
+const TOKEN_QUERY_PARAM = "token";
 
 /**
  * Extract Bearer token from Authorization header
@@ -24,8 +25,19 @@ function extractBearerToken(authHeader: string | undefined): string | null {
 }
 
 /**
+ * Extract token from query string (for SSE connections that can't use headers)
+ */
+function extractQueryToken(queryToken: unknown): string | null {
+	if (typeof queryToken === "string" && queryToken !== "") {
+		return queryToken;
+	}
+	return null;
+}
+
+/**
  * Middleware to require authentication
- * Extracts Bearer token, verifies JWT, and attaches user to request
+ * Extracts Bearer token from header, or falls back to query string token (for SSE)
+ * Verifies JWT and attaches user to request
  */
 export async function requireAuth(
 	req: Request,
@@ -33,7 +45,10 @@ export async function requireAuth(
 	next: NextFunction,
 ): Promise<void> {
 	const authHeader = req.header(AUTH_HEADER);
-	const token = extractBearerToken(authHeader);
+	// Try Authorization header first, fall back to query string token (for SSE connections)
+	const token =
+		extractBearerToken(authHeader) ??
+		extractQueryToken(req.query[TOKEN_QUERY_PARAM]);
 
 	if (token === null) {
 		res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({

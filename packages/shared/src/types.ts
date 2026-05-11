@@ -172,6 +172,7 @@ export interface BulkPasswordResponse {
  */
 export interface GeneratePasswordsRequest {
 	poolId?: number; // Only generate for users in this pool
+	noPool?: boolean; // Only generate for users not assigned to any pool
 	onlyNullPasswords?: boolean; // Only generate for users without existing passwords
 }
 
