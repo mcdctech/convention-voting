@@ -2,46 +2,92 @@
  * API service for communicating with the backend
  */
 import type {
-	PoolType,
-	User,
-	CreateUserRequest,
-	BulkPasswordResponse,
-	PasswordGenerationResult,
-	PasswordGenerationProgress,
-	GeneratePasswordsRequest,
-	CSVValidationResult,
-	Pool,
-	CreatePoolRequest,
-	UpdatePoolRequest,
-	MeetingWithPool,
-	CreateMeetingRequest,
-	UpdateMeetingRequest,
-	MotionDetailedResults,
-	MotionVoteStats,
-	MotionWithPool,
-	CreateMotionRequest,
-	UpdateMotionRequest,
-	UpdateMotionStatusRequest,
-	Choice,
-	CreateChoiceRequest,
-	UpdateChoiceRequest,
-	LoginRequest,
-	LoginResponse,
 	AuthUser,
-	OpenMotionsResponse,
-	MotionForVoting,
+	BulkPasswordResponse,
 	CastVoteRequest,
 	CastVoteResponse,
-	QuorumReport,
-	QuorumActiveVoter,
-	WatcherMeetingReport,
-	WatcherMotionDetail,
-	WatcherMotionVoter,
-	WatcherMotionResult,
-	JoinableMeeting,
+	Choice,
+	CreateChoiceRequest,
+	CreateMeetingRequest,
+	CreateMotionRequest,
+	CreatePoolRequest,
+	CreateUserRequest,
+	CSVImportResult,
+	CSVValidationResult,
 	CurrentMeetingInfo,
+	GeneratePasswordsRequest,
+	JoinableMeeting,
+	LoginRequest,
+	LoginResponse,
 	MeetingParticipant,
+	MeetingWithPool,
+	MotionDetailedResults,
+	MotionForVoting,
+	MotionVoteStats,
+	MotionWithPool,
+	OpenMotionsResponse,
+	PasswordGenerationProgress,
+	PasswordGenerationResult,
+	PendingPoolKeyListResponse,
+	Pool,
+	PoolType,
+	QuorumActiveVoter,
+	QuorumReport,
+	SystemSettings,
+	UpdateChoiceRequest,
+	UpdateMeetingRequest,
+	UpdateMotionRequest,
+	UpdateMotionStatusRequest,
+	UpdatePoolRequest,
+	User,
+	WatcherMeetingReport,
+	WatcherMeetingsResponse,
+	WatcherMotionDetail,
+	WatcherMotionResult,
+	WatcherMotionVoter,
 } from "@mcdc-convention-voting/shared";
+
+/**
+ * Pagination metadata returned by paginated API endpoints
+ */
+export interface PaginationInfo {
+	page: number;
+	limit: number;
+	total: number;
+	totalPages: number;
+}
+
+/**
+ * Standard API response type for client-side handling.
+ *
+ * Note: API functions throw on errors (via apiRequest), so they only return success responses.
+ * The error case is handled by try/catch in calling code.
+ *
+ * This type uses `boolean` for `success` (not literal `true`) to maintain backward
+ * compatibility with existing Vue components that check `if (response.success)`.
+ * The optional `data` and `error` properties allow Vue code to safely check both cases,
+ * even though at runtime only the success case is returned (errors are thrown).
+ */
+export interface ApiResult<T> {
+	success: boolean;
+	data?: T;
+	error?: string;
+	message?: string;
+}
+
+/**
+ * Standard paginated API response type for client-side handling.
+ *
+ * Similar to ApiResult, this uses `boolean` for `success` to maintain backward
+ * compatibility with existing Vue components that check `if (response.success)`.
+ * The optional properties allow Vue code to safely check both success and error cases.
+ */
+export interface PaginatedResult<T> {
+	success: boolean;
+	data?: T[];
+	pagination?: PaginationInfo;
+	error?: string;
+}
 
 // Constants
 const DEFAULT_PAGE = 1;
@@ -95,39 +141,6 @@ export function setAuthToken(token: string): void {
  */
 export function clearAuthToken(): void {
 	localStorage.removeItem(AUTH_TOKEN_KEY);
-}
-
-interface Pagination {
-	page: number;
-	limit: number;
-	total: number;
-	totalPages: number;
-}
-
-interface PaginatedResponse<T> {
-	data: T[];
-	pagination: Pagination;
-}
-
-export interface ApiResponse<T> {
-	success: boolean;
-	message?: string;
-	error?: string;
-	data?: T;
-}
-
-interface CSVImportResult {
-	success: number;
-	failed: number;
-	errors: Array<{
-		row: number;
-		voterId: string;
-		error: string;
-	}>;
-}
-
-export interface SystemSettings {
-	nonAdminLoginEnabled: boolean;
 }
 
 interface ErrorResponse {
@@ -202,7 +215,7 @@ async function apiRequest<T>(
  */
 export async function validateUsersCSV(
 	file: File,
-): Promise<ApiResponse<CSVValidationResult>> {
+): Promise<ApiResult<CSVValidationResult>> {
 	const formData = new FormData();
 	formData.append("file", file);
 
@@ -235,7 +248,7 @@ export async function validateUsersCSV(
 		throw new Error(errorMessage);
 	}
 
-	return await parseJsonResponse<ApiResponse<CSVValidationResult>>(response);
+	return await parseJsonResponse<ApiResult<CSVValidationResult>>(response);
 }
 
 /**
@@ -243,7 +256,7 @@ export async function validateUsersCSV(
  */
 export async function uploadUsersCSV(
 	file: File,
-): Promise<ApiResponse<CSVImportResult>> {
+): Promise<ApiResult<CSVImportResult>> {
 	const formData = new FormData();
 	formData.append("file", file);
 
@@ -274,7 +287,7 @@ export async function uploadUsersCSV(
 		throw new Error(errorMessage);
 	}
 
-	return await parseJsonResponse<ApiResponse<CSVImportResult>>(response);
+	return await parseJsonResponse<ApiResult<CSVImportResult>>(response);
 }
 
 /**
@@ -303,7 +316,7 @@ interface GetUsersOptions {
 // eslint-disable-next-line complexity -- Multiple filter parameter checks
 export async function getUsers(
 	options: GetUsersOptions = {},
-): Promise<PaginatedResponse<User>> {
+): Promise<PaginatedResult<User>> {
 	const {
 		page = DEFAULT_PAGE,
 		limit = DEFAULT_PAGE_LIMIT,
@@ -336,7 +349,7 @@ export async function getUsers(
 	if (forMeetingId !== undefined) {
 		params.set("forMeetingId", String(forMeetingId));
 	}
-	return await apiRequest<PaginatedResponse<User>>(
+	return await apiRequest<PaginatedResult<User>>(
 		`${API_PREFIX}/admin/users?${params.toString()}`,
 	);
 }
@@ -344,8 +357,8 @@ export async function getUsers(
 /**
  * Get a single user by ID
  */
-export async function getUser(id: string): Promise<ApiResponse<User>> {
-	return await apiRequest<ApiResponse<User>>(`${API_PREFIX}/admin/users/${id}`);
+export async function getUser(id: string): Promise<ApiResult<User>> {
+	return await apiRequest<ApiResult<User>>(`${API_PREFIX}/admin/users/${id}`);
 }
 
 /**
@@ -353,8 +366,8 @@ export async function getUser(id: string): Promise<ApiResponse<User>> {
  */
 export async function createUser(
 	userData: CreateUserRequest,
-): Promise<ApiResponse<User>> {
-	return await apiRequest<ApiResponse<User>>(`${API_PREFIX}/admin/users`, {
+): Promise<ApiResult<User>> {
+	return await apiRequest<ApiResult<User>>(`${API_PREFIX}/admin/users`, {
 		method: "POST",
 		body: JSON.stringify(userData),
 	});
@@ -366,21 +379,18 @@ export async function createUser(
 export async function updateUser(
 	id: string,
 	userData: Partial<CreateUserRequest>,
-): Promise<ApiResponse<User>> {
-	return await apiRequest<ApiResponse<User>>(
-		`${API_PREFIX}/admin/users/${id}`,
-		{
-			method: "PUT",
-			body: JSON.stringify(userData),
-		},
-	);
+): Promise<ApiResult<User>> {
+	return await apiRequest<ApiResult<User>>(`${API_PREFIX}/admin/users/${id}`, {
+		method: "PUT",
+		body: JSON.stringify(userData),
+	});
 }
 
 /**
  * Disable a user
  */
-export async function disableUser(id: string): Promise<ApiResponse<User>> {
-	return await apiRequest<ApiResponse<User>>(
+export async function disableUser(id: string): Promise<ApiResult<User>> {
+	return await apiRequest<ApiResult<User>>(
 		`${API_PREFIX}/admin/users/${id}/disable`,
 		{
 			method: "POST",
@@ -391,8 +401,8 @@ export async function disableUser(id: string): Promise<ApiResponse<User>> {
 /**
  * Enable a user
  */
-export async function enableUser(id: string): Promise<ApiResponse<User>> {
-	return await apiRequest<ApiResponse<User>>(
+export async function enableUser(id: string): Promise<ApiResult<User>> {
+	return await apiRequest<ApiResult<User>>(
 		`${API_PREFIX}/admin/users/${id}/enable`,
 		{
 			method: "POST",
@@ -406,8 +416,8 @@ export async function enableUser(id: string): Promise<ApiResponse<User>> {
  */
 export async function generatePasswords(
 	options?: GeneratePasswordsRequest,
-): Promise<ApiResponse<BulkPasswordResponse>> {
-	return await apiRequest<ApiResponse<BulkPasswordResponse>>(
+): Promise<ApiResult<BulkPasswordResponse>> {
+	return await apiRequest<ApiResult<BulkPasswordResponse>>(
 		`${API_PREFIX}/admin/users/generate-passwords`,
 		{
 			method: "POST",
@@ -512,8 +522,8 @@ export async function generatePasswordsWithProgress(
  */
 export async function resetUserPassword(
 	id: string,
-): Promise<ApiResponse<PasswordGenerationResult>> {
-	return await apiRequest<ApiResponse<PasswordGenerationResult>>(
+): Promise<ApiResult<PasswordGenerationResult>> {
+	return await apiRequest<ApiResult<PasswordGenerationResult>>(
 		`${API_PREFIX}/admin/users/${id}/reset-password`,
 		{
 			method: "POST",
@@ -524,10 +534,8 @@ export async function resetUserPassword(
 /**
  * Get system settings
  */
-export async function getSystemSettings(): Promise<
-	ApiResponse<SystemSettings>
-> {
-	return await apiRequest<ApiResponse<SystemSettings>>(
+export async function getSystemSettings(): Promise<ApiResult<SystemSettings>> {
+	return await apiRequest<ApiResult<SystemSettings>>(
 		`${API_PREFIX}/admin/settings`,
 	);
 }
@@ -537,8 +545,8 @@ export async function getSystemSettings(): Promise<
  */
 export async function updateLoginEnabled(
 	enabled: boolean,
-): Promise<ApiResponse<SystemSettings>> {
-	return await apiRequest<ApiResponse<SystemSettings>>(
+): Promise<ApiResult<SystemSettings>> {
+	return await apiRequest<ApiResult<SystemSettings>>(
 		`${API_PREFIX}/admin/settings/login-enabled`,
 		{
 			method: "PUT",
@@ -556,7 +564,7 @@ export async function updateLoginEnabled(
  */
 export async function uploadPoolsCSV(
 	file: File,
-): Promise<ApiResponse<CSVImportResult>> {
+): Promise<ApiResult<CSVImportResult>> {
 	const formData = new FormData();
 	formData.append("file", file);
 
@@ -588,7 +596,7 @@ export async function uploadPoolsCSV(
 		throw new Error(errorMessage);
 	}
 
-	return await parseJsonResponse<ApiResponse<CSVImportResult>>(response);
+	return await parseJsonResponse<ApiResult<CSVImportResult>>(response);
 }
 
 /**
@@ -608,7 +616,7 @@ export interface GetPoolsOptions {
  */
 export async function getPools(
 	options: GetPoolsOptions = {},
-): Promise<PaginatedResponse<Pool>> {
+): Promise<PaginatedResult<Pool>> {
 	const {
 		page = DEFAULT_PAGE,
 		limit = DEFAULT_PAGE_LIMIT,
@@ -634,7 +642,7 @@ export async function getPools(
 		params.set("forMeetingId", String(forMeetingId));
 	}
 
-	return await apiRequest<PaginatedResponse<Pool>>(
+	return await apiRequest<PaginatedResult<Pool>>(
 		`${API_PREFIX}/admin/pools?${params.toString()}`,
 	);
 }
@@ -642,8 +650,8 @@ export async function getPools(
 /**
  * Get a single pool by ID
  */
-export async function getPool(id: number): Promise<ApiResponse<Pool>> {
-	return await apiRequest<ApiResponse<Pool>>(`${API_PREFIX}/admin/pools/${id}`);
+export async function getPool(id: number): Promise<ApiResult<Pool>> {
+	return await apiRequest<ApiResult<Pool>>(`${API_PREFIX}/admin/pools/${id}`);
 }
 
 /**
@@ -651,8 +659,8 @@ export async function getPool(id: number): Promise<ApiResponse<Pool>> {
  */
 export async function createPool(
 	pool: CreatePoolRequest,
-): Promise<ApiResponse<Pool>> {
-	return await apiRequest<ApiResponse<Pool>>(`${API_PREFIX}/admin/pools`, {
+): Promise<ApiResult<Pool>> {
+	return await apiRequest<ApiResult<Pool>>(`${API_PREFIX}/admin/pools`, {
 		method: "POST",
 		body: JSON.stringify(pool),
 	});
@@ -664,21 +672,18 @@ export async function createPool(
 export async function updatePool(
 	id: number,
 	updates: UpdatePoolRequest,
-): Promise<ApiResponse<Pool>> {
-	return await apiRequest<ApiResponse<Pool>>(
-		`${API_PREFIX}/admin/pools/${id}`,
-		{
-			method: "PUT",
-			body: JSON.stringify(updates),
-		},
-	);
+): Promise<ApiResult<Pool>> {
+	return await apiRequest<ApiResult<Pool>>(`${API_PREFIX}/admin/pools/${id}`, {
+		method: "PUT",
+		body: JSON.stringify(updates),
+	});
 }
 
 /**
  * Disable a pool
  */
-export async function disablePool(id: number): Promise<ApiResponse<Pool>> {
-	return await apiRequest<ApiResponse<Pool>>(
+export async function disablePool(id: number): Promise<ApiResult<Pool>> {
+	return await apiRequest<ApiResult<Pool>>(
 		`${API_PREFIX}/admin/pools/${id}/disable`,
 		{
 			method: "POST",
@@ -689,8 +694,8 @@ export async function disablePool(id: number): Promise<ApiResponse<Pool>> {
 /**
  * Enable a pool
  */
-export async function enablePool(id: number): Promise<ApiResponse<Pool>> {
-	return await apiRequest<ApiResponse<Pool>>(
+export async function enablePool(id: number): Promise<ApiResult<Pool>> {
+	return await apiRequest<ApiResult<Pool>>(
 		`${API_PREFIX}/admin/pools/${id}/enable`,
 		{
 			method: "POST",
@@ -705,8 +710,8 @@ export async function getPoolUsers(
 	id: number,
 	page = DEFAULT_PAGE,
 	limit = DEFAULT_PAGE_LIMIT,
-): Promise<PaginatedResponse<User>> {
-	return await apiRequest<PaginatedResponse<User>>(
+): Promise<PaginatedResult<User>> {
+	return await apiRequest<PaginatedResult<User>>(
 		`${API_PREFIX}/admin/pools/${id}/users?page=${page}&limit=${limit}`,
 	);
 }
@@ -717,8 +722,8 @@ export async function getPoolUsers(
 export async function addUserToPool(
 	poolId: number,
 	userId: string,
-): Promise<ApiResponse<void>> {
-	return await apiRequest<ApiResponse<void>>(
+): Promise<ApiResult<void>> {
+	return await apiRequest<ApiResult<void>>(
 		`${API_PREFIX}/admin/pools/${poolId}/users/${userId}`,
 		{
 			method: "POST",
@@ -732,8 +737,8 @@ export async function addUserToPool(
 export async function removeUserFromPool(
 	poolId: number,
 	userId: string,
-): Promise<ApiResponse<void>> {
-	return await apiRequest<ApiResponse<void>>(
+): Promise<ApiResult<void>> {
+	return await apiRequest<ApiResult<void>>(
 		`${API_PREFIX}/admin/pools/${poolId}/users/${userId}`,
 		{
 			method: "DELETE",
@@ -744,10 +749,8 @@ export async function removeUserFromPool(
 /**
  * Get pools for a user
  */
-export async function getUserPools(
-	userId: string,
-): Promise<ApiResponse<Pool[]>> {
-	return await apiRequest<ApiResponse<Pool[]>>(
+export async function getUserPools(userId: string): Promise<ApiResult<Pool[]>> {
+	return await apiRequest<ApiResult<Pool[]>>(
 		`${API_PREFIX}/admin/users/${userId}/pools`,
 	);
 }
@@ -762,8 +765,8 @@ export async function getUserPools(
 export async function getMeetings(
 	page = DEFAULT_PAGE,
 	limit = DEFAULT_PAGE_LIMIT,
-): Promise<PaginatedResponse<MeetingWithPool>> {
-	return await apiRequest<PaginatedResponse<MeetingWithPool>>(
+): Promise<PaginatedResult<MeetingWithPool>> {
+	return await apiRequest<PaginatedResult<MeetingWithPool>>(
 		`${API_PREFIX}/admin/meetings?page=${page}&limit=${limit}`,
 	);
 }
@@ -773,8 +776,8 @@ export async function getMeetings(
  */
 export async function getMeeting(
 	id: number,
-): Promise<ApiResponse<MeetingWithPool>> {
-	return await apiRequest<ApiResponse<MeetingWithPool>>(
+): Promise<ApiResult<MeetingWithPool>> {
+	return await apiRequest<ApiResult<MeetingWithPool>>(
 		`${API_PREFIX}/admin/meetings/${id}`,
 	);
 }
@@ -784,8 +787,8 @@ export async function getMeeting(
  */
 export async function createMeeting(
 	meeting: CreateMeetingRequest,
-): Promise<ApiResponse<MeetingWithPool>> {
-	return await apiRequest<ApiResponse<MeetingWithPool>>(
+): Promise<ApiResult<MeetingWithPool>> {
+	return await apiRequest<ApiResult<MeetingWithPool>>(
 		`${API_PREFIX}/admin/meetings`,
 		{
 			method: "POST",
@@ -800,8 +803,8 @@ export async function createMeeting(
 export async function updateMeeting(
 	id: number,
 	updates: UpdateMeetingRequest,
-): Promise<ApiResponse<MeetingWithPool>> {
-	return await apiRequest<ApiResponse<MeetingWithPool>>(
+): Promise<ApiResult<MeetingWithPool>> {
+	return await apiRequest<ApiResult<MeetingWithPool>>(
 		`${API_PREFIX}/admin/meetings/${id}`,
 		{
 			method: "PUT",
@@ -813,8 +816,8 @@ export async function updateMeeting(
 /**
  * Delete a meeting
  */
-export async function deleteMeeting(id: number): Promise<ApiResponse<void>> {
-	return await apiRequest<ApiResponse<void>>(
+export async function deleteMeeting(id: number): Promise<ApiResult<void>> {
+	return await apiRequest<ApiResult<void>>(
 		`${API_PREFIX}/admin/meetings/${id}`,
 		{
 			method: "DELETE",
@@ -827,8 +830,8 @@ export async function deleteMeeting(id: number): Promise<ApiResponse<void>> {
  */
 export async function getMeetingVoterPools(
 	meetingId: number,
-): Promise<ApiResponse<number[]>> {
-	return await apiRequest<ApiResponse<number[]>>(
+): Promise<ApiResult<number[]>> {
+	return await apiRequest<ApiResult<number[]>>(
 		`${API_PREFIX}/admin/meetings/${meetingId}/voter-pools`,
 	);
 }
@@ -840,8 +843,8 @@ export async function getMeetingVoterPools(
 export async function updateMeetingVoterPools(
 	meetingId: number,
 	poolIds: number[],
-): Promise<ApiResponse<number[]>> {
-	return await apiRequest<ApiResponse<number[]>>(
+): Promise<ApiResult<number[]>> {
+	return await apiRequest<ApiResult<number[]>>(
 		`${API_PREFIX}/admin/meetings/${meetingId}/voter-pools`,
 		{
 			method: "PUT",
@@ -861,8 +864,8 @@ export async function getMotions(
 	meetingId: number,
 	page = DEFAULT_PAGE,
 	limit = DEFAULT_PAGE_LIMIT,
-): Promise<PaginatedResponse<MotionWithPool>> {
-	return await apiRequest<PaginatedResponse<MotionWithPool>>(
+): Promise<PaginatedResult<MotionWithPool>> {
+	return await apiRequest<PaginatedResult<MotionWithPool>>(
 		`${API_PREFIX}/admin/meetings/${meetingId}/motions?page=${page}&limit=${limit}`,
 	);
 }
@@ -872,8 +875,8 @@ export async function getMotions(
  */
 export async function getMotion(
 	id: number,
-): Promise<ApiResponse<MotionWithPool>> {
-	return await apiRequest<ApiResponse<MotionWithPool>>(
+): Promise<ApiResult<MotionWithPool>> {
+	return await apiRequest<ApiResult<MotionWithPool>>(
 		`${API_PREFIX}/admin/motions/${id}`,
 	);
 }
@@ -883,8 +886,8 @@ export async function getMotion(
  */
 export async function createMotion(
 	motion: CreateMotionRequest,
-): Promise<ApiResponse<MotionWithPool>> {
-	return await apiRequest<ApiResponse<MotionWithPool>>(
+): Promise<ApiResult<MotionWithPool>> {
+	return await apiRequest<ApiResult<MotionWithPool>>(
 		`${API_PREFIX}/admin/meetings/${motion.meetingId}/motions`,
 		{
 			method: "POST",
@@ -899,8 +902,8 @@ export async function createMotion(
 export async function updateMotion(
 	id: number,
 	updates: UpdateMotionRequest,
-): Promise<ApiResponse<MotionWithPool>> {
-	return await apiRequest<ApiResponse<MotionWithPool>>(
+): Promise<ApiResult<MotionWithPool>> {
+	return await apiRequest<ApiResult<MotionWithPool>>(
 		`${API_PREFIX}/admin/motions/${id}`,
 		{
 			method: "PUT",
@@ -915,8 +918,8 @@ export async function updateMotion(
 export async function updateMotionStatus(
 	id: number,
 	statusUpdate: UpdateMotionStatusRequest,
-): Promise<ApiResponse<MotionWithPool>> {
-	return await apiRequest<ApiResponse<MotionWithPool>>(
+): Promise<ApiResult<MotionWithPool>> {
+	return await apiRequest<ApiResult<MotionWithPool>>(
 		`${API_PREFIX}/admin/motions/${id}/status`,
 		{
 			method: "PUT",
@@ -928,8 +931,8 @@ export async function updateMotionStatus(
 /**
  * Delete a motion
  */
-export async function deleteMotion(id: number): Promise<ApiResponse<void>> {
-	return await apiRequest<ApiResponse<void>>(
+export async function deleteMotion(id: number): Promise<ApiResult<void>> {
+	return await apiRequest<ApiResult<void>>(
 		`${API_PREFIX}/admin/motions/${id}`,
 		{
 			method: "DELETE",
@@ -942,8 +945,8 @@ export async function deleteMotion(id: number): Promise<ApiResponse<void>> {
  */
 export async function getMotionVoteStats(
 	motionId: number,
-): Promise<ApiResponse<MotionVoteStats>> {
-	return await apiRequest<ApiResponse<MotionVoteStats>>(
+): Promise<ApiResult<MotionVoteStats>> {
+	return await apiRequest<ApiResult<MotionVoteStats>>(
 		`${API_PREFIX}/admin/motions/${motionId}/vote-stats`,
 	);
 }
@@ -953,8 +956,8 @@ export async function getMotionVoteStats(
  */
 export async function getMotionDetailedResults(
 	motionId: number,
-): Promise<ApiResponse<MotionDetailedResults>> {
-	return await apiRequest<ApiResponse<MotionDetailedResults>>(
+): Promise<ApiResult<MotionDetailedResults>> {
+	return await apiRequest<ApiResult<MotionDetailedResults>>(
 		`${API_PREFIX}/admin/motions/${motionId}/results`,
 	);
 }
@@ -968,8 +971,8 @@ export async function getMotionDetailedResults(
  */
 export async function getChoices(
 	motionId: number,
-): Promise<ApiResponse<Choice[]>> {
-	return await apiRequest<ApiResponse<Choice[]>>(
+): Promise<ApiResult<Choice[]>> {
+	return await apiRequest<ApiResult<Choice[]>>(
 		`${API_PREFIX}/admin/motions/${motionId}/choices`,
 	);
 }
@@ -979,8 +982,8 @@ export async function getChoices(
  */
 export async function createChoice(
 	choice: CreateChoiceRequest,
-): Promise<ApiResponse<Choice>> {
-	return await apiRequest<ApiResponse<Choice>>(
+): Promise<ApiResult<Choice>> {
+	return await apiRequest<ApiResult<Choice>>(
 		`${API_PREFIX}/admin/motions/${choice.motionId}/choices`,
 		{
 			method: "POST",
@@ -995,8 +998,8 @@ export async function createChoice(
 export async function updateChoice(
 	id: number,
 	updates: UpdateChoiceRequest,
-): Promise<ApiResponse<Choice>> {
-	return await apiRequest<ApiResponse<Choice>>(
+): Promise<ApiResult<Choice>> {
+	return await apiRequest<ApiResult<Choice>>(
 		`${API_PREFIX}/admin/choices/${id}`,
 		{
 			method: "PUT",
@@ -1011,8 +1014,8 @@ export async function updateChoice(
 export async function reorderChoices(
 	motionId: number,
 	choiceIds: number[],
-): Promise<ApiResponse<Choice[]>> {
-	return await apiRequest<ApiResponse<Choice[]>>(
+): Promise<ApiResult<Choice[]>> {
+	return await apiRequest<ApiResult<Choice[]>>(
 		`${API_PREFIX}/admin/motions/${motionId}/choices/reorder`,
 		{
 			method: "PUT",
@@ -1024,8 +1027,8 @@ export async function reorderChoices(
 /**
  * Delete a choice
  */
-export async function deleteChoice(id: number): Promise<ApiResponse<void>> {
-	return await apiRequest<ApiResponse<void>>(
+export async function deleteChoice(id: number): Promise<ApiResult<void>> {
+	return await apiRequest<ApiResult<void>>(
 		`${API_PREFIX}/admin/choices/${id}`,
 		{
 			method: "DELETE",
@@ -1042,8 +1045,8 @@ export async function deleteChoice(id: number): Promise<ApiResponse<void>> {
  */
 export async function login(
 	credentials: LoginRequest,
-): Promise<ApiResponse<LoginResponse>> {
-	return await apiRequest<ApiResponse<LoginResponse>>(
+): Promise<ApiResult<LoginResponse>> {
+	return await apiRequest<ApiResult<LoginResponse>>(
 		`${API_PREFIX}/auth/login`,
 		{
 			method: "POST",
@@ -1055,8 +1058,8 @@ export async function login(
 /**
  * Get current authenticated user
  */
-export async function getCurrentUser(): Promise<ApiResponse<AuthUser>> {
-	return await apiRequest<ApiResponse<AuthUser>>(`${API_PREFIX}/auth/me`);
+export async function getCurrentUser(): Promise<ApiResult<AuthUser>> {
+	return await apiRequest<ApiResult<AuthUser>>(`${API_PREFIX}/auth/me`);
 }
 
 /**
@@ -1077,8 +1080,8 @@ export async function getOpenMotions(): Promise<OpenMotionsResponse> {
  */
 export async function getMotionForVoting(
 	motionId: number,
-): Promise<ApiResponse<MotionForVoting>> {
-	return await apiRequest<ApiResponse<MotionForVoting>>(
+): Promise<ApiResult<MotionForVoting>> {
+	return await apiRequest<ApiResult<MotionForVoting>>(
 		`${API_PREFIX}/voter/motions/${motionId}`,
 	);
 }
@@ -1089,8 +1092,8 @@ export async function getMotionForVoting(
 export async function castVote(
 	motionId: number,
 	request: CastVoteRequest,
-): Promise<ApiResponse<CastVoteResponse>> {
-	return await apiRequest<ApiResponse<CastVoteResponse>>(
+): Promise<ApiResult<CastVoteResponse>> {
+	return await apiRequest<ApiResult<CastVoteResponse>>(
 		`${API_PREFIX}/voter/motions/${motionId}/vote`,
 		{
 			method: "POST",
@@ -1102,8 +1105,8 @@ export async function castVote(
 /**
  * Get pools for the current authenticated voter
  */
-export async function getMyPools(): Promise<ApiResponse<Pool[]>> {
-	return await apiRequest<ApiResponse<Pool[]>>(`${API_PREFIX}/voter/pools`);
+export async function getMyPools(): Promise<ApiResult<Pool[]>> {
+	return await apiRequest<ApiResult<Pool[]>>(`${API_PREFIX}/voter/pools`);
 }
 
 /**
@@ -1123,9 +1126,9 @@ interface LeaveMeetingData {
  * Get list of active meetings the user can join as a voter
  */
 export async function getJoinableMeetings(): Promise<
-	ApiResponse<JoinableMeeting[]>
+	ApiResult<JoinableMeeting[]>
 > {
-	return await apiRequest<ApiResponse<JoinableMeeting[]>>(
+	return await apiRequest<ApiResult<JoinableMeeting[]>>(
 		`${API_PREFIX}/voter/meetings/joinable`,
 	);
 }
@@ -1134,9 +1137,9 @@ export async function getJoinableMeetings(): Promise<
  * Get the user's current active meeting
  */
 export async function getCurrentMeeting(): Promise<
-	ApiResponse<CurrentMeetingInfo | null>
+	ApiResult<CurrentMeetingInfo | null>
 > {
-	return await apiRequest<ApiResponse<CurrentMeetingInfo | null>>(
+	return await apiRequest<ApiResult<CurrentMeetingInfo | null>>(
 		`${API_PREFIX}/voter/meetings/current`,
 	);
 }
@@ -1146,8 +1149,8 @@ export async function getCurrentMeeting(): Promise<
  */
 export async function joinMeeting(
 	meetingId: number,
-): Promise<ApiResponse<JoinMeetingData>> {
-	return await apiRequest<ApiResponse<JoinMeetingData>>(
+): Promise<ApiResult<JoinMeetingData>> {
+	return await apiRequest<ApiResult<JoinMeetingData>>(
 		`${API_PREFIX}/voter/meetings/${meetingId}/join`,
 		{
 			method: "POST",
@@ -1158,8 +1161,8 @@ export async function joinMeeting(
 /**
  * Leave the current meeting
  */
-export async function leaveMeeting(): Promise<ApiResponse<LeaveMeetingData>> {
-	return await apiRequest<ApiResponse<LeaveMeetingData>>(
+export async function leaveMeeting(): Promise<ApiResult<LeaveMeetingData>> {
+	return await apiRequest<ApiResult<LeaveMeetingData>>(
 		`${API_PREFIX}/voter/meetings/leave`,
 		{
 			method: "POST",
@@ -1176,8 +1179,8 @@ export async function leaveMeeting(): Promise<ApiResponse<LeaveMeetingData>> {
  */
 export async function getQuorumReport(
 	meetingId: number,
-): Promise<ApiResponse<QuorumReport>> {
-	return await apiRequest<ApiResponse<QuorumReport>>(
+): Promise<ApiResult<QuorumReport>> {
+	return await apiRequest<ApiResult<QuorumReport>>(
 		`${API_PREFIX}/admin/meetings/${meetingId}/quorum`,
 	);
 }
@@ -1188,8 +1191,8 @@ export async function getQuorumReport(
 export async function updateQuorum(
 	meetingId: number,
 	quorumCalledAt: string | null,
-): Promise<ApiResponse<QuorumReport>> {
-	return await apiRequest<ApiResponse<QuorumReport>>(
+): Promise<ApiResult<QuorumReport>> {
+	return await apiRequest<ApiResult<QuorumReport>>(
 		`${API_PREFIX}/admin/meetings/${meetingId}/quorum`,
 		{
 			method: "PUT",
@@ -1203,8 +1206,8 @@ export async function updateQuorum(
  */
 export async function getQuorumVoters(
 	meetingId: number,
-): Promise<ApiResponse<QuorumActiveVoter[]>> {
-	return await apiRequest<ApiResponse<QuorumActiveVoter[]>>(
+): Promise<ApiResult<QuorumActiveVoter[]>> {
+	return await apiRequest<ApiResult<QuorumActiveVoter[]>>(
 		`${API_PREFIX}/admin/meetings/${meetingId}/quorum/voters`,
 	);
 }
@@ -1212,11 +1215,6 @@ export async function getQuorumVoters(
 /**
  * Watcher API Functions
  */
-
-interface WatcherMeetingsResponse {
-	data: WatcherMeetingReport[];
-	pagination: Pagination;
-}
 
 /**
  * Get all meetings for watcher (with motion summaries)
@@ -1235,8 +1233,8 @@ export async function getWatcherMeetings(
  */
 export async function getWatcherMeetingReport(
 	meetingId: number,
-): Promise<ApiResponse<WatcherMeetingReport>> {
-	return await apiRequest<ApiResponse<WatcherMeetingReport>>(
+): Promise<ApiResult<WatcherMeetingReport>> {
+	return await apiRequest<ApiResult<WatcherMeetingReport>>(
 		`${API_PREFIX}/watcher/meetings/${meetingId}`,
 	);
 }
@@ -1246,8 +1244,8 @@ export async function getWatcherMeetingReport(
  */
 export async function getWatcherQuorumReport(
 	meetingId: number,
-): Promise<ApiResponse<QuorumReport>> {
-	return await apiRequest<ApiResponse<QuorumReport>>(
+): Promise<ApiResult<QuorumReport>> {
+	return await apiRequest<ApiResult<QuorumReport>>(
 		`${API_PREFIX}/watcher/meetings/${meetingId}/quorum`,
 	);
 }
@@ -1257,8 +1255,8 @@ export async function getWatcherQuorumReport(
  */
 export async function getWatcherQuorumVoters(
 	meetingId: number,
-): Promise<ApiResponse<QuorumActiveVoter[]>> {
-	return await apiRequest<ApiResponse<QuorumActiveVoter[]>>(
+): Promise<ApiResult<QuorumActiveVoter[]>> {
+	return await apiRequest<ApiResult<QuorumActiveVoter[]>>(
 		`${API_PREFIX}/watcher/meetings/${meetingId}/quorum/voters`,
 	);
 }
@@ -1268,8 +1266,8 @@ export async function getWatcherQuorumVoters(
  */
 export async function getWatcherMotionDetail(
 	motionId: number,
-): Promise<ApiResponse<WatcherMotionDetail>> {
-	return await apiRequest<ApiResponse<WatcherMotionDetail>>(
+): Promise<ApiResult<WatcherMotionDetail>> {
+	return await apiRequest<ApiResult<WatcherMotionDetail>>(
 		`${API_PREFIX}/watcher/motions/${motionId}`,
 	);
 }
@@ -1279,8 +1277,8 @@ export async function getWatcherMotionDetail(
  */
 export async function getWatcherMotionVoters(
 	motionId: number,
-): Promise<ApiResponse<WatcherMotionVoter[]>> {
-	return await apiRequest<ApiResponse<WatcherMotionVoter[]>>(
+): Promise<ApiResult<WatcherMotionVoter[]>> {
+	return await apiRequest<ApiResult<WatcherMotionVoter[]>>(
 		`${API_PREFIX}/watcher/motions/${motionId}/voters`,
 	);
 }
@@ -1290,8 +1288,8 @@ export async function getWatcherMotionVoters(
  */
 export async function getWatcherMotionResult(
 	motionId: number,
-): Promise<ApiResponse<WatcherMotionResult>> {
-	return await apiRequest<ApiResponse<WatcherMotionResult>>(
+): Promise<ApiResult<WatcherMotionResult>> {
+	return await apiRequest<ApiResult<WatcherMotionResult>>(
 		`${API_PREFIX}/watcher/motions/${motionId}/results`,
 	);
 }
@@ -1304,9 +1302,9 @@ export async function getWatcherMotionResult(
  * Get list of active meetings the user can join as a watcher
  */
 export async function getJoinableMeetingsForWatcher(): Promise<
-	ApiResponse<JoinableMeeting[]>
+	ApiResult<JoinableMeeting[]>
 > {
-	return await apiRequest<ApiResponse<JoinableMeeting[]>>(
+	return await apiRequest<ApiResult<JoinableMeeting[]>>(
 		`${API_PREFIX}/watcher/meetings/joinable`,
 	);
 }
@@ -1315,9 +1313,9 @@ export async function getJoinableMeetingsForWatcher(): Promise<
  * Get the watcher's current active meeting
  */
 export async function getCurrentMeetingForWatcher(): Promise<
-	ApiResponse<CurrentMeetingInfo | null>
+	ApiResult<CurrentMeetingInfo | null>
 > {
-	return await apiRequest<ApiResponse<CurrentMeetingInfo | null>>(
+	return await apiRequest<ApiResult<CurrentMeetingInfo | null>>(
 		`${API_PREFIX}/watcher/meetings/current`,
 	);
 }
@@ -1327,8 +1325,8 @@ export async function getCurrentMeetingForWatcher(): Promise<
  */
 export async function joinMeetingAsWatcher(
 	meetingId: number,
-): Promise<ApiResponse<JoinMeetingData>> {
-	return await apiRequest<ApiResponse<JoinMeetingData>>(
+): Promise<ApiResult<JoinMeetingData>> {
+	return await apiRequest<ApiResult<JoinMeetingData>>(
 		`${API_PREFIX}/watcher/meetings/${meetingId}/join`,
 		{
 			method: "POST",
@@ -1340,9 +1338,9 @@ export async function joinMeetingAsWatcher(
  * Leave the current meeting as a watcher
  */
 export async function leaveMeetingAsWatcher(): Promise<
-	ApiResponse<LeaveMeetingData>
+	ApiResult<LeaveMeetingData>
 > {
-	return await apiRequest<ApiResponse<LeaveMeetingData>>(
+	return await apiRequest<ApiResult<LeaveMeetingData>>(
 		`${API_PREFIX}/watcher/meetings/leave`,
 		{
 			method: "POST",
@@ -1359,9 +1357,9 @@ export async function leaveMeetingAsWatcher(): Promise<
  * Get meetings the current user can administer
  */
 export async function getJoinableMeetingsForAdmin(): Promise<
-	ApiResponse<JoinableMeeting[]>
+	ApiResult<JoinableMeeting[]>
 > {
-	return await apiRequest<ApiResponse<JoinableMeeting[]>>(
+	return await apiRequest<ApiResult<JoinableMeeting[]>>(
 		`${API_PREFIX}/admin/meetings/joinable`,
 	);
 }
@@ -1370,9 +1368,9 @@ export async function getJoinableMeetingsForAdmin(): Promise<
  * Get current meeting for meeting admin
  */
 export async function getCurrentMeetingForAdmin(): Promise<
-	ApiResponse<CurrentMeetingInfo | null>
+	ApiResult<CurrentMeetingInfo | null>
 > {
-	return await apiRequest<ApiResponse<CurrentMeetingInfo | null>>(
+	return await apiRequest<ApiResult<CurrentMeetingInfo | null>>(
 		`${API_PREFIX}/admin/meetings/current`,
 	);
 }
@@ -1382,8 +1380,8 @@ export async function getCurrentMeetingForAdmin(): Promise<
  */
 export async function joinMeetingAsAdmin(
 	meetingId: number,
-): Promise<ApiResponse<JoinMeetingData>> {
-	return await apiRequest<ApiResponse<JoinMeetingData>>(
+): Promise<ApiResult<JoinMeetingData>> {
+	return await apiRequest<ApiResult<JoinMeetingData>>(
 		`${API_PREFIX}/admin/meetings/${meetingId}/join`,
 		{
 			method: "POST",
@@ -1395,9 +1393,9 @@ export async function joinMeetingAsAdmin(
  * Leave the current meeting as meeting admin
  */
 export async function leaveMeetingAsAdmin(): Promise<
-	ApiResponse<LeaveMeetingData>
+	ApiResult<LeaveMeetingData>
 > {
-	return await apiRequest<ApiResponse<LeaveMeetingData>>(
+	return await apiRequest<ApiResult<LeaveMeetingData>>(
 		`${API_PREFIX}/admin/meetings/leave`,
 		{
 			method: "POST",
@@ -1450,8 +1448,8 @@ interface BulkDeleteResult {
  */
 export async function bulkDeleteUsers(
 	userIds: string[],
-): Promise<ApiResponse<BulkDeleteResult>> {
-	return await apiRequest<ApiResponse<BulkDeleteResult>>(
+): Promise<ApiResult<BulkDeleteResult>> {
+	return await apiRequest<ApiResult<BulkDeleteResult>>(
 		`${API_PREFIX}/admin/users/bulk-delete`,
 		{
 			method: "POST",
@@ -1463,34 +1461,15 @@ export async function bulkDeleteUsers(
 /**
  * Delete a single user by ID
  */
-export async function deleteUserById(id: string): Promise<ApiResponse<void>> {
-	return await apiRequest<ApiResponse<void>>(
-		`${API_PREFIX}/admin/users/${id}`,
-		{
-			method: "DELETE",
-		},
-	);
+export async function deleteUserById(id: string): Promise<ApiResult<void>> {
+	return await apiRequest<ApiResult<void>>(`${API_PREFIX}/admin/users/${id}`, {
+		method: "DELETE",
+	});
 }
 
 /**
  * Pending Pool Key Management API Functions
  */
-
-interface PendingPoolKey {
-	poolKey: string;
-	userCount: number;
-	firstSeenAt: Date;
-}
-
-interface PendingPoolKeyListResponse {
-	data: PendingPoolKey[];
-	pagination: {
-		page: number;
-		limit: number;
-		total: number;
-		totalPages: number;
-	};
-}
 
 interface ResolvePendingPoolResponse {
 	usersUpdated: number;
@@ -1516,8 +1495,8 @@ export async function resolvePendingPoolByCreating(request: {
 	poolKey: string;
 	poolName: string;
 	description?: string;
-}): Promise<ApiResponse<ResolvePendingPoolResponse>> {
-	return await apiRequest<ApiResponse<ResolvePendingPoolResponse>>(
+}): Promise<ApiResult<ResolvePendingPoolResponse>> {
+	return await apiRequest<ApiResult<ResolvePendingPoolResponse>>(
 		`${API_PREFIX}/admin/pools/pending/create`,
 		{
 			method: "POST",
@@ -1532,8 +1511,8 @@ export async function resolvePendingPoolByCreating(request: {
 export async function resolvePendingPoolByRemapping(request: {
 	pendingPoolKey: string;
 	targetPoolId: number;
-}): Promise<ApiResponse<ResolvePendingPoolResponse>> {
-	return await apiRequest<ApiResponse<ResolvePendingPoolResponse>>(
+}): Promise<ApiResult<ResolvePendingPoolResponse>> {
+	return await apiRequest<ApiResult<ResolvePendingPoolResponse>>(
 		`${API_PREFIX}/admin/pools/pending/remap`,
 		{
 			method: "POST",
@@ -1547,8 +1526,8 @@ export async function resolvePendingPoolByRemapping(request: {
  */
 export async function deletePendingPoolKey(
 	poolKey: string,
-): Promise<ApiResponse<{ deletedCount: number }>> {
-	return await apiRequest<ApiResponse<{ deletedCount: number }>>(
+): Promise<ApiResult<{ deletedCount: number }>> {
+	return await apiRequest<ApiResult<{ deletedCount: number }>>(
 		`${API_PREFIX}/admin/pools/pending/${encodeURIComponent(poolKey)}`,
 		{
 			method: "DELETE",
