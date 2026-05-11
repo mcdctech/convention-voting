@@ -11,6 +11,7 @@ const ALL_POOLS_LIMIT = 1000;
 const INITIAL_PAGE = 1;
 const PERCENTAGE_MULTIPLIER = 100;
 const INITIAL_PROGRESS = 0;
+const EMPTY_RESULTS_LENGTH = 0;
 
 // Pool filter special values (matching UserList.vue for consistency)
 const POOL_FILTER_ALL = "all";
@@ -20,6 +21,8 @@ const generating = ref(false);
 const error = ref<string | null>(null);
 const results = ref<PasswordGenerationResult[] | null>(null);
 const generationComplete = ref(false);
+const hasDownloaded = ref(false);
+const showSkipWarningModal = ref(false);
 
 // Progress tracking
 const progressPhase = ref<string>("");
@@ -50,6 +53,16 @@ const sortedPools = computed((): Pool[] =>
 			a.poolName.toLowerCase().localeCompare(b.poolName.toLowerCase()),
 		),
 );
+
+// Sort results alphabetically by username for easier distribution
+const sortedResults = computed((): PasswordGenerationResult[] => {
+	if (results.value === null) {
+		return [];
+	}
+	return [...results.value].sort((a, b) =>
+		a.username.toLowerCase().localeCompare(b.username.toLowerCase()),
+	);
+});
 
 const showConfirmModal = ref(false);
 
@@ -129,13 +142,18 @@ async function handleGenerate(): Promise<void> {
 }
 
 function downloadCSV(): void {
-	if (results.value === null) {
+	if (
+		results.value === null ||
+		sortedResults.value.length === EMPTY_RESULTS_LENGTH
+	) {
 		return;
 	}
 
 	const csvContent = [
 		["Username", "Password", "Voter ID"].join(","),
-		...results.value.map((r) => [r.username, r.password, r.voterId].join(",")),
+		...sortedResults.value.map((r) =>
+			[r.username, r.password, r.voterId].join(","),
+		),
 	].join("\n");
 
 	const blob = new Blob([csvContent], { type: "text/csv" });
@@ -145,16 +163,42 @@ function downloadCSV(): void {
 	link.download = `passwords-${new Date().toISOString()}.csv`;
 	link.click();
 	window.URL.revokeObjectURL(url);
+
+	// Track that user has downloaded
+	hasDownloaded.value = true;
 }
 
 function resetForm(): void {
 	results.value = null;
 	generationComplete.value = false;
+	hasDownloaded.value = false;
 	error.value = null;
 	progressPhase.value = "";
 	progressCurrent.value = INITIAL_PROGRESS;
 	progressTotal.value = INITIAL_PROGRESS;
 	progressMessage.value = "";
+}
+
+function handleGenerateMore(): void {
+	// If user hasn't downloaded and there are results, show warning
+	if (
+		!hasDownloaded.value &&
+		results.value !== null &&
+		results.value.length > EMPTY_RESULTS_LENGTH
+	) {
+		showSkipWarningModal.value = true;
+		return;
+	}
+	resetForm();
+}
+
+function confirmSkipDownload(): void {
+	showSkipWarningModal.value = false;
+	resetForm();
+}
+
+function cancelSkipDownload(): void {
+	showSkipWarningModal.value = false;
 }
 
 function getPoolFilterDescription(): string {
@@ -309,60 +353,91 @@ function getConfirmationMessage(): string {
 		<div v-if="generationComplete" class="success-banner">
 			<span class="success-icon">✓</span>
 			<span class="success-text">Password Generation Complete!</span>
-			<button class="btn btn-secondary btn-small" @click="resetForm">
-				Generate More
-			</button>
 		</div>
 
-		<div v-if="results" class="results-section">
-			<div class="results-header">
-				<h3>Generated Passwords ({{ results.length }})</h3>
-				<button
-					v-if="results.length > 0"
-					class="btn btn-secondary"
-					@click="downloadCSV"
-				>
-					Download as CSV
-				</button>
-			</div>
-
-			<div v-if="results.length === 0" class="no-results">
+		<!-- No Results Message -->
+		<div v-if="results && results.length === 0" class="results-section">
+			<div class="no-results">
 				<p>No users matched the selected filters.</p>
 				<p class="no-results-hint">
 					Try changing the pool filter or unchecking "Only users without
 					existing passwords".
 				</p>
+				<button class="btn btn-secondary" @click="resetForm">
+					Generate More Passwords
+				</button>
+			</div>
+		</div>
+
+		<!-- Download Action Box - Prominent section for downloading -->
+		<div v-if="results && results.length > 0" class="download-action-box">
+			<div class="download-warning-header">
+				<span class="warning-icon">⚠</span>
+				<strong>IMPORTANT: Download these passwords now!</strong>
+			</div>
+			<p class="download-warning-text">
+				These passwords will NOT be shown again after you leave this page or
+				generate new passwords.
+			</p>
+			<div class="download-actions">
+				<button class="btn btn-primary btn-download" @click="downloadCSV">
+					Download Passwords CSV
+				</button>
+				<button class="btn btn-secondary" @click="handleGenerateMore">
+					Generate More Passwords
+				</button>
+			</div>
+			<p v-if="hasDownloaded" class="download-confirmed">
+				✓ Passwords downloaded
+			</p>
+		</div>
+
+		<!-- Results Table -->
+		<div v-if="results && results.length > 0" class="results-section">
+			<div class="results-header">
+				<h3>Generated Passwords ({{ results.length }})</h3>
 			</div>
 
-			<template v-else>
-				<div class="warning-box">
-					<p>
-						<strong>SAVE THESE PASSWORDS NOW!</strong> They will not be shown
-						again.
-					</p>
-				</div>
+			<table class="results-table">
+				<thead>
+					<tr>
+						<th>Username</th>
+						<th>Password</th>
+						<th>Voter ID</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr v-for="result in sortedResults" :key="result.voterId">
+						<td>{{ result.username }}</td>
+						<td class="password">
+							{{ result.password }}
+						</td>
+						<td class="voter-id">
+							{{ result.voterId }}
+						</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
 
-				<table class="results-table">
-					<thead>
-						<tr>
-							<th>Username</th>
-							<th>Password</th>
-							<th>Voter ID</th>
-						</tr>
-					</thead>
-					<tbody>
-						<tr v-for="result in results" :key="result.voterId">
-							<td>{{ result.username }}</td>
-							<td class="password">
-								{{ result.password }}
-							</td>
-							<td class="voter-id">
-								{{ result.voterId }}
-							</td>
-						</tr>
-					</tbody>
-				</table>
-			</template>
+		<!-- Skip Download Warning Modal -->
+		<div v-if="showSkipWarningModal" class="modal" @click="cancelSkipDownload">
+			<div class="modal-content" @click.stop>
+				<h3 class="warning-modal-title">⚠ Passwords Not Downloaded</h3>
+				<p>You have not downloaded the generated passwords.</p>
+				<p class="warning-text">
+					If you continue, these passwords will be permanently lost and cannot
+					be recovered.
+				</p>
+				<div class="modal-actions">
+					<button class="btn btn-primary" @click="cancelSkipDownload">
+						Go Back & Download
+					</button>
+					<button class="btn btn-danger" @click="confirmSkipDownload">
+						Continue Without Downloading
+					</button>
+				</div>
+			</div>
 		</div>
 	</div>
 </template>
@@ -708,5 +783,69 @@ h2 {
 .btn-small {
 	padding: 0.5rem 1rem;
 	font-size: 0.875rem;
+}
+
+.btn-danger {
+	background-color: #c62828;
+	color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+	background-color: #b71c1c;
+}
+
+.download-action-box {
+	background: #fff3e0;
+	border: 2px solid #f57c00;
+	border-radius: 8px;
+	padding: 1.5rem 2rem;
+	margin-bottom: 2rem;
+	text-align: center;
+}
+
+.download-warning-header {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	font-size: 1.25rem;
+	color: #e65100;
+	margin-bottom: 0.75rem;
+}
+
+.warning-icon {
+	font-size: 1.5rem;
+}
+
+.download-warning-text {
+	color: #5d4037;
+	margin-bottom: 1.5rem;
+	font-size: 1rem;
+}
+
+.download-actions {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1rem;
+}
+
+.btn-download {
+	padding: 1rem 2rem;
+	font-size: 1.125rem;
+	font-weight: 600;
+	min-width: 280px;
+}
+
+.download-confirmed {
+	color: #2e7d32;
+	font-weight: 500;
+	margin-top: 1rem;
+	margin-bottom: 0;
+}
+
+.warning-modal-title {
+	color: #e65100;
+	margin-top: 0;
 }
 </style>
