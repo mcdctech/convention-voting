@@ -176,6 +176,26 @@ export interface GeneratePasswordsRequest {
 }
 
 /**
+ * Password generation phases for progress tracking
+ */
+export type PasswordGenerationPhase =
+	| "preparing" // Querying users from database
+	| "generating" // Generating plaintext passwords
+	| "hashing" // Hashing passwords (slowest phase - bcrypt)
+	| "saving" // Batch saving to database
+	| "complete"; // Finished
+
+/**
+ * Password generation progress update (sent via SSE)
+ */
+export interface PasswordGenerationProgress {
+	phase: PasswordGenerationPhase;
+	current: number; // Users processed so far
+	total: number; // Total users to process
+	message: string; // Human-readable status message
+}
+
+/**
  * Response from password reset operation
  */
 export interface PasswordResetResponse {
@@ -266,6 +286,20 @@ export interface CSVImportProgress {
 	current: number;
 	total: number;
 	message: string;
+}
+
+/**
+ * CSV validation result (preflight validation before import)
+ */
+export interface CSVValidationResult {
+	totalRows: number;
+	validRows: number;
+	invalidRows: number;
+	errors: Array<{ row: number; voterId: string; error: string }>;
+	warnings: Array<{ voterId: string; warning: string }>;
+	newUsers: number;
+	existingUsers: number;
+	invalidPoolKeys: string[];
 }
 
 /**

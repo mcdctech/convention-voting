@@ -4,6 +4,7 @@
 import { Readable } from "node:stream";
 import { parse } from "csv-parse";
 import pino from "pino";
+import { db } from "../database/db.js";
 import { batchUpsertUsers, type BatchUserData } from "./user-service.js";
 import { upsertPool } from "./pool-service.js";
 import type {
@@ -11,6 +12,7 @@ import type {
 	PoolCSVRow,
 	CSVImportResult,
 	CSVImportProgress,
+	CSVValidationResult,
 } from "@mcdc-convention-voting/shared";
 
 const logger = pino({ name: "csv-service" });
@@ -31,8 +33,8 @@ const UNKNOWN_TOTAL = 0; // Unknown total count during parsing phase
 // Validation regex patterns
 // Voter ID: ASCII alphanumeric, hyphens, underscores (no spaces)
 const VOTER_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
-// Names: ASCII letters, spaces, hyphens, apostrophes
-const NAME_PATTERN = /^[A-Za-z\s'-]+$/;
+// Names: ASCII letters, digits, spaces, hyphens, apostrophes
+const NAME_PATTERN = /^[A-Za-z0-9\s'-]+$/;
 // Pool key: letters (case-sensitive), numbers, hyphens, underscores, spaces
 const POOL_KEY_PATTERN = /^[A-Za-z0-9_\- ]+$/;
 // Printable ASCII: characters from space (32) to tilde (126)
@@ -148,6 +150,37 @@ function validateDescription(value: string): ValidationResult {
 			error: `description contains invalid characters (got: "${truncateValue(value)}"). Only printable ASCII characters allowed.`,
 		};
 	}
+	return { isValid: true };
+}
+
+/**
+ * Check for non-printing characters in a string
+ * Rejects control characters (ASCII 0-31 except tab/newline/CR) and DEL (127)
+ * Also checks for common invisible Unicode characters
+ */
+function validateNoPrintingCharacters(
+	fieldName: string,
+	value: string,
+): ValidationResult {
+	// Check for ASCII control characters (except tab, newline, CR)
+	// eslint-disable-next-line no-control-regex -- Explicitly checking for control characters
+	const CONTROL_CHARS_PATTERN = /[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/;
+	if (CONTROL_CHARS_PATTERN.test(value)) {
+		return {
+			isValid: false,
+			error: `${fieldName} contains non-printing control characters`,
+		};
+	}
+
+	// Check for common invisible Unicode characters
+	const INVISIBLE_UNICODE_PATTERN = /[\u200B-\u200D\uFEFF]/; // Zero-width spaces, BOM
+	if (INVISIBLE_UNICODE_PATTERN.test(value)) {
+		return {
+			isValid: false,
+			error: `${fieldName} contains invisible Unicode characters`,
+		};
+	}
+
 	return { isValid: true };
 }
 
@@ -479,6 +512,249 @@ function validateUserRow(record: UserCSVRow): BatchUserData {
 		isDisabled: !isEnabled,
 		poolKeys: poolKeys.length > EMPTY_ARRAY_LENGTH ? poolKeys : undefined,
 	};
+}
+
+/**
+ * Validate users CSV without importing (preflight validation)
+ * Returns validation results with errors, warnings, and statistics
+ * @param csvBuffer - The CSV file content as a Buffer
+ */
+export async function validateUsersCSV(
+	csvBuffer: Buffer,
+): Promise<CSVValidationResult> {
+	// Promise wrapper needed for streaming CSV parser
+	// eslint-disable-next-line promise/avoid-new -- Required for csv-parse stream handling
+	return await new Promise((resolve, reject) => {
+		const stream = Readable.from(csvBuffer);
+		const parser = parse({
+			columns: true,
+			skip_empty_lines: true,
+			trim: true,
+		});
+
+		const records: UserCSVRow[] = [];
+		let headers: string[] = [];
+
+		parser.on("readable", () => {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- csv-parse read() returns any
+			let record: UserCSVRow | null = parser.read();
+			while (record !== null) {
+				// Capture headers from first record
+				if (headers.length === EMPTY_ARRAY_LENGTH) {
+					headers = Object.keys(record);
+				}
+				records.push(record);
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- csv-parse read() returns any
+				record = parser.read();
+			}
+		});
+
+		parser.on("error", (error) => {
+			logger.error({ error }, "CSV parsing error");
+			reject(new Error(`CSV parsing error: ${error.message}`));
+		});
+
+		// eslint-disable-next-line @typescript-eslint/no-misused-promises, complexity -- Event handler requires async, complex validation logic
+		parser.on("end", async () => {
+			// Validate headers first
+			const headerValidation = validateHeaders(headers, REQUIRED_USER_HEADERS);
+			if (!headerValidation.isValid) {
+				reject(new Error(headerValidation.error));
+				return;
+			}
+
+			const result: CSVValidationResult = {
+				totalRows: records.length,
+				validRows: 0,
+				invalidRows: 0,
+				errors: [],
+				warnings: [],
+				newUsers: 0,
+				existingUsers: 0,
+				invalidPoolKeys: [],
+			};
+
+			// Validate all records
+			const allVoterIds: string[] = [];
+			const allPoolKeys = new Set<string>();
+
+			for (let i = 0; i < records.length; i += COUNTER_INCREMENT) {
+				const { [i]: record } = records;
+				const rowNumber = i + CSV_ROW_OFFSET;
+				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- csv-parse types don't reflect runtime nullability
+				const voterIdValue = record.voter_id ?? "";
+				const errorVoterId = voterIdValue === "" ? "unknown" : voterIdValue;
+
+				try {
+					// Validate voter_id
+					if (voterIdValue === "") {
+						throw new Error("Missing voter_id");
+					}
+
+					// Check for non-printing characters in voter_id
+					const voterIdNonPrintCheck = validateNoPrintingCharacters(
+						"voter_id",
+						voterIdValue,
+					);
+					if (!voterIdNonPrintCheck.isValid) {
+						throw new Error(voterIdNonPrintCheck.error);
+					}
+
+					const voterIdValidation = validateVoterId(voterIdValue);
+					if (!voterIdValidation.isValid) {
+						throw new Error(voterIdValidation.error);
+					}
+
+					// Validate first_name
+					// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- csv-parse types don't reflect runtime nullability
+					const firstNameValue = record.first_name ?? "";
+					if (firstNameValue === "") {
+						throw new Error("Missing first_name");
+					}
+
+					// Check for non-printing characters in first_name
+					const firstNameNonPrintCheck = validateNoPrintingCharacters(
+						"first_name",
+						firstNameValue,
+					);
+					if (!firstNameNonPrintCheck.isValid) {
+						throw new Error(firstNameNonPrintCheck.error);
+					}
+
+					const firstNameValidation = validateName(
+						"first_name",
+						firstNameValue,
+					);
+					if (!firstNameValidation.isValid) {
+						throw new Error(firstNameValidation.error);
+					}
+
+					// Validate last_name
+					// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- csv-parse types don't reflect runtime nullability
+					const lastNameValue = record.last_name ?? "";
+					if (lastNameValue === "") {
+						throw new Error("Missing last_name");
+					}
+
+					// Check for non-printing characters in last_name
+					const lastNameNonPrintCheck = validateNoPrintingCharacters(
+						"last_name",
+						lastNameValue,
+					);
+					if (!lastNameNonPrintCheck.isValid) {
+						throw new Error(lastNameNonPrintCheck.error);
+					}
+
+					const lastNameValidation = validateName("last_name", lastNameValue);
+					if (!lastNameValidation.isValid) {
+						throw new Error(lastNameValidation.error);
+					}
+
+					// Collect pool keys for later validation
+					for (
+						let j = FIRST_POOL_KEY_INDEX;
+						j <= MAX_POOL_KEYS;
+						j += COUNTER_INCREMENT
+					) {
+						// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Dynamic key access requires runtime type assertion
+						const key = `pool_key_${j}` as keyof UserCSVRow;
+						const { [key]: poolKey } = record;
+						const trimmedPoolKey = poolKey?.trim() ?? "";
+						if (poolKey !== undefined && trimmedPoolKey !== "") {
+							// Check for non-printing characters in pool key
+							const poolKeyNonPrintCheck = validateNoPrintingCharacters(
+								key,
+								trimmedPoolKey,
+							);
+							if (!poolKeyNonPrintCheck.isValid) {
+								throw new Error(poolKeyNonPrintCheck.error);
+							}
+
+							// Validate pool key format
+							const poolKeyValidation = validatePoolKey(trimmedPoolKey);
+							if (!poolKeyValidation.isValid) {
+								throw new Error(`${key}: ${poolKeyValidation.error}`);
+							}
+							allPoolKeys.add(trimmedPoolKey);
+						}
+					}
+
+					// Valid row
+					result.validRows += COUNTER_INCREMENT;
+					allVoterIds.push(voterIdValue);
+				} catch (unknownError: unknown) {
+					result.invalidRows += COUNTER_INCREMENT;
+					const { message: errorMessage } =
+						unknownError instanceof Error
+							? unknownError
+							: new Error("Unknown error");
+					result.errors.push({
+						row: rowNumber,
+						voterId: errorVoterId,
+						error: errorMessage,
+					});
+					logger.error(
+						{ voterId: voterIdValue, error: unknownError },
+						"Validation failed for user",
+					);
+				}
+			}
+
+			// Query database for existing voter IDs
+			if (allVoterIds.length > EMPTY_ARRAY_LENGTH) {
+				try {
+					const existingUsersResult = await db.query<{ voter_id: string }>(
+						"SELECT voter_id FROM users WHERE voter_id = ANY($1)",
+						[allVoterIds],
+					);
+					const existingVoterIds = new Set(
+						existingUsersResult.rows.map((row) => row.voter_id),
+					);
+					// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Set.size is a property, not destructurable
+					result.existingUsers = existingVoterIds.size;
+					result.newUsers = allVoterIds.length - existingVoterIds.size;
+				} catch (error) {
+					logger.error({ error }, "Failed to query existing users");
+					// Continue with validation even if this fails
+				}
+			}
+
+			// Query database for existing pool keys
+			if (allPoolKeys.size > EMPTY_ARRAY_LENGTH) {
+				try {
+					const poolKeysArray = Array.from(allPoolKeys);
+					const existingPoolsResult = await db.query<{ pool_key: string }>(
+						"SELECT pool_key FROM pools WHERE pool_key = ANY($1)",
+						[poolKeysArray],
+					);
+					const existingPoolKeys = new Set(
+						existingPoolsResult.rows.map((row) => row.pool_key),
+					);
+
+					// Find invalid pool keys
+					const invalidKeys = poolKeysArray.filter(
+						(key) => !existingPoolKeys.has(key),
+					);
+					result.invalidPoolKeys = invalidKeys;
+
+					// Add warnings for invalid pool keys
+					if (invalidKeys.length > EMPTY_ARRAY_LENGTH) {
+						result.warnings.push({
+							voterId: "multiple",
+							warning: `Invalid pool keys found: ${invalidKeys.join(", ")}`,
+						});
+					}
+				} catch (error) {
+					logger.error({ error }, "Failed to query existing pools");
+					// Continue with validation even if this fails
+				}
+			}
+
+			resolve(result);
+		});
+
+		stream.pipe(parser);
+	});
 }
 
 /**
