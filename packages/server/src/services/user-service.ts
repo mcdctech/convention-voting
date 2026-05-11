@@ -1029,11 +1029,12 @@ export async function generatePasswordsForUsers(
 	// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Array length access doesn't benefit from destructuring
 	const totalUsers = userRows.length;
 
-	// If no users, return early
+	// If no users, return early without sending "complete" phase
+	// (the "complete" phase is reserved for the SSE endpoint's final response with results)
 	if (totalUsers === EMPTY_ARRAY_LENGTH) {
 		if (onProgress !== undefined) {
 			onProgress({
-				phase: "complete",
+				phase: "preparing",
 				current: 0,
 				total: 0,
 				message: "No users found matching criteria",
@@ -1198,10 +1199,11 @@ export async function generatePasswordsForUsers(
 		}
 	});
 
-	// Emit completion
+	// Emit final progress update (not "complete" - that phase is reserved for
+	// the SSE endpoint's final response which includes the actual results)
 	if (onProgress !== undefined) {
 		onProgress({
-			phase: "complete",
+			phase: "saving",
 			current: totalUsers,
 			total: totalUsers,
 			message: `Successfully generated ${totalUsers} password(s)`,

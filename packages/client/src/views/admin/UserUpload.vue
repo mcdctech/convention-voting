@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { validateUsersCSV, uploadUsersCSV } from "../../services/api";
 import type { CSVValidationResult } from "@mcdc-convention-voting/shared";
 
 const router = useRouter();
+
+// Template ref for scrolling to validation results
+const validationResultsRef = ref<HTMLElement | null>(null);
 
 // Constants
 const NO_FILES = 0;
@@ -64,6 +67,14 @@ async function handleValidate(): Promise<void> {
 			const { data } = response;
 			validationResult.value = data;
 			statusMessage.value = "";
+
+			// Scroll to validation results after DOM updates
+			void nextTick(() => {
+				validationResultsRef.value?.scrollIntoView({
+					behavior: "smooth",
+					block: "start",
+				});
+			});
 		}
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to validate CSV";
@@ -232,7 +243,11 @@ function goToUsers(): void {
 		</div>
 
 		<!-- Validation Results Preview -->
-		<div v-if="validationResult && !uploadResult" class="validation-preview">
+		<div
+			v-if="validationResult && !uploadResult"
+			ref="validationResultsRef"
+			class="validation-preview"
+		>
 			<h3>CSV Validation Results</h3>
 
 			<div class="validation-summary">
