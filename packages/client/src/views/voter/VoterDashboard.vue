@@ -34,7 +34,7 @@ async function loadCurrentMeeting(): Promise<void> {
 	try {
 		const response = await getCurrentMeeting();
 		if (response.success && response.data !== undefined) {
-			currentMeetingInfo.value = response.data.data;
+			currentMeetingInfo.value = response.data;
 		}
 	} catch {
 		// Silently fail - will redirect via VoterLayout if no meeting
@@ -44,11 +44,7 @@ async function loadCurrentMeeting(): Promise<void> {
 async function loadOpenMotions(): Promise<void> {
 	try {
 		const response = await getOpenMotions();
-		if (response.success && response.data !== undefined) {
-			motions.value = response.data.data;
-		} else {
-			error.value = response.error ?? "Failed to load motions";
-		}
+		motions.value = response.data;
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to load motions";
 	} finally {

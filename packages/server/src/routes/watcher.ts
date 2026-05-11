@@ -31,11 +31,12 @@ import {
 } from "../middleware/watcher-meeting-middleware.js";
 import type { Request, Response } from "express";
 import type {
-	ApiResponse,
+	ApiErrorResponse,
 	CurrentMeetingResponse,
 	JoinableMeetingsResponse,
 	JoinMeetingResponse,
 	LeaveMeetingResponse,
+	WatcherMeetingsResponse,
 } from "@mcdc-convention-voting/shared";
 
 export const watcherRouter = Router();
@@ -78,8 +79,8 @@ function getMeetingJoinErrorStatus(message: string): number {
 watcherRouter.get(
 	"/meetings/joinable",
 	async (
-		req: Request<object, ApiResponse<JoinableMeetingsResponse>>,
-		res: Response<ApiResponse<JoinableMeetingsResponse>>,
+		req: Request<object, JoinableMeetingsResponse | ApiErrorResponse>,
+		res: Response<JoinableMeetingsResponse | ApiErrorResponse>,
 	): Promise<void> => {
 		if (req.user === undefined) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
@@ -94,9 +95,7 @@ watcherRouter.get(
 
 			res.json({
 				success: true,
-				data: {
-					data: meetings,
-				},
+				data: meetings,
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
@@ -115,8 +114,8 @@ watcherRouter.get(
 watcherRouter.get(
 	"/meetings/current",
 	async (
-		req: Request<object, ApiResponse<CurrentMeetingResponse>>,
-		res: Response<ApiResponse<CurrentMeetingResponse>>,
+		req: Request<object, CurrentMeetingResponse | ApiErrorResponse>,
+		res: Response<CurrentMeetingResponse | ApiErrorResponse>,
 	): Promise<void> => {
 		if (req.user === undefined) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
@@ -131,9 +130,7 @@ watcherRouter.get(
 
 			res.json({
 				success: true,
-				data: {
-					data: currentMeeting,
-				},
+				data: currentMeeting,
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
@@ -152,8 +149,8 @@ watcherRouter.get(
 watcherRouter.post(
 	"/meetings/:id/join",
 	async (
-		req: Request<{ id: string }, ApiResponse<JoinMeetingResponse>>,
-		res: Response<ApiResponse<JoinMeetingResponse>>,
+		req: Request<{ id: string }, JoinMeetingResponse | ApiErrorResponse>,
+		res: Response<JoinMeetingResponse | ApiErrorResponse>,
 	): Promise<void> => {
 		if (req.user === undefined) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
@@ -177,9 +174,7 @@ watcherRouter.post(
 
 			res.json({
 				success: true,
-				data: {
-					data: result,
-				},
+				data: result,
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
@@ -200,8 +195,8 @@ watcherRouter.post(
 watcherRouter.post(
 	"/meetings/leave",
 	async (
-		req: Request<object, ApiResponse<LeaveMeetingResponse>>,
-		res: Response<ApiResponse<LeaveMeetingResponse>>,
+		req: Request<object, LeaveMeetingResponse | ApiErrorResponse>,
+		res: Response<LeaveMeetingResponse | ApiErrorResponse>,
 	): Promise<void> => {
 		if (req.user === undefined) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
@@ -212,13 +207,11 @@ watcherRouter.post(
 		}
 
 		try {
-			const success = await leaveCurrentMeeting(req.user.id);
+			const leftMeeting = await leaveCurrentMeeting(req.user.id);
 
 			res.json({
 				success: true,
-				data: {
-					data: { success },
-				},
+				data: { left: leftMeeting },
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
@@ -240,7 +233,10 @@ watcherRouter.post(
  */
 watcherRouter.get(
 	"/meetings",
-	async (req: Request, res: Response): Promise<void> => {
+	async (
+		req: Request<object, WatcherMeetingsResponse | ApiErrorResponse>,
+		res: Response<WatcherMeetingsResponse | ApiErrorResponse>,
+	): Promise<void> => {
 		if (req.user === undefined) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
 				success: false,
@@ -268,6 +264,7 @@ watcherRouter.get(
 			);
 
 			res.json({
+				success: true,
 				data: meetings,
 				pagination: {
 					page,

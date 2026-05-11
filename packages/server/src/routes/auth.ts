@@ -9,10 +9,11 @@ import { requireAuth } from "../middleware/auth-middleware.js";
 import { leaveCurrentMeeting } from "../services/meeting-participant-service.js";
 import type { Request, Response } from "express";
 import type {
+	ApiErrorResponse,
+	ApiSuccessResponse,
+	AuthUser,
 	LoginRequest,
 	LoginResponse,
-	ApiResponse,
-	AuthUser,
 } from "@mcdc-convention-voting/shared";
 
 export const authRouter = Router();
@@ -54,8 +55,12 @@ function getLoginErrorMessage(errorCode: LoginErrorCode): string {
 authRouter.post(
 	"/login",
 	async (
-		req: Request<object, ApiResponse<LoginResponse>, Partial<LoginRequest>>,
-		res: Response<ApiResponse<LoginResponse>>,
+		req: Request<
+			object,
+			ApiSuccessResponse<LoginResponse> | ApiErrorResponse,
+			Partial<LoginRequest>
+		>,
+		res: Response<ApiSuccessResponse<LoginResponse> | ApiErrorResponse>,
 	): Promise<void> => {
 		const {
 			body: { username, password },
@@ -112,8 +117,8 @@ authRouter.get(
 	"/me",
 	requireAuth,
 	(
-		req: Request<object, ApiResponse<AuthUser>>,
-		res: Response<ApiResponse<AuthUser>>,
+		req: Request<object, ApiSuccessResponse<AuthUser> | ApiErrorResponse>,
+		res: Response<ApiSuccessResponse<AuthUser> | ApiErrorResponse>,
 	): void => {
 		// User is guaranteed to exist because requireAuth middleware verified it
 		if (req.user === undefined) {

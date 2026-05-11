@@ -15,7 +15,8 @@ import { getPoolsForUser } from "../services/pool-service.js";
 import { castVote, getMotionForVoting } from "../services/vote-service.js";
 import type { Request, Response } from "express";
 import type {
-	ApiResponse,
+	ApiErrorResponse,
+	ApiSuccessResponse,
 	CastVoteRequest,
 	CastVoteResponse,
 	CurrentMeetingResponse,
@@ -92,8 +93,8 @@ export const voterRouter = Router();
 voterRouter.get(
 	"/motions/open",
 	async (
-		req: Request<object, ApiResponse<OpenMotionsResponse>>,
-		res: Response<ApiResponse<OpenMotionsResponse>>,
+		req: Request<object, OpenMotionsResponse | ApiErrorResponse>,
+		res: Response<OpenMotionsResponse | ApiErrorResponse>,
 	): Promise<void> => {
 		// User is guaranteed to exist because requireAuth middleware is applied at the router level
 		if (req.user === undefined) {
@@ -109,9 +110,7 @@ voterRouter.get(
 
 			res.json({
 				success: true,
-				data: {
-					data: motions,
-				},
+				data: motions,
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
@@ -130,8 +129,8 @@ voterRouter.get(
 voterRouter.get(
 	"/pools",
 	async (
-		req: Request<object, ApiResponse<Pool[]>>,
-		res: Response<ApiResponse<Pool[]>>,
+		req: Request<object, ApiSuccessResponse<Pool[]> | ApiErrorResponse>,
+		res: Response<ApiSuccessResponse<Pool[]> | ApiErrorResponse>,
 	): Promise<void> => {
 		if (req.user === undefined) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
@@ -165,8 +164,11 @@ voterRouter.get(
 voterRouter.get(
 	"/motions/:id",
 	async (
-		req: Request<{ id: string }, ApiResponse<MotionForVoting>>,
-		res: Response<ApiResponse<MotionForVoting>>,
+		req: Request<
+			{ id: string },
+			ApiSuccessResponse<MotionForVoting> | ApiErrorResponse
+		>,
+		res: Response<ApiSuccessResponse<MotionForVoting> | ApiErrorResponse>,
 	): Promise<void> => {
 		if (req.user === undefined) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
@@ -221,10 +223,10 @@ voterRouter.post(
 	async (
 		req: Request<
 			{ id: string },
-			ApiResponse<CastVoteResponse>,
+			ApiSuccessResponse<CastVoteResponse> | ApiErrorResponse,
 			CastVoteRequest
 		>,
-		res: Response<ApiResponse<CastVoteResponse>>,
+		res: Response<ApiSuccessResponse<CastVoteResponse> | ApiErrorResponse>,
 	): Promise<void> => {
 		if (req.user === undefined) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
@@ -313,8 +315,8 @@ voterRouter.post(
 voterRouter.get(
 	"/meetings/joinable",
 	async (
-		req: Request<object, ApiResponse<JoinableMeetingsResponse>>,
-		res: Response<ApiResponse<JoinableMeetingsResponse>>,
+		req: Request<object, JoinableMeetingsResponse | ApiErrorResponse>,
+		res: Response<JoinableMeetingsResponse | ApiErrorResponse>,
 	): Promise<void> => {
 		if (req.user === undefined) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
@@ -329,9 +331,7 @@ voterRouter.get(
 
 			res.json({
 				success: true,
-				data: {
-					data: meetings,
-				},
+				data: meetings,
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
@@ -350,8 +350,8 @@ voterRouter.get(
 voterRouter.get(
 	"/meetings/current",
 	async (
-		req: Request<object, ApiResponse<CurrentMeetingResponse>>,
-		res: Response<ApiResponse<CurrentMeetingResponse>>,
+		req: Request<object, CurrentMeetingResponse | ApiErrorResponse>,
+		res: Response<CurrentMeetingResponse | ApiErrorResponse>,
 	): Promise<void> => {
 		if (req.user === undefined) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
@@ -366,9 +366,7 @@ voterRouter.get(
 
 			res.json({
 				success: true,
-				data: {
-					data: currentMeeting,
-				},
+				data: currentMeeting,
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
@@ -389,8 +387,8 @@ voterRouter.post(
 	"/meetings/:id/join",
 	requireVoter,
 	async (
-		req: Request<{ id: string }, ApiResponse<JoinMeetingResponse>>,
-		res: Response<ApiResponse<JoinMeetingResponse>>,
+		req: Request<{ id: string }, JoinMeetingResponse | ApiErrorResponse>,
+		res: Response<JoinMeetingResponse | ApiErrorResponse>,
 	): Promise<void> => {
 		if (req.user === undefined) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
@@ -414,9 +412,7 @@ voterRouter.post(
 
 			res.json({
 				success: true,
-				data: {
-					data: result,
-				},
+				data: result,
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
@@ -437,8 +433,8 @@ voterRouter.post(
 voterRouter.post(
 	"/meetings/leave",
 	async (
-		req: Request<object, ApiResponse<LeaveMeetingResponse>>,
-		res: Response<ApiResponse<LeaveMeetingResponse>>,
+		req: Request<object, LeaveMeetingResponse | ApiErrorResponse>,
+		res: Response<LeaveMeetingResponse | ApiErrorResponse>,
 	): Promise<void> => {
 		if (req.user === undefined) {
 			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
@@ -449,13 +445,11 @@ voterRouter.post(
 		}
 
 		try {
-			const success = await leaveCurrentMeeting(req.user.id);
+			const leftMeeting = await leaveCurrentMeeting(req.user.id);
 
 			res.json({
 				success: true,
-				data: {
-					data: { success },
-				},
+				data: { left: leftMeeting },
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";

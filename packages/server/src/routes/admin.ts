@@ -381,6 +381,7 @@ adminRouter.get(
 			});
 
 			const response: UserListResponse = {
+				success: true,
 				data: users,
 				pagination: {
 					page,
@@ -395,7 +396,7 @@ adminRouter.get(
 			const message = error instanceof Error ? error.message : "Unknown error";
 			res
 				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-				.json({ error: `Failed to list users: ${message}` });
+				.json({ success: false, error: `Failed to list users: ${message}` });
 		}
 	},
 );
@@ -977,6 +978,7 @@ adminRouter.get(
 			const { pools, total } = await listPools(options);
 
 			const response: PoolListResponse = {
+				success: true,
 				data: pools,
 				pagination: {
 					page,
@@ -991,7 +993,7 @@ adminRouter.get(
 			const message = error instanceof Error ? error.message : "Unknown error";
 			res
 				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-				.json({ error: `Failed to list pools: ${message}` });
+				.json({ success: false, error: `Failed to list pools: ${message}` });
 		}
 	},
 );
@@ -1068,6 +1070,7 @@ adminRouter.get(
 			const { pendingKeys, total } = await listPendingPoolKeys(page, limit);
 
 			const response: PendingPoolKeyListResponse = {
+				success: true,
 				data: pendingKeys,
 				pagination: {
 					page,
@@ -1080,9 +1083,10 @@ adminRouter.get(
 			res.json(response);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-				.json({ error: `Failed to list pending pool keys: ${message}` });
+			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+				success: false,
+				error: `Failed to list pending pool keys: ${message}`,
+			});
 		}
 	},
 );
@@ -1367,6 +1371,7 @@ adminRouter.get(
 			const { users, total } = await getUsersInPool(poolId, page, limit);
 
 			const response: UserListResponse = {
+				success: true,
 				data: users,
 				pagination: {
 					page,
@@ -1379,9 +1384,10 @@ adminRouter.get(
 			res.json(response);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-				.json({ error: `Failed to get pool users: ${message}` });
+			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+				success: false,
+				error: `Failed to get pool users: ${message}`,
+			});
 		}
 	},
 );
@@ -1611,6 +1617,7 @@ adminRouter.get("/meetings", async (req: Request, res: Response) => {
 			: await listMeetingsForMeetingAdmin(req.user.id, page, limit);
 
 		const response: MeetingListResponse = {
+			success: true,
 			data: meetings,
 			pagination: {
 				page,
@@ -1625,7 +1632,7 @@ adminRouter.get("/meetings", async (req: Request, res: Response) => {
 		const message = error instanceof Error ? error.message : "Unknown error";
 		res
 			.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-			.json({ error: `Failed to list meetings: ${message}` });
+			.json({ success: false, error: `Failed to list meetings: ${message}` });
 	}
 });
 
@@ -1999,6 +2006,7 @@ adminRouter.get(
 			);
 
 			const response: MotionListResponse = {
+				success: true,
 				data: motions,
 				pagination: {
 					page,
@@ -2013,7 +2021,7 @@ adminRouter.get(
 			const message = error instanceof Error ? error.message : "Unknown error";
 			res
 				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-				.json({ error: `Failed to list motions: ${message}` });
+				.json({ success: false, error: `Failed to list motions: ${message}` });
 		}
 	},
 );
@@ -2259,6 +2267,7 @@ adminRouter.get(
 			const choices = await listChoicesForMotion(motionId);
 
 			const response: ChoiceListResponse = {
+				success: true,
 				data: choices,
 			};
 
@@ -2267,7 +2276,7 @@ adminRouter.get(
 			const message = error instanceof Error ? error.message : "Unknown error";
 			res
 				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-				.json({ error: `Failed to list choices: ${message}` });
+				.json({ success: false, error: `Failed to list choices: ${message}` });
 		}
 	},
 );

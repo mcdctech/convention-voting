@@ -76,8 +76,8 @@ async function checkMeetingParticipation(): Promise<void> {
 
 	try {
 		const response = await getCurrentMeeting();
-		if (response.success && response.data !== undefined) {
-			const currentMeeting = response.data.data;
+		if (response.success) {
+			const currentMeeting = response.data;
 			if (currentMeeting === null) {
 				// User has no active meeting, redirect to meeting selection
 				const kioskQuery = getKioskModeQueryParam();
