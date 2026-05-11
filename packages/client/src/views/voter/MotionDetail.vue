@@ -227,12 +227,7 @@ function cancelConfirm(): void {
 
 async function checkForRemainingOpenMotions(): Promise<boolean> {
 	const openMotionsResponse = await getOpenMotions();
-	const motionsList = openMotionsResponse.data?.data;
-	return (
-		openMotionsResponse.success &&
-		motionsList !== undefined &&
-		motionsList.length > ZERO
-	);
+	return openMotionsResponse.data.length > ZERO;
 }
 
 async function handlePostVoteSuccess(): Promise<void> {

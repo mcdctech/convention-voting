@@ -68,16 +68,18 @@ watch(
  * Redirects to meeting selection if not
  */
 async function checkMeetingParticipation(): Promise<void> {
-	// Skip check if already on meetings page
-	if (route.path === "/meetings") {
+	// Skip check for pages that don't require active meeting participation
+	// - /meetings: meeting selection page
+	// - /pools: view user's pool memberships (informational, no meeting required)
+	if (route.path === "/meetings" || route.path === "/pools") {
 		meetingCheckComplete.value = true;
 		return;
 	}
 
 	try {
 		const response = await getCurrentMeeting();
-		if (response.success && response.data !== undefined) {
-			const currentMeeting = response.data.data;
+		if (response.success) {
+			const currentMeeting = response.data;
 			if (currentMeeting === null) {
 				// User has no active meeting, redirect to meeting selection
 				const kioskQuery = getKioskModeQueryParam();

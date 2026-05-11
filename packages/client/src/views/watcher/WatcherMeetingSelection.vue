@@ -20,7 +20,7 @@ async function loadJoinableMeetings(): Promise<void> {
 	try {
 		const response = await getJoinableMeetingsForWatcher();
 		if (response.success && response.data !== undefined) {
-			meetings.value = response.data.data;
+			meetings.value = response.data;
 		} else {
 			error.value = response.error ?? "Failed to load meetings";
 		}

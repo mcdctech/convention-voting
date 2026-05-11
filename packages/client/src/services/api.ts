@@ -1066,10 +1066,8 @@ export async function getCurrentUser(): Promise<ApiResponse<AuthUser>> {
 /**
  * Get open motions for the current authenticated voter
  */
-export async function getOpenMotions(): Promise<
-	ApiResponse<OpenMotionsResponse>
-> {
-	return await apiRequest<ApiResponse<OpenMotionsResponse>>(
+export async function getOpenMotions(): Promise<OpenMotionsResponse> {
+	return await apiRequest<OpenMotionsResponse>(
 		`${API_PREFIX}/voter/motions/open`,
 	);
 }
@@ -1112,34 +1110,22 @@ export async function getMyPools(): Promise<ApiResponse<Pool[]>> {
  * Meeting Participation API Functions
  */
 
-interface JoinableMeetingsData {
-	data: JoinableMeeting[];
-}
-
-interface CurrentMeetingData {
-	data: CurrentMeetingInfo | null;
-}
-
 interface JoinMeetingData {
-	data: {
-		participant: MeetingParticipant;
-		meeting: MeetingWithPool;
-	};
+	participant: MeetingParticipant;
+	meeting: MeetingWithPool;
 }
 
 interface LeaveMeetingData {
-	data: {
-		success: boolean;
-	};
+	left: boolean;
 }
 
 /**
  * Get list of active meetings the user can join as a voter
  */
 export async function getJoinableMeetings(): Promise<
-	ApiResponse<JoinableMeetingsData>
+	ApiResponse<JoinableMeeting[]>
 > {
-	return await apiRequest<ApiResponse<JoinableMeetingsData>>(
+	return await apiRequest<ApiResponse<JoinableMeeting[]>>(
 		`${API_PREFIX}/voter/meetings/joinable`,
 	);
 }
@@ -1148,9 +1134,9 @@ export async function getJoinableMeetings(): Promise<
  * Get the user's current active meeting
  */
 export async function getCurrentMeeting(): Promise<
-	ApiResponse<CurrentMeetingData>
+	ApiResponse<CurrentMeetingInfo | null>
 > {
-	return await apiRequest<ApiResponse<CurrentMeetingData>>(
+	return await apiRequest<ApiResponse<CurrentMeetingInfo | null>>(
 		`${API_PREFIX}/voter/meetings/current`,
 	);
 }
@@ -1318,9 +1304,9 @@ export async function getWatcherMotionResult(
  * Get list of active meetings the user can join as a watcher
  */
 export async function getJoinableMeetingsForWatcher(): Promise<
-	ApiResponse<JoinableMeetingsData>
+	ApiResponse<JoinableMeeting[]>
 > {
-	return await apiRequest<ApiResponse<JoinableMeetingsData>>(
+	return await apiRequest<ApiResponse<JoinableMeeting[]>>(
 		`${API_PREFIX}/watcher/meetings/joinable`,
 	);
 }
@@ -1329,9 +1315,9 @@ export async function getJoinableMeetingsForWatcher(): Promise<
  * Get the watcher's current active meeting
  */
 export async function getCurrentMeetingForWatcher(): Promise<
-	ApiResponse<CurrentMeetingData>
+	ApiResponse<CurrentMeetingInfo | null>
 > {
-	return await apiRequest<ApiResponse<CurrentMeetingData>>(
+	return await apiRequest<ApiResponse<CurrentMeetingInfo | null>>(
 		`${API_PREFIX}/watcher/meetings/current`,
 	);
 }
@@ -1373,9 +1359,9 @@ export async function leaveMeetingAsWatcher(): Promise<
  * Get meetings the current user can administer
  */
 export async function getJoinableMeetingsForAdmin(): Promise<
-	ApiResponse<{ data: JoinableMeeting[] }>
+	ApiResponse<JoinableMeeting[]>
 > {
-	return await apiRequest<ApiResponse<{ data: JoinableMeeting[] }>>(
+	return await apiRequest<ApiResponse<JoinableMeeting[]>>(
 		`${API_PREFIX}/admin/meetings/joinable`,
 	);
 }

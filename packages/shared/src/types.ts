@@ -42,7 +42,66 @@ export interface User {
 }
 
 /**
- * API response wrapper
+ * Standard API Response Types
+ *
+ * All API endpoints should return one of these standard response formats:
+ * - ApiSuccessResponse<T> for successful operations returning data
+ * - ApiPaginatedResponse<T> for successful list operations with pagination
+ * - ApiErrorResponse for failed operations
+ *
+ * The legacy ApiResponse<T> type is kept for backward compatibility.
+ */
+
+/**
+ * Standard success response (non-paginated)
+ * Used for: single entity GET, POST, PUT, DELETE operations
+ */
+export interface ApiSuccessResponse<T> {
+	success: true;
+	data: T;
+	message?: string;
+}
+
+/**
+ * Standard error response
+ * Used for: all error cases (4xx, 5xx)
+ */
+export interface ApiErrorResponse {
+	success: false;
+	error: string;
+}
+
+/**
+ * Pagination metadata
+ */
+export interface PaginationInfo {
+	page: number;
+	limit: number;
+	total: number;
+	totalPages: number;
+}
+
+/**
+ * Standard paginated response
+ * Used for: list operations that return multiple items with pagination
+ */
+export interface ApiPaginatedResponse<T> {
+	success: true;
+	data: T[];
+	pagination: PaginationInfo;
+}
+
+/**
+ * Union type for any API response
+ */
+export type ApiResult<T> =
+	| ApiSuccessResponse<T>
+	| ApiPaginatedResponse<T>
+	| ApiErrorResponse;
+
+/**
+ * Legacy API response wrapper (kept for backward compatibility)
+ * @deprecated Use ApiSuccessResponse, ApiPaginatedResponse, or ApiErrorResponse instead
  */
 export interface ApiResponse<T> {
 	success: boolean;
@@ -52,7 +111,7 @@ export interface ApiResponse<T> {
 }
 
 /**
- * Pagination parameters
+ * Pagination parameters for requests
  */
 export interface PaginationParams {
 	page: number;
@@ -60,16 +119,12 @@ export interface PaginationParams {
 }
 
 /**
- * Paginated response
+ * Legacy paginated response (kept for backward compatibility)
+ * @deprecated Use ApiPaginatedResponse instead
  */
 export interface PaginatedResponse<T> {
 	data: T[];
-	pagination: {
-		page: number;
-		limit: number;
-		total: number;
-		totalPages: number;
-	};
+	pagination: PaginationInfo;
 }
 
 /**
@@ -214,7 +269,7 @@ export interface SystemSettings {
 /**
  * User list response with pagination
  */
-export type UserListResponse = PaginatedResponse<User>;
+export type UserListResponse = ApiPaginatedResponse<User>;
 
 /**
  * Pool Management Types
@@ -326,7 +381,7 @@ export interface UpdatePoolRequest {
 /**
  * Pool list response with pagination
  */
-export type PoolListResponse = PaginatedResponse<Pool>;
+export type PoolListResponse = ApiPaginatedResponse<Pool>;
 
 /**
  * Pending Pool Key Types
@@ -382,7 +437,7 @@ export interface ResolvePendingPoolResponse {
 /**
  * Paginated response for pending pool keys
  */
-export type PendingPoolKeyListResponse = PaginatedResponse<PendingPoolKey>;
+export type PendingPoolKeyListResponse = ApiPaginatedResponse<PendingPoolKey>;
 
 /**
  * Meeting Management Types
@@ -522,6 +577,7 @@ export interface CurrentMeetingInfo {
  * Response for joinable meetings list
  */
 export interface JoinableMeetingsResponse {
+	success: true;
 	data: JoinableMeeting[];
 }
 
@@ -529,6 +585,7 @@ export interface JoinableMeetingsResponse {
  * Response for current meeting endpoint
  */
 export interface CurrentMeetingResponse {
+	success: true;
 	data: CurrentMeetingInfo | null;
 }
 
@@ -536,6 +593,7 @@ export interface CurrentMeetingResponse {
  * Response for joining a meeting
  */
 export interface JoinMeetingResponse {
+	success: true;
 	data: {
 		participant: MeetingParticipant;
 		meeting: MeetingWithPool;
@@ -546,8 +604,9 @@ export interface JoinMeetingResponse {
  * Response for leaving a meeting
  */
 export interface LeaveMeetingResponse {
+	success: true;
 	data: {
-		success: boolean;
+		left: boolean;
 	};
 }
 
@@ -703,17 +762,18 @@ export interface ReorderChoicesRequest {
 /**
  * Meeting list response with pagination
  */
-export type MeetingListResponse = PaginatedResponse<MeetingWithPool>;
+export type MeetingListResponse = ApiPaginatedResponse<MeetingWithPool>;
 
 /**
  * Motion list response with pagination
  */
-export type MotionListResponse = PaginatedResponse<MotionWithPool>;
+export type MotionListResponse = ApiPaginatedResponse<MotionWithPool>;
 
 /**
  * Choice list response (non-paginated, always return all for a motion)
  */
 export interface ChoiceListResponse {
+	success: true;
 	data: Choice[];
 }
 
@@ -738,6 +798,7 @@ export interface MotionVoteStats {
  * Response for vote statistics endpoint
  */
 export interface MotionVoteStatsResponse {
+	success: true;
 	data: MotionVoteStats;
 }
 
@@ -782,6 +843,7 @@ export interface MotionDetailedResults {
  * Response for detailed results endpoint
  */
 export interface MotionDetailedResultsResponse {
+	success: true;
 	data: MotionDetailedResults;
 }
 
@@ -878,6 +940,7 @@ export interface OpenMotionForVoter {
  * Response for open motions list (non-paginated since active motions will be few)
  */
 export interface OpenMotionsResponse {
+	success: true;
 	data: OpenMotionForVoter[];
 }
 
@@ -1083,7 +1146,8 @@ export interface WatcherMeetingReport {
 /**
  * Response for watcher meetings list
  */
-export type WatcherMeetingsResponse = PaginatedResponse<WatcherMeetingReport>;
+export type WatcherMeetingsResponse =
+	ApiPaginatedResponse<WatcherMeetingReport>;
 
 /**
  * Response for watcher motion voters endpoint
