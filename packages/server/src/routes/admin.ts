@@ -1664,7 +1664,7 @@ adminRouter.get("/meetings/joinable", async (req: Request, res: Response) => {
 		const meetings = req.user.isAdmin
 			? await getAllMeetingsForAdmin()
 			: await getJoinableMeetingsForAdmin(req.user.id);
-		res.json({ success: true, data: { data: meetings } });
+		res.json({ success: true, data: meetings });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Unknown error";
 		res
