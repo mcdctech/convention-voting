@@ -84,7 +84,7 @@ const quorumPoolIds = computed(
 	(): Set<number> => new Set(meetings.value.map((m) => m.quorumVotingPoolId)),
 );
 
-// Filter pools: exclude disabled, optionally filter to quorum-only, sort alphabetically
+// Filter pools: exclude disabled, optionally filter to quorum-only, sort alphabetically by pool key
 const filteredPools = computed((): Pool[] => {
 	let filtered = pools.value.filter((pool) => !pool.isDisabled);
 
@@ -92,9 +92,9 @@ const filteredPools = computed((): Pool[] => {
 		filtered = filtered.filter((pool) => quorumPoolIds.value.has(pool.id));
 	}
 
-	// Sort alphabetically by pool name
+	// Sort alphabetically by pool key (server already sorts this way, but maintain order after filtering)
 	return filtered.sort((a, b) =>
-		a.poolName.toLowerCase().localeCompare(b.poolName.toLowerCase()),
+		a.poolKey.toLowerCase().localeCompare(b.poolKey.toLowerCase()),
 	);
 });
 
@@ -115,11 +115,39 @@ const focusedQuorumPoolId = computed(() => {
 	return undefined;
 });
 
+// Helper to determine pool filter parameters based on current selection
+function getPoolFilterParams(): { poolId?: number; noPool?: boolean } {
+	// When focused on a meeting and "show only quorum pools" is checked,
+	// filter to the focused meeting's quorum pool
+	if (showOnlyQuorumPools.value && focusedQuorumPoolId.value !== undefined) {
+		return { poolId: focusedQuorumPoolId.value, noPool: undefined };
+	}
+	if (selectedPoolFilter.value === POOL_FILTER_ALL) {
+		// Show all users - no filters
+		return { poolId: undefined, noPool: undefined };
+	}
+	if (selectedPoolFilter.value === POOL_FILTER_NO_POOL) {
+		// Show users not assigned to any pool
+		return { poolId: undefined, noPool: true };
+	}
+	// Filter by specific pool ID
+	return { poolId: parseInt(selectedPoolFilter.value, 10), noPool: undefined };
+}
+
 async function loadPools(): Promise<void> {
 	loadingPools.value = true;
 	try {
-		const response = await getPools({ page: INITIAL_PAGE, limit: MAX_POOLS });
-		pools.value = response.data;
+		// When joined to a meeting, only show pools associated with that meeting
+		const forMeetingId =
+			isJoined.value && !showAllUsers.value
+				? (joinedMeetingId.value ?? undefined)
+				: undefined;
+		const response = await getPools({
+			page: INITIAL_PAGE,
+			limit: MAX_POOLS,
+			forMeetingId,
+		});
+		pools.value = response.data ?? [];
 	} catch {
 		// Silently fail - dropdown will be empty
 	} finally {
@@ -131,7 +159,7 @@ async function loadMeetings(): Promise<void> {
 	loadingMeetings.value = true;
 	try {
 		const response = await getMeetings(INITIAL_PAGE, MAX_MEETINGS);
-		meetings.value = response.data;
+		meetings.value = response.data ?? [];
 	} catch {
 		// Silently fail - quorum filter won't work but pools will still show
 	} finally {
@@ -153,29 +181,7 @@ async function loadUsers(): Promise<void> {
 	try {
 		const search = searchQuery.value.trim();
 		const searchParam = search === "" ? undefined : search;
-
-		// Determine filter parameters based on selection
-		let poolId: number | undefined = undefined;
-		let noPool: boolean | undefined = undefined;
-
-		// When focused on a meeting and "show only quorum pools" is checked,
-		// filter to the focused meeting's quorum pool
-		if (showOnlyQuorumPools.value && focusedQuorumPoolId.value !== undefined) {
-			poolId = focusedQuorumPoolId.value;
-			noPool = undefined;
-		} else if (selectedPoolFilter.value === POOL_FILTER_ALL) {
-			// Show all users - no filters
-			poolId = undefined;
-			noPool = undefined;
-		} else if (selectedPoolFilter.value === POOL_FILTER_NO_POOL) {
-			// Show users not assigned to any pool
-			poolId = undefined;
-			noPool = true;
-		} else {
-			// Filter by specific pool ID
-			poolId = parseInt(selectedPoolFilter.value, 10);
-			noPool = undefined;
-		}
+		const { poolId, noPool } = getPoolFilterParams();
 
 		const response = await getUsers({
 			page: currentPage.value,
@@ -187,9 +193,8 @@ async function loadUsers(): Promise<void> {
 			role: selectedRoleFilter.value,
 			forMeetingId: meetingFilterId.value,
 		});
-		const { data, pagination } = response;
-		users.value = data;
-		totalUsers.value = pagination.total;
+		users.value = response.data ?? [];
+		totalUsers.value = response.pagination?.total ?? INITIAL_TOTAL;
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to load users";
 	} finally {
@@ -377,12 +382,19 @@ watch(users, () => {
 	});
 });
 
-// Reload users when meeting focus changes
+// Reload users and pools when meeting focus changes
 watch(meetingFilterId, () => {
+	// Reload pools to filter by meeting
+	void loadPools();
 	if (shouldShowUsers.value) {
 		currentPage.value = INITIAL_PAGE;
 		void loadUsers();
 	}
+});
+
+// Reload pools when "show all users" changes (affects pool filtering)
+watch(showAllUsers, () => {
+	void loadPools();
 });
 
 // Reload users when quorum pool filter changes (when focused on a meeting)
@@ -457,7 +469,7 @@ onUnmounted(() => {
 									:key="pool.id"
 									:value="String(pool.id)"
 								>
-									{{ pool.poolName }}
+									{{ pool.poolKey }} - {{ pool.poolName }}
 								</option>
 							</select>
 						</div>

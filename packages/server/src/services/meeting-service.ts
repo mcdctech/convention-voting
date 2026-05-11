@@ -289,7 +289,7 @@ export async function listMeetings(
 		 INNER JOIN pools qp ON m.quorum_voting_pool_id = qp.id
 		 LEFT JOIN pools wp ON m.watcher_pool_id = wp.id
 		 LEFT JOIN pools ap ON m.meeting_admin_pool_id = ap.id
-		 ORDER BY m.start_date DESC
+		 ORDER BY m.start_date ASC
 		 LIMIT :limit OFFSET :offset`,
 		{ limit, offset },
 	);
@@ -361,7 +361,7 @@ export async function listMeetingsForMeetingAdmin(
 		 LEFT JOIN pools ap ON m.meeting_admin_pool_id = ap.id
 		 INNER JOIN user_pools up ON m.meeting_admin_pool_id = up.pool_id
 		 WHERE up.user_id = :userId
-		 ORDER BY m.start_date DESC
+		 ORDER BY m.start_date ASC
 		 LIMIT :limit OFFSET :offset`,
 		{ userId, limit, offset },
 	);

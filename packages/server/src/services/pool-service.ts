@@ -385,7 +385,7 @@ export async function listPools(
      LEFT JOIN user_pools up ON p.id = up.pool_id
      ${whereClause}
      GROUP BY p.id
-     ORDER BY p.created_at DESC
+     ORDER BY LOWER(p.pool_key) ASC
      LIMIT :limit OFFSET :offset`,
 		params,
 	);
@@ -584,7 +584,7 @@ export async function getPoolsForUser(userId: string): Promise<Pool[]> {
      FROM pools p
      INNER JOIN user_pools up ON p.id = up.pool_id
      WHERE up.user_id = :userId
-     ORDER BY p.created_at DESC`,
+     ORDER BY LOWER(p.pool_key) ASC`,
 		{ userId },
 	);
 

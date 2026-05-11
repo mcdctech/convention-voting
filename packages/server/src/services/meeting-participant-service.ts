@@ -569,7 +569,7 @@ export async function getJoinableMeetingsForAdmin(
 		 INNER JOIN user_pools up ON up.pool_id = m.meeting_admin_pool_id
 		 WHERE up.user_id = :userId
 		   AND m.meeting_admin_pool_id IS NOT NULL
-		 ORDER BY m.start_date DESC`,
+		 ORDER BY m.start_date ASC`,
 		{ userId },
 	);
 
@@ -601,7 +601,7 @@ export async function getAllMeetingsForAdmin(): Promise<JoinableMeeting[]> {
 		`SELECT m.id, m.name, m.description, m.start_date, m.end_date, p.pool_name
 		 FROM meetings m
 		 INNER JOIN pools p ON m.quorum_voting_pool_id = p.id
-		 ORDER BY m.start_date DESC`,
+		 ORDER BY m.start_date ASC`,
 		{},
 	);
 
