@@ -13,6 +13,7 @@ import {
 	type BulkPasswordResponse,
 	type PasswordResetResponse,
 	type GeneratePasswordsRequest,
+	type PasswordGenerationProgress,
 	type CreatePoolRequest,
 	type UpdatePoolRequest,
 	type PoolListResponse,
@@ -30,6 +31,7 @@ import {
 	type UpdateChoiceRequest,
 	type ReorderChoicesRequest,
 	type ChoiceListResponse,
+	type CSVValidationResult,
 } from "@mcdc-convention-voting/shared";
 import {
 	createUser,
@@ -87,6 +89,7 @@ import {
 import {
 	importUsersFromCSV,
 	importPoolsFromCSV,
+	validateUsersCSV,
 } from "../services/csv-service.js";
 import {
 	getQuorumReport,
@@ -222,6 +225,40 @@ const upload = multer({
 		fileSize: MAX_FILE_SIZE_BYTES,
 	},
 });
+
+/**
+ * POST /api/admin/users/validate-csv
+ * Validate CSV file without importing (preflight validation)
+ */
+adminRouter.post(
+	"/users/validate-csv",
+	requireAdmin,
+	upload.single("file"),
+	async (req: Request, res: Response) => {
+		try {
+			if (req.file === undefined) {
+				res
+					.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
+					.json({ error: "No file uploaded" });
+				return;
+			}
+
+			const result: CSVValidationResult = await validateUsersCSV(
+				req.file.buffer,
+			);
+
+			res.json({
+				success: true,
+				data: result,
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to validate CSV: ${message}` });
+		}
+	},
+);
 
 /**
  * POST /api/admin/users/upload
@@ -725,6 +762,70 @@ adminRouter.post(
 			res
 				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
 				.json({ error: `Failed to generate passwords: ${message}` });
+		}
+	},
+);
+
+/**
+ * GET /api/admin/users/generate-passwords-stream
+ * Generate passwords with real-time progress via Server-Sent Events (SSE)
+ * Query params: ?poolId=123&onlyNullPasswords=true
+ */
+adminRouter.get(
+	"/users/generate-passwords-stream",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			// Set SSE headers
+			res.setHeader("Content-Type", "text/event-stream");
+			res.setHeader("Cache-Control", "no-cache");
+			res.setHeader("Connection", "keep-alive");
+
+			// Parse query parameters
+			// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Need intermediate variables for type checking
+			const poolIdParam = req.query.poolId;
+			// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Need intermediate variables for type checking
+			const onlyNullPasswordsParam = req.query.onlyNullPasswords;
+
+			const poolId =
+				typeof poolIdParam === "string"
+					? Number.parseInt(poolIdParam, DECIMAL_RADIX)
+					: undefined;
+			const onlyNullPasswords =
+				typeof onlyNullPasswordsParam === "string"
+					? onlyNullPasswordsParam === "true"
+					: undefined;
+
+			// Progress callback that sends SSE events
+			const sendProgress = (progress: PasswordGenerationProgress): void => {
+				res.write(`data: ${JSON.stringify(progress)}\n\n`);
+			};
+
+			// Generate passwords with progress tracking
+			const results = await generatePasswordsForUsers(
+				{
+					poolId,
+					onlyNullPasswords,
+				},
+				sendProgress,
+			);
+
+			// Send final results and close stream
+			const finalData = {
+				phase: "complete" as const,
+				results,
+				count: results.length,
+			};
+			res.write(`data: ${JSON.stringify(finalData)}\n\n`);
+			res.end();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			const errorData = {
+				phase: "error" as const,
+				message: `Failed to generate passwords: ${message}`,
+			};
+			res.write(`data: ${JSON.stringify(errorData)}\n\n`);
+			res.end();
 		}
 	},
 );

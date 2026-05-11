@@ -24,6 +24,14 @@ const EMPTY_STRING = "";
 const MAX_POOLS_TO_LOAD = 1000;
 const FIRST_PAGE = 1;
 
+// Validation patterns (consistent with CSV import validation)
+// Voter ID: ASCII alphanumeric, hyphens, underscores (no spaces)
+const VOTER_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+// Names: ASCII letters, digits, spaces, hyphens, apostrophes
+const NAME_PATTERN = /^[A-Za-z0-9\s'-]+$/;
+// Username: ASCII alphanumeric, underscores (lowercase preferred)
+const USERNAME_PATTERN = /^[A-Za-z0-9_]+$/;
+
 const user = ref<User | null>(null);
 const loading = ref(false);
 const saving = ref(false);
@@ -152,15 +160,48 @@ function togglePool(poolId: number): void {
 	}
 }
 
-async function handleSubmit(): Promise<void> {
-	error.value = null;
-
+function validateForm(): string | null {
+	// Validate required fields
 	if (
 		formData.value.voterId.trim() === EMPTY_STRING ||
 		formData.value.firstName.trim() === EMPTY_STRING ||
 		formData.value.lastName.trim() === EMPTY_STRING
 	) {
-		error.value = "Voter ID, First Name, and Last Name are required.";
+		return "Voter ID, First Name, and Last Name are required.";
+	}
+
+	// Validate voter ID format
+	if (!VOTER_ID_PATTERN.test(formData.value.voterId.trim())) {
+		return "Voter ID can only contain letters, numbers, hyphens, and underscores.";
+	}
+
+	// Validate first name format
+	if (!NAME_PATTERN.test(formData.value.firstName.trim())) {
+		return "First Name can only contain letters, numbers, spaces, hyphens, and apostrophes.";
+	}
+
+	// Validate last name format
+	if (!NAME_PATTERN.test(formData.value.lastName.trim())) {
+		return "Last Name can only contain letters, numbers, spaces, hyphens, and apostrophes.";
+	}
+
+	// Validate username format
+	if (
+		formData.value.username.trim() !== EMPTY_STRING &&
+		!USERNAME_PATTERN.test(formData.value.username.trim())
+	) {
+		return "Username can only contain letters, numbers, and underscores.";
+	}
+
+	return null;
+}
+
+async function handleSubmit(): Promise<void> {
+	error.value = null;
+
+	const validationError = validateForm();
+	if (validationError !== null) {
+		error.value = validationError;
 		return;
 	}
 

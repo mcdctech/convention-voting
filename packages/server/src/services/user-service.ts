@@ -10,6 +10,7 @@ import type {
 	CreateUserRequest,
 	UpdateUserRequest,
 	PasswordGenerationResult,
+	PasswordGenerationProgress,
 	SystemSettings,
 	GeneratePasswordsRequest,
 } from "@mcdc-convention-voting/shared";
@@ -939,6 +940,18 @@ export async function enableUser(userId: string): Promise<User> {
 // Batch size for password updates
 const PASSWORD_BATCH_SIZE = 100;
 
+// Progress tracking constants
+const PROGRESS_UPDATE_INTERVAL_MS = 5000; // Update every 5 seconds max
+const PROGRESS_UPDATE_EVERY_N_USERS = 10; // Update every N users processed
+const SINGLE_USER_INCREMENT = 1; // Increment by 1 user
+
+/**
+ * Progress callback for password generation
+ */
+export type PasswordGenerationProgressCallback = (
+	progress: PasswordGenerationProgress,
+) => void;
+
 /**
  * Generate passwords for users with optional filtering
  * Admin users are always excluded to prevent accidental credential changes
@@ -947,12 +960,32 @@ const PASSWORD_BATCH_SIZE = 100;
  * @param options - Optional filters
  * @param options.poolId - Only generate for users in this pool
  * @param options.onlyNullPasswords - Only generate for users without existing passwords
+ * @param onProgress - Optional callback for progress updates (for SSE streaming)
  */
+// eslint-disable-next-line complexity -- Progress tracking requires multiple conditional branches
 export async function generatePasswordsForUsers(
 	options?: GeneratePasswordsRequest,
+	onProgress?: PasswordGenerationProgressCallback,
 ): Promise<PasswordGenerationResult[]> {
 	const poolId = options?.poolId;
 	const onlyNullPasswords = options?.onlyNullPasswords ?? false;
+
+	// Progress tracking
+	let lastProgressUpdate = Date.now();
+	const shouldEmitProgress = (force = false): boolean => {
+		if (onProgress === undefined) {
+			return false;
+		}
+		if (force) {
+			return true;
+		}
+		const now = Date.now();
+		if (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL_MS) {
+			lastProgressUpdate = now;
+			return true;
+		}
+		return false;
+	};
 
 	// Build query with optional filters
 	let query = `
@@ -983,9 +1016,31 @@ export async function generatePasswordsForUsers(
 		voter_id: string | null;
 	}>(query, { poolId: poolId ?? null });
 
+	const { rows: userRows } = usersResult;
+	// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Array length access doesn't benefit from destructuring
+	const totalUsers = userRows.length;
+
 	// If no users, return early
-	if (usersResult.rows.length === EMPTY_ARRAY_LENGTH) {
+	if (totalUsers === EMPTY_ARRAY_LENGTH) {
+		if (onProgress !== undefined) {
+			onProgress({
+				phase: "complete",
+				current: 0,
+				total: 0,
+				message: "No users found matching criteria",
+			});
+		}
 		return [];
+	}
+
+	// Emit preparing phase complete
+	if (shouldEmitProgress(true)) {
+		onProgress?.({
+			phase: "preparing",
+			current: 0,
+			total: totalUsers,
+			message: `Preparing to generate passwords for ${totalUsers} user(s)`,
+		});
 	}
 
 	// Generate all passwords and prepare results in memory
@@ -994,22 +1049,90 @@ export async function generatePasswordsForUsers(
 		username: string;
 		voterId: string | null;
 		password: string;
-	}> = usersResult.rows.map((user) => ({
-		userId: user.id,
-		username: user.username,
-		voterId: user.voter_id,
-		password: generatePassword(),
-	}));
+	}> = [];
 
-	// Hash all passwords in parallel for performance
-	const hashedData = await Promise.all(
-		passwordsToHash.map(async (item) => ({
-			...item,
-			hashedPassword: await hashPassword(item.password),
-		})),
-	);
+	for (let i = FIRST_ROW; i < userRows.length; i += SINGLE_USER_INCREMENT) {
+		// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Array element access in loop doesn't benefit from destructuring
+		const user = userRows[i];
+		passwordsToHash.push({
+			userId: user.id,
+			username: user.username,
+			voterId: user.voter_id,
+			password: generatePassword(),
+		});
+
+		// Emit progress every N users
+		const currentCount = i + SINGLE_USER_INCREMENT;
+		if (
+			currentCount % PROGRESS_UPDATE_EVERY_N_USERS === EMPTY_ARRAY_LENGTH &&
+			shouldEmitProgress()
+		) {
+			onProgress?.({
+				phase: "generating",
+				current: currentCount,
+				total: totalUsers,
+				message: `Generated ${currentCount} of ${totalUsers} passwords`,
+			});
+		}
+	}
+
+	// Emit generating complete
+	if (shouldEmitProgress(true)) {
+		onProgress?.({
+			phase: "generating",
+			current: totalUsers,
+			total: totalUsers,
+			message: `Generated all ${totalUsers} passwords, starting hashing`,
+		});
+	}
+
+	// Hash passwords in batches to report progress (hashing is the slowest step)
+	const hashedData: Array<{
+		userId: string;
+		username: string;
+		voterId: string | null;
+		password: string;
+		hashedPassword: string;
+	}> = [];
+
+	const HASH_BATCH_SIZE = 10;
+	for (let i = FIRST_ROW; i < passwordsToHash.length; i += HASH_BATCH_SIZE) {
+		const batch = passwordsToHash.slice(i, i + HASH_BATCH_SIZE);
+
+		// Hash batch in parallel
+		// eslint-disable-next-line no-await-in-loop -- Sequential batches for progress tracking
+		const batchHashed = await Promise.all(
+			batch.map(async (item) => ({
+				...item,
+				hashedPassword: await hashPassword(item.password),
+			})),
+		);
+
+		hashedData.push(...batchHashed);
+
+		// Emit progress
+		if (shouldEmitProgress()) {
+			onProgress?.({
+				phase: "hashing",
+				current: hashedData.length,
+				total: totalUsers,
+				message: `Hashed ${hashedData.length} of ${totalUsers} passwords`,
+			});
+		}
+	}
+
+	// Emit hashing complete
+	if (shouldEmitProgress(true)) {
+		onProgress?.({
+			phase: "hashing",
+			current: totalUsers,
+			total: totalUsers,
+			message: `All passwords hashed, saving to database`,
+		});
+	}
 
 	// Batch update passwords in a transaction
+	let savedCount = 0;
 	await withTransaction(async (tx) => {
 		// Process in batches to avoid query size limits
 		for (let i = FIRST_ROW; i < hashedData.length; i += PASSWORD_BATCH_SIZE) {
@@ -1030,8 +1153,30 @@ export async function generatePasswordsForUsers(
 				 WHERE users.id = data.id`,
 				{ userIds, hashedPasswords },
 			);
+
+			savedCount += batch.length;
+
+			// Emit progress after each batch
+			if (shouldEmitProgress()) {
+				onProgress?.({
+					phase: "saving",
+					current: savedCount,
+					total: totalUsers,
+					message: `Saved ${savedCount} of ${totalUsers} passwords to database`,
+				});
+			}
 		}
 	});
+
+	// Emit completion
+	if (onProgress !== undefined) {
+		onProgress({
+			phase: "complete",
+			current: totalUsers,
+			total: totalUsers,
+			message: `Successfully generated ${totalUsers} password(s)`,
+		});
+	}
 
 	// Build results from in-memory data
 	return passwordsToHash.map((item) => ({

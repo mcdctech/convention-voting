@@ -7,7 +7,9 @@ import type {
 	CreateUserRequest,
 	BulkPasswordResponse,
 	PasswordGenerationResult,
+	PasswordGenerationProgress,
 	GeneratePasswordsRequest,
+	CSVValidationResult,
 	Pool,
 	CreatePoolRequest,
 	UpdatePoolRequest,
@@ -196,6 +198,47 @@ async function apiRequest<T>(
 }
 
 /**
+ * Validate users CSV file without importing (preflight validation)
+ */
+export async function validateUsersCSV(
+	file: File,
+): Promise<ApiResponse<CSVValidationResult>> {
+	const formData = new FormData();
+	formData.append("file", file);
+
+	const url = `${API_BASE_URL}${API_PREFIX}/admin/users/validate-csv`;
+
+	// Build headers with auth token (don't set Content-Type for FormData)
+	const requestHeaders = new Headers();
+	const token = getAuthToken();
+	if (token !== null) {
+		requestHeaders.set("Authorization", `Bearer ${token}`);
+	}
+
+	const response = await fetch(url, {
+		method: "POST",
+		headers: requestHeaders,
+		body: formData,
+	});
+
+	if (!response.ok) {
+		const errorJson: unknown = await response.json().catch(() => ({
+			error: "Failed to validate CSV",
+		}));
+		const errorMessage =
+			typeof errorJson === "object" &&
+			errorJson !== null &&
+			"error" in errorJson &&
+			typeof errorJson.error === "string"
+				? errorJson.error
+				: "Failed to validate CSV";
+		throw new Error(errorMessage);
+	}
+
+	return await parseJsonResponse<ApiResponse<CSVValidationResult>>(response);
+}
+
+/**
  * Upload users from CSV file
  */
 export async function uploadUsersCSV(
@@ -374,6 +417,83 @@ export async function generatePasswords(
 			body: JSON.stringify(options ?? {}),
 		},
 	);
+}
+
+/**
+ * Generate passwords with real-time progress via Server-Sent Events (SSE)
+ * @param options - Optional filters (poolId, onlyNullPasswords)
+ * @param onProgress - Callback for progress updates
+ */
+export async function generatePasswordsWithProgress(
+	options?: GeneratePasswordsRequest,
+	onProgress?: (progress: PasswordGenerationProgress) => void,
+): Promise<BulkPasswordResponse> {
+	// eslint-disable-next-line promise/avoid-new -- Necessary to wrap EventSource API in Promise
+	return await new Promise((resolve, reject) => {
+		// Build query string
+		const params = new URLSearchParams();
+		if (options?.poolId !== undefined) {
+			params.append("poolId", String(options.poolId));
+		}
+		if (options?.onlyNullPasswords !== undefined) {
+			params.append("onlyNullPasswords", String(options.onlyNullPasswords));
+		}
+		const queryString = params.toString();
+		const url =
+			queryString === ""
+				? `${API_PREFIX}/admin/users/generate-passwords-stream`
+				: `${API_PREFIX}/admin/users/generate-passwords-stream?${queryString}`;
+
+		// Create EventSource for SSE
+		const eventSource = new EventSource(url);
+
+		eventSource.onmessage = (event) => {
+			try {
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument -- EventSource data is string, parse to JSON
+				const data = JSON.parse(event.data);
+
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Checking phase property from parsed JSON
+				if (data.phase === "error") {
+					eventSource.close();
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Error message from server response
+					reject(new Error(String(data.message)));
+					return;
+				}
+
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- Checking phase property from parsed JSON
+				if (data.phase === "complete") {
+					eventSource.close();
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Accessing results and count from final response
+					const { results, count } = data;
+					resolve({
+						// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Final results typed as PasswordGenerationResult[]
+						results,
+						// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Count typed as number
+						count,
+					});
+					return;
+				}
+
+				// Progress update
+				if (onProgress !== undefined) {
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- Progress data matches PasswordGenerationProgress interface
+					onProgress(data);
+				}
+			} catch (error) {
+				eventSource.close();
+				reject(
+					new Error(
+						`Failed to parse SSE data: ${error instanceof Error ? error.message : "Unknown error"}`,
+					),
+				);
+			}
+		};
+
+		eventSource.onerror = () => {
+			eventSource.close();
+			reject(new Error("Failed to connect to password generation stream"));
+		};
+	});
 }
 
 /**

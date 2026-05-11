@@ -16,6 +16,14 @@ const router = useRouter();
 const EMPTY_STRING = "";
 const EMPTY_ARRAY_LENGTH = 0;
 
+// Validation patterns (consistent with CSV import validation)
+// Voter ID: ASCII alphanumeric, hyphens, underscores (no spaces)
+const VOTER_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+// Names: ASCII letters, digits, spaces, hyphens, apostrophes
+const NAME_PATTERN = /^[A-Za-z0-9\s'-]+$/;
+// Username: ASCII alphanumeric, underscores (lowercase preferred)
+const USERNAME_PATTERN = /^[A-Za-z0-9_]+$/;
+
 // User role options
 type UserRole = "voter" | "admin" | "watcher" | "meeting_admin";
 
@@ -130,6 +138,29 @@ function validateForm(): string | null {
 		formData.value.lastName.trim() === EMPTY_STRING
 	) {
 		return "Voter ID, First Name, and Last Name are required.";
+	}
+
+	// Validate voter ID format
+	if (!VOTER_ID_PATTERN.test(formData.value.voterId.trim())) {
+		return "Voter ID can only contain letters, numbers, hyphens, and underscores.";
+	}
+
+	// Validate first name format
+	if (!NAME_PATTERN.test(formData.value.firstName.trim())) {
+		return "First Name can only contain letters, numbers, spaces, hyphens, and apostrophes.";
+	}
+
+	// Validate last name format
+	if (!NAME_PATTERN.test(formData.value.lastName.trim())) {
+		return "Last Name can only contain letters, numbers, spaces, hyphens, and apostrophes.";
+	}
+
+	// Validate username format (if provided)
+	if (
+		formData.value.username.trim() !== EMPTY_STRING &&
+		!USERNAME_PATTERN.test(formData.value.username.trim())
+	) {
+		return "Username can only contain letters, numbers, and underscores.";
 	}
 
 	// Password is required for manual user creation

@@ -1,17 +1,35 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { generatePasswords, getPools } from "../../services/api";
+import { ref, onMounted, computed } from "vue";
+import { generatePasswordsWithProgress, getPools } from "../../services/api";
 import type {
 	PasswordGenerationResult,
+	PasswordGenerationProgress,
 	Pool,
 } from "@mcdc-convention-voting/shared";
 
 const ALL_POOLS_LIMIT = 1000;
 const INITIAL_PAGE = 1;
+const PERCENTAGE_MULTIPLIER = 100;
+const INITIAL_PROGRESS = 0;
 
 const generating = ref(false);
 const error = ref<string | null>(null);
 const results = ref<PasswordGenerationResult[] | null>(null);
+
+// Progress tracking
+const progressPhase = ref<string>("");
+const progressCurrent = ref<number>(INITIAL_PROGRESS);
+const progressTotal = ref<number>(INITIAL_PROGRESS);
+const progressMessage = ref<string>("");
+
+const progressPercentage = computed(() => {
+	if (progressTotal.value === INITIAL_PROGRESS) {
+		return INITIAL_PROGRESS;
+	}
+	return Math.round(
+		(progressCurrent.value / progressTotal.value) * PERCENTAGE_MULTIPLIER,
+	);
+});
 
 // Pool selection
 const pools = ref<Pool[]>([]);
@@ -52,16 +70,28 @@ async function handleGenerate(): Promise<void> {
 	error.value = null;
 	results.value = null;
 
+	// Reset progress
+	progressPhase.value = "";
+	progressCurrent.value = INITIAL_PROGRESS;
+	progressTotal.value = INITIAL_PROGRESS;
+	progressMessage.value = "";
+
 	try {
-		const response = await generatePasswords({
-			poolId: selectedPoolId.value ?? undefined,
-			onlyNullPasswords: onlyNullPasswords.value || undefined,
-		});
-		if (response.data !== undefined) {
-			const { data } = response;
-			const { results: generatedResults } = data;
-			results.value = generatedResults;
-		}
+		const response = await generatePasswordsWithProgress(
+			{
+				poolId: selectedPoolId.value ?? undefined,
+				onlyNullPasswords: onlyNullPasswords.value || undefined,
+			},
+			(progress: PasswordGenerationProgress) => {
+				// Update progress state
+				progressPhase.value = progress.phase;
+				progressCurrent.value = progress.current;
+				progressTotal.value = progress.total;
+				progressMessage.value = progress.message;
+			},
+		);
+
+		results.value = response.results;
 	} catch (err) {
 		error.value =
 			err instanceof Error ? err.message : "Failed to generate passwords";
@@ -170,6 +200,25 @@ function getConfirmationMessage(): string {
 			>
 				{{ generating ? "Generating Passwords..." : "Generate Passwords" }}
 			</button>
+		</div>
+
+		<!-- Progress Section -->
+		<div v-if="generating && progressTotal > 0" class="progress-section">
+			<h3>Progress</h3>
+			<div class="progress-info">
+				<span class="progress-phase">{{ progressMessage }}</span>
+				<span class="progress-stats">
+					{{ progressCurrent }} / {{ progressTotal }} ({{
+						progressPercentage
+					}}%)
+				</span>
+			</div>
+			<div class="progress-bar-container">
+				<div
+					class="progress-bar"
+					:style="{ width: `${progressPercentage}%` }"
+				></div>
+			</div>
 		</div>
 
 		<div v-if="showConfirmModal" class="modal" @click="cancelGenerate">
@@ -483,5 +532,51 @@ h2 {
 	gap: 1rem;
 	margin-top: 1.5rem;
 	justify-content: flex-end;
+}
+
+.progress-section {
+	background: white;
+	border-radius: 8px;
+	padding: 2rem;
+	margin-bottom: 2rem;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.progress-section h3 {
+	margin: 0 0 1rem 0;
+	color: #2c3e50;
+}
+
+.progress-info {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 1rem;
+}
+
+.progress-phase {
+	font-weight: 500;
+	color: #2c3e50;
+}
+
+.progress-stats {
+	font-weight: 600;
+	color: #1976d2;
+	font-size: 1.125rem;
+}
+
+.progress-bar-container {
+	width: 100%;
+	height: 24px;
+	background-color: #e0e0e0;
+	border-radius: 12px;
+	overflow: hidden;
+}
+
+.progress-bar {
+	height: 100%;
+	background: linear-gradient(90deg, #1976d2, #42a5f5);
+	transition: width 0.3s ease-in-out;
+	border-radius: 12px;
 }
 </style>
