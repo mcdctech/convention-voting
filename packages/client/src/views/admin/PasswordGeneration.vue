@@ -12,9 +12,14 @@ const INITIAL_PAGE = 1;
 const PERCENTAGE_MULTIPLIER = 100;
 const INITIAL_PROGRESS = 0;
 
+// Pool filter special values (matching UserList.vue for consistency)
+const POOL_FILTER_ALL = "all";
+const POOL_FILTER_NO_POOL = "no-pool";
+
 const generating = ref(false);
 const error = ref<string | null>(null);
 const results = ref<PasswordGenerationResult[] | null>(null);
+const generationComplete = ref(false);
 
 // Progress tracking
 const progressPhase = ref<string>("");
@@ -34,15 +39,27 @@ const progressPercentage = computed(() => {
 // Pool selection
 const pools = ref<Pool[]>([]);
 const loadingPools = ref(false);
-const selectedPoolId = ref<number | null>(null);
+const selectedPoolFilter = ref<string>(POOL_FILTER_ALL);
 const onlyNullPasswords = ref(false);
+
+// Sort pools alphabetically by name (matching UserList.vue)
+const sortedPools = computed((): Pool[] =>
+	[...pools.value]
+		.filter((pool) => !pool.isDisabled)
+		.sort((a, b) =>
+			a.poolName.toLowerCase().localeCompare(b.poolName.toLowerCase()),
+		),
+);
 
 const showConfirmModal = ref(false);
 
 async function loadPools(): Promise<void> {
 	loadingPools.value = true;
 	try {
-		const response = await getPools(INITIAL_PAGE, ALL_POOLS_LIMIT);
+		const response = await getPools({
+			page: INITIAL_PAGE,
+			limit: ALL_POOLS_LIMIT,
+		});
 		pools.value = response.data;
 	} catch (err) {
 		// Silently fail - pools dropdown will just be empty
@@ -69,6 +86,7 @@ async function handleGenerate(): Promise<void> {
 	generating.value = true;
 	error.value = null;
 	results.value = null;
+	generationComplete.value = false;
 
 	// Reset progress
 	progressPhase.value = "";
@@ -77,9 +95,18 @@ async function handleGenerate(): Promise<void> {
 	progressMessage.value = "";
 
 	try {
+		// Determine pool filter options based on selection
+		const isNoPool = selectedPoolFilter.value === POOL_FILTER_NO_POOL;
+		const isAllPools = selectedPoolFilter.value === POOL_FILTER_ALL;
+		const poolId =
+			!isNoPool && !isAllPools
+				? Number.parseInt(selectedPoolFilter.value, 10)
+				: undefined;
+
 		const response = await generatePasswordsWithProgress(
 			{
-				poolId: selectedPoolId.value ?? undefined,
+				poolId,
+				noPool: isNoPool || undefined,
 				onlyNullPasswords: onlyNullPasswords.value || undefined,
 			},
 			(progress: PasswordGenerationProgress) => {
@@ -92,6 +119,7 @@ async function handleGenerate(): Promise<void> {
 		);
 
 		results.value = response.results;
+		generationComplete.value = true;
 	} catch (err) {
 		error.value =
 			err instanceof Error ? err.message : "Failed to generate passwords";
@@ -119,17 +147,36 @@ function downloadCSV(): void {
 	window.URL.revokeObjectURL(url);
 }
 
-function getConfirmationMessage(): string {
-	const poolFilter =
-		selectedPoolId.value === null
-			? "all pools"
-			: (pools.value.find((p) => p.id === selectedPoolId.value)?.poolName ??
-				"selected pool");
+function resetForm(): void {
+	results.value = null;
+	generationComplete.value = false;
+	error.value = null;
+	progressPhase.value = "";
+	progressCurrent.value = INITIAL_PROGRESS;
+	progressTotal.value = INITIAL_PROGRESS;
+	progressMessage.value = "";
+}
 
+function getPoolFilterDescription(): string {
+	if (selectedPoolFilter.value === POOL_FILTER_ALL) {
+		return "all pools";
+	}
+	if (selectedPoolFilter.value === POOL_FILTER_NO_POOL) {
+		return "users not assigned to any pool";
+	}
+	const poolId = Number.parseInt(selectedPoolFilter.value, 10);
+	return pools.value.find((p) => p.id === poolId)?.poolName ?? "selected pool";
+}
+
+function getConfirmationMessage(): string {
+	const poolFilter = getPoolFilterDescription();
 	const passwordFilter = onlyNullPasswords.value
 		? "users without existing passwords"
 		: "all users";
 
+	if (selectedPoolFilter.value === POOL_FILTER_NO_POOL) {
+		return `This will generate passwords for ${passwordFilter} who are ${poolFilter}. Admin accounts will not be affected.`;
+	}
 	return `This will generate passwords for ${passwordFilter} in ${poolFilter}. Admin accounts will not be affected.`;
 }
 </script>
@@ -167,11 +214,16 @@ function getConfirmationMessage(): string {
 					<label for="pool-select">Filter by Pool:</label>
 					<select
 						id="pool-select"
-						v-model="selectedPoolId"
+						v-model="selectedPoolFilter"
 						:disabled="generating || results !== null || loadingPools"
 					>
-						<option :value="null">All Pools</option>
-						<option v-for="pool in pools" :key="pool.id" :value="pool.id">
+						<option :value="POOL_FILTER_ALL">All</option>
+						<option :value="POOL_FILTER_NO_POOL">None (No Pool)</option>
+						<option
+							v-for="pool in sortedPools"
+							:key="pool.id"
+							:value="String(pool.id)"
+						>
 							{{ pool.poolName }}
 						</option>
 					</select>
@@ -202,23 +254,35 @@ function getConfirmationMessage(): string {
 			</button>
 		</div>
 
-		<!-- Progress Section -->
-		<div v-if="generating && progressTotal > 0" class="progress-section">
+		<!-- Progress Section - Show immediately when generating starts -->
+		<div v-if="generating" class="progress-section">
 			<h3>Progress</h3>
-			<div class="progress-info">
-				<span class="progress-phase">{{ progressMessage }}</span>
-				<span class="progress-stats">
-					{{ progressCurrent }} / {{ progressTotal }} ({{
-						progressPercentage
-					}}%)
-				</span>
-			</div>
-			<div class="progress-bar-container">
-				<div
-					class="progress-bar"
-					:style="{ width: `${progressPercentage}%` }"
-				></div>
-			</div>
+			<!-- Show detailed progress once we have data -->
+			<template v-if="progressTotal > 0">
+				<div class="progress-info">
+					<span class="progress-phase">{{ progressMessage }}</span>
+					<span class="progress-stats">
+						{{ progressCurrent }} / {{ progressTotal }} ({{
+							progressPercentage
+						}}%)
+					</span>
+				</div>
+				<div class="progress-bar-container">
+					<div
+						class="progress-bar"
+						:style="{ width: `${progressPercentage}%` }"
+					></div>
+				</div>
+			</template>
+			<!-- Show initial state before first progress event -->
+			<template v-else>
+				<div class="progress-info">
+					<span class="progress-phase">Starting password generation...</span>
+				</div>
+				<div class="progress-bar-container">
+					<div class="progress-bar progress-bar-indeterminate"></div>
+				</div>
+			</template>
 		</div>
 
 		<div v-if="showConfirmModal" class="modal" @click="cancelGenerate">
@@ -241,16 +305,33 @@ function getConfirmationMessage(): string {
 			</div>
 		</div>
 
+		<!-- Success Banner -->
+		<div v-if="generationComplete" class="success-banner">
+			<span class="success-icon">✓</span>
+			<span class="success-text">Password Generation Complete!</span>
+			<button class="btn btn-secondary btn-small" @click="resetForm">
+				Generate More
+			</button>
+		</div>
+
 		<div v-if="results" class="results-section">
 			<div class="results-header">
 				<h3>Generated Passwords ({{ results.length }})</h3>
-				<button class="btn btn-secondary" @click="downloadCSV">
+				<button
+					v-if="results.length > 0"
+					class="btn btn-secondary"
+					@click="downloadCSV"
+				>
 					Download as CSV
 				</button>
 			</div>
 
 			<div v-if="results.length === 0" class="no-results">
 				<p>No users matched the selected filters.</p>
+				<p class="no-results-hint">
+					Try changing the pool filter or unchecking "Only users without
+					existing passwords".
+				</p>
 			</div>
 
 			<template v-else>
@@ -458,6 +539,12 @@ h2 {
 	color: #666;
 }
 
+.no-results-hint {
+	font-size: 0.875rem;
+	color: #999;
+	margin-top: 0.5rem;
+}
+
 .results-table {
 	width: 100%;
 	border-collapse: collapse;
@@ -578,5 +665,48 @@ h2 {
 	background: linear-gradient(90deg, #1976d2, #42a5f5);
 	transition: width 0.3s ease-in-out;
 	border-radius: 12px;
+}
+
+.progress-bar-indeterminate {
+	width: 30%;
+	animation: indeterminate 1.5s infinite ease-in-out;
+}
+
+@keyframes indeterminate {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(400%);
+	}
+}
+
+.success-banner {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	background: #e8f5e9;
+	border-left: 4px solid #4caf50;
+	padding: 1rem 1.5rem;
+	margin-bottom: 1.5rem;
+	border-radius: 4px;
+}
+
+.success-icon {
+	font-size: 1.5rem;
+	color: #4caf50;
+	font-weight: bold;
+}
+
+.success-text {
+	flex: 1;
+	font-size: 1.125rem;
+	font-weight: 600;
+	color: #2e7d32;
+}
+
+.btn-small {
+	padding: 0.5rem 1rem;
+	font-size: 0.875rem;
 }
 </style>

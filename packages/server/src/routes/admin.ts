@@ -506,6 +506,76 @@ adminRouter.get(
 );
 
 /**
+ * GET /api/admin/users/generate-passwords-stream
+ * Generate passwords with real-time progress via Server-Sent Events (SSE)
+ * Query params: ?poolId=123&noPool=true&onlyNullPasswords=true
+ * NOTE: This route MUST come before /users/:id to avoid being caught by the :id param
+ */
+adminRouter.get(
+	"/users/generate-passwords-stream",
+	requireAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			// Set SSE headers
+			res.setHeader("Content-Type", "text/event-stream");
+			res.setHeader("Cache-Control", "no-cache");
+			res.setHeader("Connection", "keep-alive");
+
+			// Parse query parameters
+			// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Need intermediate variables for type checking
+			const poolIdParam = req.query.poolId;
+			// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Need intermediate variables for type checking
+			const noPoolParam = req.query.noPool;
+			// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Need intermediate variables for type checking
+			const onlyNullPasswordsParam = req.query.onlyNullPasswords;
+
+			const poolId =
+				typeof poolIdParam === "string"
+					? Number.parseInt(poolIdParam, DECIMAL_RADIX)
+					: undefined;
+			const noPool =
+				typeof noPoolParam === "string" ? noPoolParam === "true" : undefined;
+			const onlyNullPasswords =
+				typeof onlyNullPasswordsParam === "string"
+					? onlyNullPasswordsParam === "true"
+					: undefined;
+
+			// Progress callback that sends SSE events
+			const sendProgress = (progress: PasswordGenerationProgress): void => {
+				res.write(`data: ${JSON.stringify(progress)}\n\n`);
+			};
+
+			// Generate passwords with progress tracking
+			const results = await generatePasswordsForUsers(
+				{
+					poolId,
+					noPool,
+					onlyNullPasswords,
+				},
+				sendProgress,
+			);
+
+			// Send final results and close stream
+			const finalData = {
+				phase: "complete" as const,
+				results,
+				count: results.length,
+			};
+			res.write(`data: ${JSON.stringify(finalData)}\n\n`);
+			res.end();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			const errorData = {
+				phase: "error" as const,
+				message: `Failed to generate passwords: ${message}`,
+			};
+			res.write(`data: ${JSON.stringify(errorData)}\n\n`);
+			res.end();
+		}
+	},
+);
+
+/**
  * GET /api/admin/users/:id
  * Get a single user by ID
  */
@@ -730,7 +800,7 @@ adminRouter.post(
 /**
  * POST /api/admin/users/generate-passwords
  * Generate passwords for users with optional filtering
- * Body: { poolId?: number, onlyNullPasswords?: boolean }
+ * Body: { poolId?: number, noPool?: boolean, onlyNullPasswords?: boolean }
  */
 adminRouter.post(
 	"/users/generate-passwords",
@@ -741,6 +811,7 @@ adminRouter.post(
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
 			const body: GeneratePasswordsRequest = req.body;
 			const poolId = typeof body.poolId === "number" ? body.poolId : undefined;
+			const noPool = typeof body.noPool === "boolean" ? body.noPool : undefined;
 			const onlyNullPasswords =
 				typeof body.onlyNullPasswords === "boolean"
 					? body.onlyNullPasswords
@@ -748,6 +819,7 @@ adminRouter.post(
 
 			const results = await generatePasswordsForUsers({
 				poolId,
+				noPool,
 				onlyNullPasswords,
 			});
 
@@ -762,70 +834,6 @@ adminRouter.post(
 			res
 				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
 				.json({ error: `Failed to generate passwords: ${message}` });
-		}
-	},
-);
-
-/**
- * GET /api/admin/users/generate-passwords-stream
- * Generate passwords with real-time progress via Server-Sent Events (SSE)
- * Query params: ?poolId=123&onlyNullPasswords=true
- */
-adminRouter.get(
-	"/users/generate-passwords-stream",
-	requireAdmin,
-	async (req: Request, res: Response) => {
-		try {
-			// Set SSE headers
-			res.setHeader("Content-Type", "text/event-stream");
-			res.setHeader("Cache-Control", "no-cache");
-			res.setHeader("Connection", "keep-alive");
-
-			// Parse query parameters
-			// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Need intermediate variables for type checking
-			const poolIdParam = req.query.poolId;
-			// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Need intermediate variables for type checking
-			const onlyNullPasswordsParam = req.query.onlyNullPasswords;
-
-			const poolId =
-				typeof poolIdParam === "string"
-					? Number.parseInt(poolIdParam, DECIMAL_RADIX)
-					: undefined;
-			const onlyNullPasswords =
-				typeof onlyNullPasswordsParam === "string"
-					? onlyNullPasswordsParam === "true"
-					: undefined;
-
-			// Progress callback that sends SSE events
-			const sendProgress = (progress: PasswordGenerationProgress): void => {
-				res.write(`data: ${JSON.stringify(progress)}\n\n`);
-			};
-
-			// Generate passwords with progress tracking
-			const results = await generatePasswordsForUsers(
-				{
-					poolId,
-					onlyNullPasswords,
-				},
-				sendProgress,
-			);
-
-			// Send final results and close stream
-			const finalData = {
-				phase: "complete" as const,
-				results,
-				count: results.length,
-			};
-			res.write(`data: ${JSON.stringify(finalData)}\n\n`);
-			res.end();
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			const errorData = {
-				phase: "error" as const,
-				message: `Failed to generate passwords: ${message}`,
-			};
-			res.write(`data: ${JSON.stringify(errorData)}\n\n`);
-			res.end();
 		}
 	},
 );

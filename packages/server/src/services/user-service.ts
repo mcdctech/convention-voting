@@ -941,7 +941,7 @@ export async function enableUser(userId: string): Promise<User> {
 const PASSWORD_BATCH_SIZE = 100;
 
 // Progress tracking constants
-const PROGRESS_UPDATE_INTERVAL_MS = 5000; // Update every 5 seconds max
+const PROGRESS_UPDATE_INTERVAL_MS = 1000; // Update every 1 second max for responsive UI
 const PROGRESS_UPDATE_EVERY_N_USERS = 10; // Update every N users processed
 const SINGLE_USER_INCREMENT = 1; // Increment by 1 user
 
@@ -968,6 +968,7 @@ export async function generatePasswordsForUsers(
 	onProgress?: PasswordGenerationProgressCallback,
 ): Promise<PasswordGenerationResult[]> {
 	const poolId = options?.poolId;
+	const noPool = options?.noPool ?? false;
 	const onlyNullPasswords = options?.onlyNullPasswords ?? false;
 
 	// Progress tracking
@@ -993,12 +994,20 @@ export async function generatePasswordsForUsers(
 		FROM users u
 	`;
 
-	// Join with user_pools if filtering by pool
-	if (poolId === undefined) {
+	// Apply pool filter: specific pool, no pool, or all users
+	if (noPool) {
+		// Filter for users not assigned to any pool
+		query += `
+		WHERE u.is_admin = FALSE
+		  AND NOT EXISTS (SELECT 1 FROM user_pools up_check WHERE up_check.user_id = u.id)
+		`;
+	} else if (poolId === undefined) {
+		// No pool filter - all non-admin users
 		query += `
 		WHERE u.is_admin = FALSE
 		`;
 	} else {
+		// Filter by specific pool
 		query += `
 		INNER JOIN user_pools up ON u.id = up.user_id
 		WHERE up.pool_id = :poolId AND u.is_admin = FALSE
@@ -1095,6 +1104,16 @@ export async function generatePasswordsForUsers(
 		hashedPassword: string;
 	}> = [];
 
+	// Emit initial hashing progress immediately (this is the slow phase)
+	if (shouldEmitProgress(true)) {
+		onProgress?.({
+			phase: "hashing",
+			current: 0,
+			total: totalUsers,
+			message: `Hashing passwords (0 of ${totalUsers})...`,
+		});
+	}
+
 	const HASH_BATCH_SIZE = 10;
 	for (let i = FIRST_ROW; i < passwordsToHash.length; i += HASH_BATCH_SIZE) {
 		const batch = passwordsToHash.slice(i, i + HASH_BATCH_SIZE);
@@ -1133,6 +1152,17 @@ export async function generatePasswordsForUsers(
 
 	// Batch update passwords in a transaction
 	let savedCount = 0;
+
+	// Emit initial saving progress
+	if (shouldEmitProgress(true)) {
+		onProgress?.({
+			phase: "saving",
+			current: 0,
+			total: totalUsers,
+			message: `Saving passwords to database (0 of ${totalUsers})...`,
+		});
+	}
+
 	await withTransaction(async (tx) => {
 		// Process in batches to avoid query size limits
 		for (let i = FIRST_ROW; i < hashedData.length; i += PASSWORD_BATCH_SIZE) {

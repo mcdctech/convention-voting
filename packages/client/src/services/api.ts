@@ -421,7 +421,7 @@ export async function generatePasswords(
 
 /**
  * Generate passwords with real-time progress via Server-Sent Events (SSE)
- * @param options - Optional filters (poolId, onlyNullPasswords)
+ * @param options - Optional filters (poolId, noPool, onlyNullPasswords)
  * @param onProgress - Callback for progress updates
  */
 export async function generatePasswordsWithProgress(
@@ -432,17 +432,28 @@ export async function generatePasswordsWithProgress(
 	return await new Promise((resolve, reject) => {
 		// Build query string
 		const params = new URLSearchParams();
+
+		// Include auth token in query string (EventSource doesn't support custom headers)
+		const authToken = getAuthToken();
+		if (authToken !== null) {
+			params.append("token", authToken);
+		}
+
 		if (options?.poolId !== undefined) {
 			params.append("poolId", String(options.poolId));
+		}
+		if (options?.noPool !== undefined) {
+			params.append("noPool", String(options.noPool));
 		}
 		if (options?.onlyNullPasswords !== undefined) {
 			params.append("onlyNullPasswords", String(options.onlyNullPasswords));
 		}
 		const queryString = params.toString();
+		const sseEndpoint = `${API_PREFIX}/admin/users/generate-passwords-stream`;
 		const url =
 			queryString === ""
-				? `${API_PREFIX}/admin/users/generate-passwords-stream`
-				: `${API_PREFIX}/admin/users/generate-passwords-stream?${queryString}`;
+				? `${API_BASE_URL}${sseEndpoint}`
+				: `${API_BASE_URL}${sseEndpoint}?${queryString}`;
 
 		// Create EventSource for SSE
 		const eventSource = new EventSource(url);
