@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter, onBeforeRouteLeave } from "vue-router";
-import { createChoice, createMotion, getPools } from "../../services/api";
-import type { Pool } from "@mcdc-convention-voting/shared";
+import {
+	createChoice,
+	createMotion,
+	getMeeting,
+	getPools,
+} from "../../services/api";
+import MotionPreviewModal from "../../components/MotionPreviewModal.vue";
+import type { Meeting, Pool } from "@mcdc-convention-voting/shared";
 
 const props = defineProps<{
 	meetingId: string;
@@ -25,6 +31,8 @@ const EMPTY_ARRAY_LENGTH = 0;
 
 const pools = ref<Pool[]>([]);
 const loadingPools = ref(false);
+const meeting = ref<Meeting | null>(null);
+const showPreview = ref(false);
 
 const formData = ref({
 	name: EMPTY_STRING,
@@ -67,6 +75,46 @@ async function loadPools(): Promise<void> {
 		loadingPools.value = false;
 	}
 }
+
+async function loadMeeting(): Promise<void> {
+	try {
+		const meetingIdNum = Number.parseInt(props.meetingId, DECIMAL_RADIX);
+		const response = await getMeeting(meetingIdNum);
+		if (response.data !== undefined) {
+			meeting.value = response.data;
+		}
+	} catch (err) {
+		error.value = err instanceof Error ? err.message : "Failed to load meeting";
+	}
+}
+
+const previewData = computed(() => {
+	const pool = pools.value.find(
+		(p) => p.id === Number.parseInt(formData.value.votingPoolId, DECIMAL_RADIX),
+	);
+
+	// Determine pool name - use selected pool or show placeholder
+	const poolName = pool?.poolName ?? "Quorum Pool";
+
+	return {
+		motionName:
+			formData.value.name.trim() === EMPTY_STRING
+				? "Untitled Motion"
+				: formData.value.name,
+		description:
+			formData.value.description.trim() === EMPTY_STRING
+				? null
+				: formData.value.description,
+		selectionCount: formData.value.selectionCount,
+		meetingName: meeting.value?.name ?? "Unknown Meeting",
+		votingPoolName: poolName,
+		choices: pendingChoices.value.map((choice, index) => ({
+			id: index,
+			name: choice,
+			sortOrder: index,
+		})),
+	};
+});
 
 function addPendingChoice(): void {
 	if (newChoiceName.value.trim() === EMPTY_STRING) {
@@ -185,6 +233,7 @@ onBeforeRouteLeave(() => {
 });
 
 onMounted(() => {
+	void loadMeeting();
 	void loadPools();
 	window.addEventListener("beforeunload", handleBeforeUnload);
 });
@@ -346,11 +395,26 @@ onUnmounted(() => {
 				<button type="submit" class="btn btn-primary" :disabled="saving">
 					{{ saving ? "Creating..." : "Create Motion" }}
 				</button>
+				<button
+					type="button"
+					class="btn btn-secondary"
+					:disabled="pendingChoices.length === 0"
+					@click="showPreview = true"
+				>
+					Preview Motion
+				</button>
 				<button type="button" class="btn btn-secondary" @click="cancel">
 					Cancel
 				</button>
 			</div>
 		</form>
+
+		<!-- Preview Modal -->
+		<MotionPreviewModal
+			v-if="showPreview"
+			v-bind="previewData"
+			@close="showPreview = false"
+		/>
 	</div>
 </template>
 

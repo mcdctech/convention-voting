@@ -15,6 +15,7 @@ import {
 	deleteChoice,
 	reorderChoices,
 } from "../../services/api";
+import MotionPreviewModal from "../../components/MotionPreviewModal.vue";
 import type {
 	MotionDetailedResults,
 	MotionVoteStats,
@@ -94,6 +95,7 @@ const saving = ref(false);
 const savingChoice = ref(false);
 const error = ref<string | null>(null);
 const choiceError = ref<string | null>(null);
+const showPreview = ref(false);
 
 const canEdit = computed(() => {
 	if (motion.value === null) {
@@ -114,6 +116,49 @@ const isDirty = computed((): boolean => {
 		formData.value.votingPoolId !== savedFormData.value.votingPoolId
 	);
 });
+
+const previewData = computed(
+	(): {
+		motionName: string;
+		description: string | null;
+		selectionCount: number;
+		meetingName: string;
+		votingPoolName: string;
+		choices: Array<{ id: number; name: string; sortOrder: number }>;
+	} | null => {
+		if (motion.value === null) {
+			return null;
+		}
+
+		const pool = pools.value.find(
+			(p) =>
+				p.id === Number.parseInt(formData.value.votingPoolId, DECIMAL_RADIX),
+		);
+
+		// Determine pool name - use selected pool or current voting pool
+		const poolName =
+			pool?.poolName ?? motion.value.votingPoolName ?? "Quorum Pool";
+
+		return {
+			motionName:
+				formData.value.name.trim() === EMPTY_STRING
+					? "Untitled Motion"
+					: formData.value.name,
+			description:
+				formData.value.description.trim() === EMPTY_STRING
+					? null
+					: formData.value.description,
+			selectionCount: formData.value.selectionCount,
+			meetingName: "Meeting Preview",
+			votingPoolName: poolName,
+			choices: choices.value.map((choice) => ({
+				id: choice.id,
+				name: choice.name,
+				sortOrder: choice.sortOrder,
+			})),
+		};
+	},
+);
 
 // Use countdown timer composable
 const { remainingTimeString, isTimeUrgent, isOvertime } = useCountdownTimer({
@@ -879,6 +924,14 @@ watch(
 						<button type="submit" class="btn btn-primary" :disabled="saving">
 							{{ saving ? "Saving..." : "Save Changes" }}
 						</button>
+						<button
+							type="button"
+							class="btn btn-secondary"
+							:disabled="choices.length === 0"
+							@click="showPreview = true"
+						>
+							Preview Motion
+						</button>
 					</div>
 				</form>
 			</template>
@@ -1114,6 +1167,13 @@ watch(
 				</div>
 			</div>
 		</div>
+
+		<!-- Preview Modal -->
+		<MotionPreviewModal
+			v-if="showPreview && previewData"
+			v-bind="previewData"
+			@close="showPreview = false"
+		/>
 	</div>
 </template>
 
