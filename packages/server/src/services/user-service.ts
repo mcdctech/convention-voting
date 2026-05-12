@@ -1,19 +1,21 @@
 /**
  * User management service
  */
+import {
+	ServiceErrorCode,
+	type CreateUserRequest,
+	type GeneratePasswordsRequest,
+	type PasswordGenerationProgress,
+	type PasswordGenerationResult,
+	type SystemSettings,
+	type UpdateUserRequest,
+	type User,
+} from "@mcdc-convention-voting/shared";
 import { db, withTransaction } from "../database/db.js";
+import { ServiceError } from "../errors/service-error.js";
 import { generatePassword, hashPassword } from "../utils/password-generator.js";
 import { generateUniqueUsername } from "../utils/username-generator.js";
 import { setUserPools } from "./pool-service.js";
-import type {
-	User,
-	CreateUserRequest,
-	UpdateUserRequest,
-	PasswordGenerationResult,
-	PasswordGenerationProgress,
-	SystemSettings,
-	GeneratePasswordsRequest,
-} from "@mcdc-convention-voting/shared";
 
 // Array index constants
 const FIRST_ROW = 0;
@@ -82,14 +84,18 @@ async function validateAndPrepareUserCreation(
 		finalIsMeetingAdmin,
 	].filter(Boolean);
 	if (roleCount > MAX_ALLOWED_SPECIAL_ROLES) {
-		throw new Error(
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
 			"User can only have one role: admin, watcher, or meeting_admin",
 		);
 	}
 
 	// Check if voter ID already exists
 	if (await voterIdExists(voterId)) {
-		throw new Error(`User with voter ID ${voterId} already exists`);
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
+			`User with voter ID ${voterId} already exists`,
+		);
 	}
 
 	// Generate username if not provided
@@ -100,7 +106,10 @@ async function validateAndPrepareUserCreation(
 
 	// Check if username already exists (in case one was provided)
 	if (await usernameExists(finalUsername)) {
-		throw new Error(`Username ${finalUsername} already exists`);
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
+			`Username ${finalUsername} already exists`,
+		);
 	}
 
 	return { finalUsername, finalIsAdmin, finalIsWatcher, finalIsMeetingAdmin };
@@ -198,7 +207,10 @@ export async function upsertUser(request: CreateUserRequest): Promise<User> {
 
 	// Validate role exclusivity
 	if (finalIsAdmin && finalIsWatcher) {
-		throw new Error("User cannot be both admin and watcher");
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
+			"User cannot be both admin and watcher",
+		);
 	}
 
 	// Generate username for potential insert (will be ignored if user exists)
@@ -737,7 +749,10 @@ export async function updateUser(
 			);
 			// Only throw error if it's a different user
 			if (existingUser.rows[FIRST_ROW].id !== userId) {
-				throw new Error(`Voter ID ${voterId} already exists`);
+				throw new ServiceError(
+					ServiceErrorCode.INVALID_INPUT,
+					`Voter ID ${voterId} already exists`,
+				);
 			}
 		}
 		setClauses.push(`voter_id = :voterId`);
@@ -763,7 +778,10 @@ export async function updateUser(
 			);
 			// Only throw error if it's a different user
 			if (existingUser.rows[FIRST_ROW].id !== userId) {
-				throw new Error(`Username ${username} already exists`);
+				throw new ServiceError(
+					ServiceErrorCode.INVALID_INPUT,
+					`Username ${username} already exists`,
+				);
 			}
 		}
 		setClauses.push(`username = :username`);
@@ -778,7 +796,10 @@ export async function updateUser(
 	}
 
 	if (setClauses.length === EMPTY_ARRAY_LENGTH && poolKeys === undefined) {
-		throw new Error("No fields to update");
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
+			"No fields to update",
+		);
 	}
 
 	// Update user fields if there are any changes
@@ -809,7 +830,10 @@ export async function updateUser(
 		);
 
 		if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-			throw new Error(`User with ID ${userId} not found`);
+			throw new ServiceError(
+				ServiceErrorCode.USER_NOT_FOUND,
+				`User with ID ${userId} not found`,
+			);
 		}
 
 		const {
@@ -832,7 +856,10 @@ export async function updateUser(
 		// No user fields to update, just fetch the user
 		const existingUser = await getUserById(userId);
 		if (existingUser === null) {
-			throw new Error(`User with ID ${userId} not found`);
+			throw new ServiceError(
+				ServiceErrorCode.USER_NOT_FOUND,
+				`User with ID ${userId} not found`,
+			);
 		}
 		user = existingUser;
 	}
@@ -870,7 +897,10 @@ export async function disableUser(userId: string): Promise<User> {
 	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`User with ID ${userId} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.USER_NOT_FOUND,
+			`User with ID ${userId} not found`,
+		);
 	}
 
 	const {
@@ -916,7 +946,10 @@ export async function enableUser(userId: string): Promise<User> {
 	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`User with ID ${userId} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.USER_NOT_FOUND,
+			`User with ID ${userId} not found`,
+		);
 	}
 
 	const {
@@ -1231,7 +1264,10 @@ export async function resetUserPassword(userId: string): Promise<string> {
 	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`User with ID ${userId} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.USER_NOT_FOUND,
+			`User with ID ${userId} not found`,
+		);
 	}
 
 	return password;
@@ -1448,11 +1484,17 @@ export async function deleteUser(userId: string): Promise<void> {
 	);
 
 	if (userCheck.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`User with ID ${userId} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.USER_NOT_FOUND,
+			`User with ID ${userId} not found`,
+		);
 	}
 
 	if (userCheck.rows[FIRST_ROW].is_admin) {
-		throw new Error("Cannot delete admin users");
+		throw new ServiceError(
+			ServiceErrorCode.FORBIDDEN,
+			"Cannot delete admin users",
+		);
 	}
 
 	// Delete user_pools associations first

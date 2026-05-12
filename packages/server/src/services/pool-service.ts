@@ -3,12 +3,14 @@
  */
 import {
 	PoolType,
-	type Pool,
+	ServiceErrorCode,
 	type CreatePoolRequest,
+	type Pool,
 	type UpdatePoolRequest,
 	type User,
 } from "@mcdc-convention-voting/shared";
 import { db, withTransaction } from "../database/db.js";
+import { ServiceError } from "../errors/service-error.js";
 import { recordPendingPoolKeys } from "./pending-pool-service.js";
 import type { TinyPg } from "tinypg";
 
@@ -306,7 +308,10 @@ export async function createPool(request: CreatePoolRequest): Promise<Pool> {
 
 	// Check if pool key already exists
 	if (await poolKeyExists(poolKey)) {
-		throw new Error(`Pool with key ${poolKey} already exists`);
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
+			`Pool with key ${poolKey} already exists`,
+		);
 	}
 
 	const result = await db.query<PoolDbRow>(
@@ -425,7 +430,10 @@ export async function updatePool(
 
 		const { rows: poolRows } = currentPoolResult;
 		if (poolRows.length === EMPTY_ARRAY_LENGTH) {
-			throw new Error(`Pool with ID ${poolId} not found`);
+			throw new ServiceError(
+				ServiceErrorCode.POOL_NOT_FOUND,
+				`Pool with ID ${poolId} not found`,
+			);
 		}
 
 		const [{ pool_key: oldPoolKey }] = poolRows;
@@ -443,12 +451,18 @@ export async function updatePool(
 				{ newPoolKey, poolId },
 			);
 			if (existingPool.rows.length > EMPTY_ARRAY_LENGTH) {
-				throw new Error(`Pool key ${newPoolKey} already exists`);
+				throw new ServiceError(
+					ServiceErrorCode.INVALID_INPUT,
+					`Pool key ${newPoolKey} already exists`,
+				);
 			}
 		}
 
 		if (setClauses.length === EMPTY_ARRAY_LENGTH) {
-			throw new Error("No fields to update");
+			throw new ServiceError(
+				ServiceErrorCode.INVALID_INPUT,
+				"No fields to update",
+			);
 		}
 
 		setClauses.push("updated_at = NOW()");
@@ -490,7 +504,10 @@ export async function disablePool(poolId: number): Promise<Pool> {
 	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Pool with ID ${poolId} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.POOL_NOT_FOUND,
+			`Pool with ID ${poolId} not found`,
+		);
 	}
 
 	return mapRowToPool(result.rows[FIRST_ROW]);
@@ -509,7 +526,10 @@ export async function enablePool(poolId: number): Promise<Pool> {
 	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Pool with ID ${poolId} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.POOL_NOT_FOUND,
+			`Pool with ID ${poolId} not found`,
+		);
 	}
 
 	return mapRowToPool(result.rows[FIRST_ROW]);
