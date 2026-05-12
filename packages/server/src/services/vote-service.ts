@@ -15,12 +15,9 @@ import { ServiceError } from "../errors/service-error.js";
 // Time conversion constants
 const MILLISECONDS_PER_MINUTE = 60000;
 
-// Array length constants
+// Array index constants
 const EMPTY_ARRAY_LENGTH = 0;
 const FIRST_ROW = 0;
-
-// Number parsing
-const DECIMAL_RADIX = 10;
 
 /**
  * Database row type for motion query
@@ -64,40 +61,44 @@ interface VoteRow {
 
 /**
  * Check if user has already voted on a motion
+ * Uses EXISTS for efficient early termination - stops at first match
  */
 export async function hasUserVoted(
 	userId: string,
 	motionId: number,
 ): Promise<boolean> {
-	const result = await db.query<{ count: string }>(
-		`SELECT COUNT(*) as count FROM votes
-		 WHERE user_id = :userId AND motion_id = :motionId`,
+	const result = await db.query<{ exists: boolean }>(
+		`SELECT EXISTS(
+			SELECT 1 FROM votes
+			WHERE user_id = :userId AND motion_id = :motionId
+		) as exists`,
 		{ userId, motionId },
 	);
 
-	const count = parseInt(result.rows[FIRST_ROW].count, DECIMAL_RADIX);
-	return count > EMPTY_ARRAY_LENGTH;
+	return result.rows[FIRST_ROW].exists;
 }
 
 /**
  * Check if user is in the motion's voting pool
  * Uses motion's voting_pool_id, or falls back to meeting's quorum_voting_pool_id
+ * Uses EXISTS for efficient early termination - stops at first match
  */
 export async function isUserInVotingPool(
 	userId: string,
 	motionId: number,
 ): Promise<boolean> {
-	const result = await db.query<{ count: string }>(
-		`SELECT COUNT(*) as count
-		 FROM motions m
-		 INNER JOIN meetings mt ON m.meeting_id = mt.id
-		 INNER JOIN user_pools up ON up.pool_id = COALESCE(m.voting_pool_id, mt.quorum_voting_pool_id)
-		 WHERE m.id = :motionId AND up.user_id = :userId`,
+	const result = await db.query<{ exists: boolean }>(
+		`SELECT EXISTS(
+			SELECT 1
+			FROM motions m
+			INNER JOIN meetings mt ON m.meeting_id = mt.id
+			INNER JOIN user_pools up ON up.pool_id = COALESCE(m.voting_pool_id, mt.quorum_voting_pool_id)
+			WHERE m.id = :motionId AND up.user_id = :userId
+		) as exists`,
 		{ userId, motionId },
 	);
 
-	const count = parseInt(result.rows[FIRST_ROW].count, DECIMAL_RADIX);
-	return count > EMPTY_ARRAY_LENGTH;
+	return result.rows[FIRST_ROW].exists;
 }
 
 /**
@@ -338,16 +339,13 @@ export async function castVote(
 	// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Array destructuring is appropriate here
 	const [voteRow] = voteResult.rows;
 
-	// Insert vote choices if not abstaining
+	// Insert vote choices if not abstaining - batch insert using UNNEST
 	if (!abstain && choiceIds.length > EMPTY_ARRAY_LENGTH) {
-		for (const choiceId of choiceIds) {
-			// eslint-disable-next-line no-await-in-loop -- Sequential inserts required for vote choices
-			await db.query(
-				`INSERT INTO vote_choices (vote_id, choice_id)
-				 VALUES (:voteId, :choiceId)`,
-				{ voteId: voteRow.id, choiceId },
-			);
-		}
+		await db.query(
+			`INSERT INTO vote_choices (vote_id, choice_id)
+			 SELECT :voteId, UNNEST(:choiceIds::integer[])`,
+			{ voteId: voteRow.id, choiceIds },
+		);
 	}
 
 	return {
