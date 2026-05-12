@@ -409,7 +409,7 @@ adminRouter.get(
 adminRouter.post(
 	"/users",
 	requireAdminOrMeetingAdmin,
-	// eslint-disable-next-line complexity -- additional validation for meeting admins
+	 
 	async (req: Request, res: Response) => {
 		try {
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
@@ -453,10 +453,7 @@ adminRouter.post(
 				.status(HTTP_STATUS.SUCCESSFUL.CREATED)
 				.json({ success: true, data: user });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to create user: ${message}` });
+			sendServiceError(res, error, "Failed to create user");
 		}
 	},
 );
@@ -649,10 +646,7 @@ adminRouter.put(
 			const user = await updateUser(req.params.id, updates);
 			res.json({ success: true, data: user });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to update user: ${message}` });
+			sendServiceError(res, error, "Failed to update user");
 		}
 	},
 );
@@ -678,10 +672,7 @@ adminRouter.post(
 			const user = await disableUser(req.params.id);
 			res.json({ success: true, data: user });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to disable user: ${message}` });
+			sendServiceError(res, error, "Failed to disable user");
 		}
 	},
 );
@@ -698,10 +689,7 @@ adminRouter.post(
 			const user = await enableUser(req.params.id);
 			res.json({ success: true, data: user });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to enable user: ${message}` });
+			sendServiceError(res, error, "Failed to enable user");
 		}
 	},
 );
@@ -718,11 +706,7 @@ adminRouter.delete(
 			await deleteUser(req.params.id);
 			res.json({ success: true });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			const status = message.includes("not found")
-				? HTTP_STATUS.CLIENT_ERROR.NOT_FOUND
-				: HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST;
-			res.status(status).json({ error: `Failed to delete user: ${message}` });
+			sendServiceError(res, error, "Failed to delete user");
 		}
 	},
 );
@@ -1040,10 +1024,7 @@ adminRouter.post(
 				.status(HTTP_STATUS.SUCCESSFUL.CREATED)
 				.json({ success: true, data: pool });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to create pool: ${message}` });
+			sendServiceError(res, error, "Failed to create pool");
 		}
 	},
 );
@@ -1283,10 +1264,7 @@ adminRouter.put(
 			const { pool, resolvedUsers } = await updatePool(poolId, updates);
 			res.json({ success: true, data: pool, resolvedUsers });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to update pool: ${message}` });
+			sendServiceError(res, error, "Failed to update pool");
 		}
 	},
 );
@@ -1304,10 +1282,7 @@ adminRouter.post(
 			const pool = await disablePool(poolId);
 			res.json({ success: true, data: pool });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to disable pool: ${message}` });
+			sendServiceError(res, error, "Failed to disable pool");
 		}
 	},
 );
@@ -1325,10 +1300,7 @@ adminRouter.post(
 			const pool = await enablePool(poolId);
 			res.json({ success: true, data: pool });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to enable pool: ${message}` });
+			sendServiceError(res, error, "Failed to enable pool");
 		}
 	},
 );
