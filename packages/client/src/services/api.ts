@@ -497,7 +497,7 @@ export async function generatePasswordsWithProgress(
 
 				// Progress update
 				if (onProgress !== undefined) {
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- Progress data matches PasswordGenerationProgress interface
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- SSE progress data validated by server, matches PasswordGenerationProgress
 					onProgress(data);
 				}
 			} catch (error) {
