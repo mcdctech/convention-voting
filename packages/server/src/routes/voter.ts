@@ -13,6 +13,7 @@ import {
 import { getOpenMotionsForUser } from "../services/motion-service.js";
 import { getPoolsForUser } from "../services/pool-service.js";
 import { castVote, getMotionForVoting } from "../services/vote-service.js";
+import { sendServiceError } from "../utils/error-handler.js";
 import type { Request, Response } from "express";
 import type {
 	ApiErrorResponse,
@@ -30,59 +31,6 @@ import type {
 
 // Number parsing
 const DECIMAL_RADIX = 10;
-
-// HTTP status code constant
-const HTTP_INTERNAL_SERVER_ERROR = 500;
-
-/**
- * Determine HTTP status code for meeting join errors
- */
-function getMeetingJoinErrorStatus(message: string): number {
-	if (
-		message.includes("not found") ||
-		message.includes("not currently active")
-	) {
-		return HTTP_STATUS.CLIENT_ERROR.NOT_FOUND;
-	}
-
-	if (message.includes("not eligible")) {
-		return HTTP_STATUS.CLIENT_ERROR.FORBIDDEN;
-	}
-
-	return HTTP_INTERNAL_SERVER_ERROR;
-}
-
-/**
- * Determine HTTP status code for vote casting errors
- */
-function getVoteCastErrorStatus(message: string): number {
-	if (
-		message.includes("already voted") ||
-		message.includes("Voting has ended") ||
-		message.includes("not currently open")
-	) {
-		return HTTP_STATUS.CLIENT_ERROR.CONFLICT;
-	}
-
-	if (message.includes("not eligible")) {
-		return HTTP_STATUS.CLIENT_ERROR.FORBIDDEN;
-	}
-
-	if (
-		message.includes("Invalid choice") ||
-		message.includes("Cannot select") ||
-		message.includes("Must select") ||
-		message.includes("only select up to")
-	) {
-		return HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST;
-	}
-
-	if (message.includes("not found")) {
-		return HTTP_STATUS.CLIENT_ERROR.NOT_FOUND;
-	}
-
-	return HTTP_INTERNAL_SERVER_ERROR;
-}
 
 export const voterRouter = Router();
 
@@ -288,18 +236,8 @@ voterRouter.post(
 				success: true,
 				data: { vote },
 			});
-		} catch (err) {
-			const message = err instanceof Error ? err.message : "Unknown error";
-			const statusCode = getVoteCastErrorStatus(message);
-			const errorMessage =
-				statusCode === HTTP_INTERNAL_SERVER_ERROR
-					? `Failed to cast vote: ${message}`
-					: message;
-
-			res.status(statusCode).json({
-				success: false,
-				error: errorMessage,
-			});
+		} catch (error) {
+			sendServiceError(res, error, "Failed to cast vote");
 		}
 	},
 );
@@ -415,13 +353,7 @@ voterRouter.post(
 				data: result,
 			});
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			const statusCode = getMeetingJoinErrorStatus(message);
-
-			res.status(statusCode).json({
-				success: false,
-				error: message,
-			});
+			sendServiceError(res, error, "Failed to join meeting");
 		}
 	},
 );
