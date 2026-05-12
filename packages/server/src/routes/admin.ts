@@ -409,7 +409,7 @@ adminRouter.get(
 adminRouter.post(
 	"/users",
 	requireAdminOrMeetingAdmin,
-	 
+
 	async (req: Request, res: Response) => {
 		try {
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
