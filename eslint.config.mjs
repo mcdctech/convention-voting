@@ -239,7 +239,7 @@ export default [
       "*.config.mjs",
       "packages/*/dist/**",
       "packages/*/build/**",
-      "packages/server/k6/**",
+      "packages/server/k6/**", // k6 load testing scripts (plain JS, not in TS project)
     ],
   },
   // Prettier must be last to disable all conflicting rules
