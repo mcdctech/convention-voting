@@ -7,6 +7,12 @@ import { LoginErrorCode } from "@mcdc-convention-voting/shared";
 import { validateLogin, generateToken } from "../services/auth-service.js";
 import { requireAuth } from "../middleware/auth-middleware.js";
 import { leaveCurrentMeeting } from "../services/meeting-participant-service.js";
+import {
+	checkRateLimit,
+	recordFailedLogin,
+	recordSuccessfulLogin,
+	type RateLimitCheckResult,
+} from "../services/login-rate-limiter.js";
 import type { Request, Response } from "express";
 import type {
 	ApiErrorResponse,
@@ -17,6 +23,10 @@ import type {
 } from "@mcdc-convention-voting/shared";
 
 export const authRouter = Router();
+
+// Time conversion constants
+const MILLISECONDS_PER_SECOND = 1000;
+const DEFAULT_RETRY_MS = 0;
 
 /**
  * Get HTTP status code for login error
@@ -29,6 +39,8 @@ function getLoginErrorStatus(errorCode: LoginErrorCode): number {
 		case LoginErrorCode.AccountDisabled:
 		case LoginErrorCode.LoginDisabled:
 			return HTTP_STATUS.CLIENT_ERROR.FORBIDDEN;
+		case LoginErrorCode.RateLimited:
+			return HTTP_STATUS.CLIENT_ERROR.TOO_MANY_REQUESTS;
 	}
 }
 
@@ -45,7 +57,27 @@ function getLoginErrorMessage(errorCode: LoginErrorCode): string {
 			return "Your account has been disabled.";
 		case LoginErrorCode.LoginDisabled:
 			return "Login is currently disabled.";
+		case LoginErrorCode.RateLimited:
+			return "Too many login attempts. Please try again later.";
 	}
+}
+
+/**
+ * Send a rate limit error response with Retry-After header
+ */
+function sendRateLimitResponse(
+	res: Response<ApiErrorResponse>,
+	rateLimitResult: RateLimitCheckResult,
+): void {
+	const retryAfterSeconds = Math.ceil(
+		(rateLimitResult.retryAfterMs ?? DEFAULT_RETRY_MS) /
+			MILLISECONDS_PER_SECOND,
+	);
+	res.setHeader("Retry-After", String(retryAfterSeconds));
+	res.status(getLoginErrorStatus(LoginErrorCode.RateLimited)).json({
+		success: false,
+		error: getLoginErrorMessage(LoginErrorCode.RateLimited),
+	});
 }
 
 /**
@@ -80,10 +112,26 @@ authRouter.post(
 			return;
 		}
 
+		// Check rate limit BEFORE validating credentials (prevents timing attacks)
+		const rateLimitResult = checkRateLimit(username);
+		if (rateLimitResult.isLocked) {
+			sendRateLimitResponse(res, rateLimitResult);
+			return;
+		}
+
 		// Validate login
 		const result = await validateLogin(username, password);
 
 		if (!result.success || result.user === undefined) {
+			// Record failed login attempt for rate limiting
+			const failureResult = recordFailedLogin(username);
+
+			// Check if this failure triggered a lockout
+			if (failureResult.isLocked) {
+				sendRateLimitResponse(res, failureResult);
+				return;
+			}
+
 			const errorCode = result.errorCode ?? LoginErrorCode.InvalidCredentials;
 			res.status(getLoginErrorStatus(errorCode)).json({
 				success: false,
@@ -91,6 +139,9 @@ authRouter.post(
 			});
 			return;
 		}
+
+		// Successful login - clear rate limit state for this username
+		recordSuccessfulLogin(username);
 
 		// Leave any current meeting from a previous session
 		// This ensures users start fresh and can select a new meeting

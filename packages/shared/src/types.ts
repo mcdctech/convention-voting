@@ -900,6 +900,7 @@ export enum LoginErrorCode {
 	AccountDisabled = "ACCOUNT_DISABLED",
 	NoPasswordSet = "NO_PASSWORD_SET",
 	LoginDisabled = "LOGIN_DISABLED",
+	RateLimited = "RATE_LIMITED",
 }
 
 /**
