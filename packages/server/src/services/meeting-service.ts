@@ -4,6 +4,7 @@
 import {
 	MotionStatus,
 	PoolType,
+	ServiceErrorCode,
 	type Choice,
 	type ChoiceResult,
 	type CreateChoiceRequest,
@@ -22,6 +23,7 @@ import {
 	type UpdateMotionStatusRequest,
 } from "@mcdc-convention-voting/shared";
 import { db, withTransaction } from "../database/db.js";
+import { ServiceError } from "../errors/service-error.js";
 import { createPool, generatePoolKeyFromMeetingName } from "./pool-service.js";
 
 // Array index constants
@@ -68,7 +70,10 @@ async function verifyPoolExists(
 		{ poolId },
 	);
 	if (poolCheck.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`${poolType} with ID ${String(poolId)} does not exist`);
+		throw new ServiceError(
+			ServiceErrorCode.POOL_NOT_FOUND,
+			`${poolType} with ID ${String(poolId)} does not exist`,
+		);
 	}
 }
 
@@ -461,7 +466,10 @@ export async function updateMeeting(
 	values.meetingId = meetingId;
 
 	if (setClauses.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error("No fields to update");
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
+			"No fields to update",
+		);
 	}
 
 	// Add updated_at
@@ -488,7 +496,10 @@ export async function updateMeeting(
 	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Meeting with ID ${String(meetingId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.MEETING_NOT_FOUND,
+			`Meeting with ID ${String(meetingId)} not found`,
+		);
 	}
 
 	const {
@@ -519,7 +530,10 @@ export async function deleteMeeting(meetingId: number): Promise<void> {
 	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Meeting with ID ${String(meetingId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.MEETING_NOT_FOUND,
+			`Meeting with ID ${String(meetingId)} not found`,
+		);
 	}
 }
 
@@ -576,7 +590,10 @@ export async function removeVoterPoolFromMeeting(
 	);
 
 	if (meetingResult.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Meeting with ID ${String(meetingId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.MEETING_NOT_FOUND,
+			`Meeting with ID ${String(meetingId)} not found`,
+		);
 	}
 
 	const {
@@ -584,7 +601,10 @@ export async function removeVoterPoolFromMeeting(
 	} = meetingResult;
 
 	if (poolId === quorumPoolId) {
-		throw new Error("Cannot remove the quorum voting pool from voter pools");
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
+			"Cannot remove the quorum voting pool from voter pools",
+		);
 	}
 
 	await db.query(
@@ -609,7 +629,10 @@ export async function setVoterPoolsForMeeting(
 	);
 
 	if (meetingResult.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Meeting with ID ${String(meetingId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.MEETING_NOT_FOUND,
+			`Meeting with ID ${String(meetingId)} not found`,
+		);
 	}
 
 	const {
@@ -727,7 +750,10 @@ export async function createMotion(
 		{ meetingId },
 	);
 	if (meetingCheck.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Meeting with ID ${String(meetingId)} does not exist`);
+		throw new ServiceError(
+			ServiceErrorCode.MEETING_NOT_FOUND,
+			`Meeting with ID ${String(meetingId)} does not exist`,
+		);
 	}
 
 	// Verify voting pool exists if provided
@@ -737,7 +763,10 @@ export async function createMotion(
 			{ poolId: votingPoolId },
 		);
 		if (poolCheck.rows.length === EMPTY_ARRAY_LENGTH) {
-			throw new Error(`Pool with ID ${String(votingPoolId)} does not exist`);
+			throw new ServiceError(
+				ServiceErrorCode.POOL_NOT_FOUND,
+				`Pool with ID ${String(votingPoolId)} does not exist`,
+			);
 		}
 	}
 
@@ -950,14 +979,20 @@ export async function updateMotion(
 			{ poolId: votingPoolId },
 		);
 		if (poolCheck.rows.length === EMPTY_ARRAY_LENGTH) {
-			throw new Error(`Pool with ID ${String(votingPoolId)} does not exist`);
+			throw new ServiceError(
+				ServiceErrorCode.POOL_NOT_FOUND,
+				`Pool with ID ${String(votingPoolId)} does not exist`,
+			);
 		}
 		setClauses.push(`voting_pool_id = :votingPoolId`);
 		values.votingPoolId = votingPoolId;
 	}
 
 	if (setClauses.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error("No fields to update");
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
+			"No fields to update",
+		);
 	}
 
 	// Add updated_at
@@ -986,7 +1021,10 @@ export async function updateMotion(
 	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Motion with ID ${String(motionId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.MOTION_NOT_FOUND,
+			`Motion with ID ${String(motionId)} not found`,
+		);
 	}
 
 	const {
@@ -1026,7 +1064,10 @@ export async function updateMotionStatus(
 	);
 
 	if (currentMotion.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Motion with ID ${String(motionId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.MOTION_NOT_FOUND,
+			`Motion with ID ${String(motionId)} not found`,
+		);
 	}
 
 	const {
@@ -1039,14 +1080,16 @@ export async function updateMotionStatus(
 	// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Dynamic key access
 	const allowedTransitions = VALID_STATUS_TRANSITIONS[currentStatus];
 	if (!allowedTransitions.includes(newStatus)) {
-		throw new Error(
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
 			`Invalid status transition: cannot change from '${currentStatus}' to '${newStatus}'`,
 		);
 	}
 
 	// Validate end_override
 	if (endOverride !== undefined && newStatus !== MotionStatus.VotingActive) {
-		throw new Error(
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
 			"end_override can only be set when status is 'voting_active'",
 		);
 	}
@@ -1125,7 +1168,10 @@ export async function setMotionEndOverride(
 	);
 
 	if (currentMotion.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Motion with ID ${String(motionId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.MOTION_NOT_FOUND,
+			`Motion with ID ${String(motionId)} not found`,
+		);
 	}
 
 	const {
@@ -1136,7 +1182,8 @@ export async function setMotionEndOverride(
 
 	// Validate motion is in voting_active status
 	if (currentStatus !== MotionStatus.VotingActive) {
-		throw new Error(
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
 			"end_override can only be set when motion status is 'voting_active'",
 		);
 	}
@@ -1194,7 +1241,10 @@ export async function deleteMotion(motionId: number): Promise<void> {
 	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Motion with ID ${String(motionId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.MOTION_NOT_FOUND,
+			`Motion with ID ${String(motionId)} not found`,
+		);
 	}
 }
 
@@ -1212,7 +1262,10 @@ async function validateMotionNotStarted(motionId: number): Promise<void> {
 	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Motion with ID ${String(motionId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.MOTION_NOT_FOUND,
+			`Motion with ID ${String(motionId)} not found`,
+		);
 	}
 
 	const {
@@ -1220,7 +1273,10 @@ async function validateMotionNotStarted(motionId: number): Promise<void> {
 	} = result;
 	// eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison -- Database enum returns as string
 	if (status !== MotionStatus.NotYetStarted) {
-		throw new Error("Cannot modify choices after voting has started");
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
+			"Cannot modify choices after voting has started",
+		);
 	}
 }
 
@@ -1355,7 +1411,10 @@ export async function updateChoice(
 	);
 
 	if (choiceResult.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Choice with ID ${String(choiceId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.CHOICE_NOT_FOUND,
+			`Choice with ID ${String(choiceId)} not found`,
+		);
 	}
 
 	const {
@@ -1380,7 +1439,10 @@ export async function updateChoice(
 	}
 
 	if (setClauses.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error("No fields to update");
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
+			"No fields to update",
+		);
 	}
 
 	// Add updated_at
@@ -1452,7 +1514,10 @@ export async function deleteChoice(choiceId: number): Promise<void> {
 	);
 
 	if (choiceResult.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Choice with ID ${String(choiceId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.CHOICE_NOT_FOUND,
+			`Choice with ID ${String(choiceId)} not found`,
+		);
 	}
 
 	const {
@@ -1502,7 +1567,10 @@ export async function getMotionVoteStats(
 	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(`Motion with ID ${String(motionId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.MOTION_NOT_FOUND,
+			`Motion with ID ${String(motionId)} not found`,
+		);
 	}
 
 	const {
@@ -1539,11 +1607,15 @@ export async function getMotionDetailedResults(
 	// Step 1: Verify motion exists and is voting_complete
 	const motion = await getMotionById(motionId);
 	if (motion === null) {
-		throw new Error(`Motion with ID ${String(motionId)} not found`);
+		throw new ServiceError(
+			ServiceErrorCode.MOTION_NOT_FOUND,
+			`Motion with ID ${String(motionId)} not found`,
+		);
 	}
 
 	if (motion.status !== MotionStatus.VotingComplete) {
-		throw new Error(
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
 			"Detailed results are only available for completed motions (status: voting_complete)",
 		);
 	}
@@ -1559,7 +1631,8 @@ export async function getMotionDetailedResults(
 	);
 
 	if (eligibleVotersResult.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(
+		throw new ServiceError(
+			ServiceErrorCode.INTERNAL_ERROR,
 			`Failed to get eligible voters for motion ${String(motionId)}`,
 		);
 	}

@@ -120,6 +120,7 @@ import {
 	requireMeetingAdminForChoice,
 	requireMeetingAdminForMotion,
 } from "../middleware/meeting-admin-middleware.js";
+import { sendServiceError } from "../utils/error-handler.js";
 
 export const adminRouter = Router();
 
@@ -1576,10 +1577,7 @@ adminRouter.post(
 				.status(HTTP_STATUS.SUCCESSFUL.CREATED)
 				.json({ success: true, data: meeting });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to create meeting: ${message}` });
+			sendServiceError(res, error, "Failed to create meeting");
 		}
 	},
 );
@@ -1779,10 +1777,7 @@ adminRouter.put(
 			const meeting = await updateMeeting(meetingId, updates);
 			res.json({ success: true, data: meeting });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to update meeting: ${message}` });
+			sendServiceError(res, error, "Failed to update meeting");
 		}
 	},
 );
@@ -1800,10 +1795,7 @@ adminRouter.delete(
 			await deleteMeeting(meetingId);
 			res.json({ success: true, message: "Meeting deleted successfully" });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to delete meeting: ${message}` });
+			sendServiceError(res, error, "Failed to delete meeting");
 		}
 	},
 );
@@ -1918,11 +1910,7 @@ adminRouter.put(
 			);
 			res.json({ success: true, data: voterPoolIds });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
-				success: false,
-				error: `Failed to set voter pools: ${message}`,
-			});
+			sendServiceError(res, error, "Failed to set voter pools");
 		}
 	},
 );
@@ -1970,10 +1958,7 @@ adminRouter.post(
 				.status(HTTP_STATUS.SUCCESSFUL.CREATED)
 				.json({ success: true, data: motion });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to create motion: ${message}` });
+			sendServiceError(res, error, "Failed to create motion");
 		}
 	},
 );
@@ -2068,10 +2053,7 @@ adminRouter.get(
 			const stats = await getMotionVoteStats(motionId);
 			res.json({ success: true, data: stats });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-				.json({ error: `Failed to get vote stats: ${message}` });
+			sendServiceError(res, error, "Failed to get vote stats");
 		}
 	},
 );
@@ -2089,18 +2071,7 @@ adminRouter.get(
 			const results = await getMotionDetailedResults(motionId);
 			res.json({ success: true, data: results });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-
-			// Return 400 for "not voting_complete" errors
-			if (message.includes("voting_complete")) {
-				res
-					.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-					.json({ error: message });
-			} else {
-				res
-					.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
-					.json({ error: `Failed to get motion results: ${message}` });
-			}
+			sendServiceError(res, error, "Failed to get motion results");
 		}
 	},
 );
@@ -2120,10 +2091,7 @@ adminRouter.put(
 			const motion = await updateMotion(motionId, updates);
 			res.json({ success: true, data: motion });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to update motion: ${message}` });
+			sendServiceError(res, error, "Failed to update motion");
 		}
 	},
 );
@@ -2156,10 +2124,7 @@ adminRouter.put(
 			const motion = await updateMotionStatus(motionId, request);
 			res.json({ success: true, data: motion });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to update motion status: ${message}` });
+			sendServiceError(res, error, "Failed to update motion status");
 		}
 	},
 );
@@ -2180,10 +2145,7 @@ adminRouter.put(
 			const motion = await setMotionEndOverride(motionId, endOverride);
 			res.json({ success: true, data: motion });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to set end override: ${message}` });
+			sendServiceError(res, error, "Failed to set end override");
 		}
 	},
 );
@@ -2201,10 +2163,7 @@ adminRouter.delete(
 			await deleteMotion(motionId);
 			res.json({ success: true, message: "Motion deleted successfully" });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to delete motion: ${message}` });
+			sendServiceError(res, error, "Failed to delete motion");
 		}
 	},
 );
@@ -2246,10 +2205,7 @@ adminRouter.post(
 				.status(HTTP_STATUS.SUCCESSFUL.CREATED)
 				.json({ success: true, data: choice });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to create choice: ${message}` });
+			sendServiceError(res, error, "Failed to create choice");
 		}
 	},
 );
@@ -2325,10 +2281,7 @@ adminRouter.put(
 			const choice = await updateChoice(choiceId, updates);
 			res.json({ success: true, data: choice });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to update choice: ${message}` });
+			sendServiceError(res, error, "Failed to update choice");
 		}
 	},
 );
@@ -2356,10 +2309,7 @@ adminRouter.put(
 			const choices = await reorderChoices(motionId, body.choiceIds);
 			res.json({ success: true, data: choices });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to reorder choices: ${message}` });
+			sendServiceError(res, error, "Failed to reorder choices");
 		}
 	},
 );
@@ -2377,10 +2327,7 @@ adminRouter.delete(
 			await deleteChoice(choiceId);
 			res.json({ success: true, message: "Choice deleted successfully" });
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
-			res
-				.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST)
-				.json({ error: `Failed to delete choice: ${message}` });
+			sendServiceError(res, error, "Failed to delete choice");
 		}
 	},
 );
