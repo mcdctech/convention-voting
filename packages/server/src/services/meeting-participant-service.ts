@@ -4,12 +4,14 @@
  */
 import {
 	ParticipantRole,
+	ServiceErrorCode,
 	type CurrentMeetingInfo,
 	type JoinableMeeting,
 	type MeetingParticipant,
 	type MeetingWithPool,
 } from "@mcdc-convention-voting/shared";
 import { db, withTransaction } from "../database/db.js";
+import { ServiceError } from "../errors/service-error.js";
 
 // Array index constants
 const FIRST_ROW = 0;
@@ -231,7 +233,10 @@ export async function joinMeetingAsVoter(
 	);
 
 	if (meetingResult.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error("Meeting not found or not currently active");
+		throw new ServiceError(
+			ServiceErrorCode.MEETING_NOT_ACTIVE,
+			"Meeting not found or not currently active",
+		);
 	}
 
 	// Verify user is in the quorum pool
@@ -243,7 +248,10 @@ export async function joinMeetingAsVoter(
 	);
 
 	if (poolCheck.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error("User is not eligible to join this meeting as a voter");
+		throw new ServiceError(
+			ServiceErrorCode.NOT_ELIGIBLE_FOR_MEETING,
+			"User is not eligible to join this meeting as a voter",
+		);
 	}
 
 	const insertedRow = await withTransaction(async (tx) => {
@@ -482,7 +490,8 @@ export async function joinMeetingAsWatcher(
 	);
 
 	if (meetingResult.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(
+		throw new ServiceError(
+			ServiceErrorCode.MEETING_NOT_ACTIVE,
 			"Meeting not found, not currently active, or does not allow watchers",
 		);
 	}
@@ -496,7 +505,10 @@ export async function joinMeetingAsWatcher(
 	);
 
 	if (poolCheck.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error("User is not eligible to join this meeting as a watcher");
+		throw new ServiceError(
+			ServiceErrorCode.NOT_ELIGIBLE_FOR_MEETING,
+			"User is not eligible to join this meeting as a watcher",
+		);
 	}
 
 	// Leave any current meeting and insert the new watcher participation in a
@@ -670,7 +682,10 @@ export async function joinMeetingAsAdmin(
 	}>(meetingQuery, { meetingId });
 
 	if (meetingResult.rows.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error(
+		throw new ServiceError(
+			isGlobalAdmin
+				? ServiceErrorCode.MEETING_NOT_FOUND
+				: ServiceErrorCode.MEETING_NOT_ACTIVE,
 			isGlobalAdmin
 				? "Meeting not found"
 				: "Meeting not found or does not have a meeting admin pool",
@@ -687,7 +702,8 @@ export async function joinMeetingAsAdmin(
 		);
 
 		if (poolCheck.rows.length === EMPTY_ARRAY_LENGTH) {
-			throw new Error(
+			throw new ServiceError(
+				ServiceErrorCode.NOT_ELIGIBLE_FOR_MEETING,
 				"User is not eligible to join this meeting as a meeting admin",
 			);
 		}

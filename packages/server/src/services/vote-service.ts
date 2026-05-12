@@ -1,14 +1,16 @@
 /**
  * Vote service for voter-facing voting operations
  */
-import { db } from "../database/db.js";
-import type {
-	CastVoteRequest,
-	Choice,
-	MotionForVoting,
-	Vote,
-	VotingEndedReason,
+import {
+	ServiceErrorCode,
+	type CastVoteRequest,
+	type Choice,
+	type MotionForVoting,
+	type Vote,
+	type VotingEndedReason,
 } from "@mcdc-convention-voting/shared";
+import { db } from "../database/db.js";
+import { ServiceError } from "../errors/service-error.js";
 
 // Time conversion constants
 const MILLISECONDS_PER_MINUTE = 60000;
@@ -209,20 +211,38 @@ export async function getMotionForVoting(
 }
 
 /**
- * Get error message for why user cannot vote
+ * Get error code and message for why user cannot vote
  */
-function getVotingDeniedError(reason: VotingEndedReason | undefined): string {
+function getVotingDeniedError(reason: VotingEndedReason | undefined): {
+	code: ServiceErrorCode;
+	message: string;
+} {
 	switch (reason) {
 		case "already_voted":
-			return "You have already voted on this motion";
+			return {
+				code: ServiceErrorCode.ALREADY_VOTED,
+				message: "You have already voted on this motion",
+			};
 		case "not_in_pool":
-			return "You are not eligible to vote on this motion";
+			return {
+				code: ServiceErrorCode.NOT_ELIGIBLE_FOR_MOTION,
+				message: "You are not eligible to vote on this motion",
+			};
 		case "voting_ended":
-			return "Voting has ended for this motion";
+			return {
+				code: ServiceErrorCode.VOTING_CLOSED,
+				message: "Voting has ended for this motion",
+			};
 		case "not_active":
-			return "This motion is not currently open for voting";
+			return {
+				code: ServiceErrorCode.VOTING_CLOSED,
+				message: "This motion is not currently open for voting",
+			};
 		default:
-			return "You cannot vote on this motion";
+			return {
+				code: ServiceErrorCode.FORBIDDEN,
+				message: "You cannot vote on this motion",
+			};
 	}
 }
 
@@ -236,16 +256,23 @@ function validateVoteChoices(
 ): void {
 	// Validate abstain/choice combination
 	if (abstain && choiceIds.length > EMPTY_ARRAY_LENGTH) {
-		throw new Error("Cannot select choices when abstaining");
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_SELECTION_COUNT,
+			"Cannot select choices when abstaining",
+		);
 	}
 
 	if (!abstain && choiceIds.length === EMPTY_ARRAY_LENGTH) {
-		throw new Error("Must select at least one choice or abstain");
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_SELECTION_COUNT,
+			"Must select at least one choice or abstain",
+		);
 	}
 
 	// Validate choice count against seat count
 	if (!abstain && choiceIds.length > motion.selectionCount) {
-		throw new Error(
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_SELECTION_COUNT,
 			`You can only select up to ${String(motion.selectionCount)} choice(s)`,
 		);
 	}
@@ -255,7 +282,10 @@ function validateVoteChoices(
 		const validChoiceIds = new Set(motion.choices.map((c) => c.id));
 		for (const choiceId of choiceIds) {
 			if (!validChoiceIds.has(choiceId)) {
-				throw new Error("Invalid choice selection");
+				throw new ServiceError(
+					ServiceErrorCode.INVALID_CHOICE,
+					"Invalid choice selection",
+				);
 			}
 		}
 	}
@@ -282,12 +312,16 @@ export async function castVote(
 	const motion = await getMotionForVoting(motionId, userId);
 
 	if (motion === null) {
-		throw new Error("Motion not found");
+		throw new ServiceError(
+			ServiceErrorCode.MOTION_NOT_FOUND,
+			"Motion not found",
+		);
 	}
 
 	// Check if user can vote
 	if (!motion.canVote) {
-		throw new Error(getVotingDeniedError(motion.votingEndedReason));
+		const { code, message } = getVotingDeniedError(motion.votingEndedReason);
+		throw new ServiceError(code, message);
 	}
 
 	// Validate choices

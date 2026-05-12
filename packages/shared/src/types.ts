@@ -1190,3 +1190,53 @@ export interface WatcherMotionDetail {
 	// Results (only for completed motions)
 	result: WatcherMotionResult | null;
 }
+
+/**
+ * Service Error Types
+ * Used for structured error handling with proper HTTP status code mapping
+ */
+
+/**
+ * Structured error codes for service-layer errors.
+ * Used to determine HTTP status codes without brittle string matching.
+ *
+ * HTTP Status Code Mapping:
+ * - UNAUTHORIZED → 401
+ * - FORBIDDEN, NOT_ELIGIBLE_* → 403
+ * - NOT_FOUND, *_NOT_FOUND, MEETING_NOT_ACTIVE → 404
+ * - ALREADY_VOTED, VOTING_CLOSED, ALREADY_IN_MEETING, NOT_IN_MEETING → 409
+ * - INVALID_* → 400
+ * - INTERNAL_ERROR → 500
+ */
+export enum ServiceErrorCode {
+	// Authentication & Authorization
+	UNAUTHORIZED = "UNAUTHORIZED",
+	FORBIDDEN = "FORBIDDEN",
+
+	// Resource not found
+	NOT_FOUND = "NOT_FOUND",
+	MOTION_NOT_FOUND = "MOTION_NOT_FOUND",
+	MEETING_NOT_FOUND = "MEETING_NOT_FOUND",
+	USER_NOT_FOUND = "USER_NOT_FOUND",
+	POOL_NOT_FOUND = "POOL_NOT_FOUND",
+	CHOICE_NOT_FOUND = "CHOICE_NOT_FOUND",
+
+	// Conflict/state errors
+	ALREADY_VOTED = "ALREADY_VOTED",
+	VOTING_CLOSED = "VOTING_CLOSED",
+	MEETING_NOT_ACTIVE = "MEETING_NOT_ACTIVE",
+	ALREADY_IN_MEETING = "ALREADY_IN_MEETING",
+	NOT_IN_MEETING = "NOT_IN_MEETING",
+
+	// Eligibility
+	NOT_ELIGIBLE_FOR_MOTION = "NOT_ELIGIBLE_FOR_MOTION",
+	NOT_ELIGIBLE_FOR_MEETING = "NOT_ELIGIBLE_FOR_MEETING",
+
+	// Validation errors
+	INVALID_CHOICE = "INVALID_CHOICE",
+	INVALID_SELECTION_COUNT = "INVALID_SELECTION_COUNT",
+	INVALID_INPUT = "INVALID_INPUT",
+
+	// Generic
+	INTERNAL_ERROR = "INTERNAL_ERROR",
+}
