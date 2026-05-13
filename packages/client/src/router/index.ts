@@ -39,6 +39,8 @@ import WatcherMeetingReport from "../views/watcher/WatcherMeetingReport.vue";
 import WatcherMeetingSelection from "../views/watcher/WatcherMeetingSelection.vue";
 import WatcherMotionReport from "../views/watcher/WatcherMotionReport.vue";
 import WatcherQuorumReport from "../views/watcher/WatcherQuorumReport.vue";
+import ProjectorControl from "../views/admin/ProjectorControl.vue";
+import ProjectorDisplay from "../views/admin/ProjectorDisplay.vue";
 
 declare module "vue-router" {
 	interface RouteMeta {
@@ -208,7 +210,18 @@ export const router = createRouter({
 					name: "SystemSettings",
 					component: SystemSettings,
 				},
+				{
+					path: "projector",
+					name: "ProjectorControl",
+					component: ProjectorControl,
+				},
 			],
+		},
+		{
+			path: "/projector-display",
+			name: "ProjectorDisplay",
+			component: ProjectorDisplay,
+			meta: { requiresAuth: true, requiresAdmin: true },
 		},
 		{
 			path: "/watcher",
@@ -269,10 +282,12 @@ function shouldRedirectAdminFromVoterRoute(
 		return false;
 	}
 	// Admin routes are /admin, watcher routes are /watcher, login is /login
+	// Projector display is a special admin route outside /admin path for fullscreen display
 	// Admins and meeting admins should be redirected away from voter routes (/ and its children)
 	return (
 		!path.startsWith("/admin") &&
 		!path.startsWith("/watcher") &&
+		!path.startsWith("/projector-display") &&
 		path !== "/login"
 	);
 }

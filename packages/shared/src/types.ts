@@ -1418,3 +1418,89 @@ export enum ServiceErrorCode {
 	// Generic
 	INTERNAL_ERROR = "INTERNAL_ERROR",
 }
+
+/**
+ * Projector Display Types
+ * Used for admin projector control and display functionality
+ */
+
+/**
+ * Projector display modes
+ * Each mode determines what content is shown on the projector display
+ */
+export enum ProjectorDisplayMode {
+	/** Blank/standby screen */
+	Blank = "blank",
+	/** Meeting title with optional artwork/logo */
+	MeetingTitle = "meeting_title",
+	/** Live quorum statistics */
+	Quorum = "quorum",
+	/** Current motion with choices */
+	Motion = "motion",
+	/** Live voting progress (no individual votes) */
+	VotingActive = "voting_active",
+	/** Final voting results */
+	Results = "results",
+	/** QR code linking to user manual PDF */
+	QRUserGuide = "qr_user_guide",
+	/** QR code linking to organization website */
+	QROrganization = "qr_organization",
+	/** Admin-entered custom text message */
+	CustomMessage = "custom_message",
+}
+
+/**
+ * Font size options for custom messages
+ */
+export enum ProjectorFontSize {
+	Small = "small",
+	Medium = "medium",
+	Large = "large",
+}
+
+/**
+ * Font family options for custom messages
+ */
+export enum ProjectorFontFamily {
+	/** Default sans-serif system font */
+	SansSerif = "sans-serif",
+	/** Classic serif font */
+	Serif = "serif",
+	/** Monospace/typewriter style */
+	Monospace = "monospace",
+	/** Elegant script/cursive style */
+	Cursive = "cursive",
+	/** Bold display style */
+	Display = "display",
+}
+
+/**
+ * Projector state sent from control page to display page
+ * via BroadcastChannel
+ */
+export interface ProjectorState {
+	/** Current display mode */
+	mode: ProjectorDisplayMode;
+	/** Selected meeting ID (for meeting-specific modes) */
+	meetingId: number | null;
+	/** Selected motion ID (for motion/voting/results modes) */
+	motionId: number | null;
+	/** Custom message text (for CustomMessage mode) */
+	customMessage: string | null;
+	/** Font size for custom message */
+	customMessageFontSize: ProjectorFontSize;
+	/** Font family for custom message */
+	customMessageFontFamily: ProjectorFontFamily;
+	/** Font color for custom message (hex color, e.g., "#ffffff") */
+	customMessageFontColor: string;
+	/** Background color for custom message (hex color, e.g., "#1a1a2e") */
+	customMessageBackgroundColor: string;
+	/** Image URL for custom message artwork (data URL or external URL) */
+	customMessageImageUrl: string | null;
+	/** Organization website URL (for QROrganization mode) */
+	organizationUrl: string | null;
+	/** Organization name (for QROrganization mode) */
+	organizationName: string | null;
+	/** Timestamp of last state update */
+	lastUpdated: string;
+}

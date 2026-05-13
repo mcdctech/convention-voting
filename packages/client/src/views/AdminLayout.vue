@@ -143,6 +143,9 @@ onMounted(() => {
 					<RouterLink to="/admin/system" class="dropdown-link">
 						User Guide
 					</RouterLink>
+					<RouterLink to="/admin/projector" class="dropdown-link">
+						Projector Control
+					</RouterLink>
 				</NavDropdown>
 			</nav>
 		</header>
@@ -271,6 +274,13 @@ onMounted(() => {
 						@click="closeNav"
 					>
 						User Guide
+					</RouterLink>
+					<RouterLink
+						to="/admin/projector"
+						class="mobile-nav-link"
+						@click="closeNav"
+					>
+						Projector Control
 					</RouterLink>
 				</div>
 
