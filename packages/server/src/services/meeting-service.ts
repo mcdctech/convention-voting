@@ -46,6 +46,7 @@ const SORT_ORDER_INCREMENT = 1;
 // Vote statistics constants
 const ZERO_VOTES = 0;
 const PERCENTAGE_MULTIPLIER = 100;
+const NO_CUTOFF = -1;
 
 // Status transitions (forward-only)
 const VALID_STATUS_TRANSITIONS: Record<MotionStatus, MotionStatus[]> = {
@@ -1686,26 +1687,37 @@ export async function getMotionDetailedResults(
 	);
 
 	// Step 5: Calculate percentages and determine winners
-	const choiceResults: ChoiceResult[] = choiceResultsQuery.rows.map(
-		(row, index) => {
-			const voteCount = parseInt(row.vote_count, DECIMAL_RADIX);
-			const percentage =
-				totalVotesForChoices > ZERO_VOTES
-					? (voteCount / totalVotesForChoices) * PERCENTAGE_MULTIPLIER
-					: ZERO_VOTES;
+	// Find the cutoff vote count (the vote count at position selectionCount)
+	// A choice is only a winner if it has MORE votes than this cutoff (handles ties)
+	// and has at least one vote (handles zero-vote scenarios)
+	const cutoffVoteCount =
+		choiceResultsQuery.rows.length > motion.selectionCount
+			? parseInt(
+					choiceResultsQuery.rows[motion.selectionCount].vote_count,
+					DECIMAL_RADIX,
+				)
+			: NO_CUTOFF;
 
-			// Winner determination: top selection_count choices by vote count
-			const isWinner = index < motion.selectionCount;
+	const choiceResults: ChoiceResult[] = choiceResultsQuery.rows.map((row) => {
+		const voteCount = parseInt(row.vote_count, DECIMAL_RADIX);
+		const percentage =
+			totalVotesForChoices > ZERO_VOTES
+				? (voteCount / totalVotesForChoices) * PERCENTAGE_MULTIPLIER
+				: ZERO_VOTES;
 
-			return {
-				choiceId: row.choice_id,
-				choiceName: row.choice_name,
-				voteCount,
-				percentage,
-				isWinner,
-			};
-		},
-	);
+		// Winner determination:
+		// 1. Must have at least one vote
+		// 2. Must have strictly more votes than the cutoff (handles ties at boundary)
+		const isWinner = voteCount > ZERO_VOTES && voteCount > cutoffVoteCount;
+
+		return {
+			choiceId: row.choice_id,
+			choiceName: row.choice_name,
+			voteCount,
+			percentage,
+			isWinner,
+		};
+	});
 
 	// Step 6: Calculate participation and abstention percentages
 	const participationRate =
