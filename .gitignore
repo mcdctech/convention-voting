@@ -140,3 +140,4 @@ vite.config.ts.timestamp-*
 
 # Vite cache directory
 .vite/
+packages/server/uploads/
