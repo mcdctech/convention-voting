@@ -33,6 +33,10 @@ const PAGE_OFFSET_ADJUSTMENT = 1;
 // Number parsing
 const DECIMAL_RADIX = 10;
 
+// Winner determination constants
+const ZERO_VOTES = 0;
+const NO_CUTOFF = -1;
+
 /**
  * Check whether a user is authorized to view a specific meeting as a watcher,
  * i.e. they are in the meeting's watcher_pool.
@@ -355,14 +359,28 @@ async function getWatcherMotionResultInternal(
 		{ motionId },
 	);
 
-	// Determine winners (top selection_count choices by vote count)
+	// Determine winners:
+	// Find the cutoff vote count (the vote count at position selectionCount)
+	// A choice is only a winner if it has MORE votes than this cutoff (handles ties)
+	// and has at least one vote (handles zero-vote scenarios)
+	const cutoffVoteCount =
+		choiceResultsQuery.rows.length > selectionCount
+			? parseInt(
+					choiceResultsQuery.rows[selectionCount].vote_count,
+					DECIMAL_RADIX,
+				)
+			: NO_CUTOFF;
+
 	const choiceTallies: WatcherChoiceTally[] = choiceResultsQuery.rows.map(
-		(row, index) => ({
-			choiceId: row.choice_id,
-			choiceName: row.choice_name,
-			voteCount: parseInt(row.vote_count, DECIMAL_RADIX),
-			isWinner: index < selectionCount,
-		}),
+		(row) => {
+			const voteCount = parseInt(row.vote_count, DECIMAL_RADIX);
+			return {
+				choiceId: row.choice_id,
+				choiceName: row.choice_name,
+				voteCount,
+				isWinner: voteCount > ZERO_VOTES && voteCount > cutoffVoteCount,
+			};
+		},
 	);
 
 	return {
