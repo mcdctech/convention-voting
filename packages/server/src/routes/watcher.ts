@@ -22,6 +22,7 @@ import {
 import {
 	getCurrentMeetingInfo,
 	getJoinableMeetingsForWatcher,
+	getUpcomingMeetingsForWatcher,
 	joinMeetingAsWatcher,
 	leaveCurrentMeeting,
 } from "../services/meeting-participant-service.js";
@@ -102,6 +103,41 @@ watcherRouter.get(
 			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
 				success: false,
 				error: `Failed to get joinable meetings: ${message}`,
+			});
+		}
+	},
+);
+
+/**
+ * GET /watcher/meetings/upcoming
+ * Get list of upcoming meetings the user is eligible for (not yet started)
+ */
+watcherRouter.get(
+	"/meetings/upcoming",
+	async (
+		req: Request<object, JoinableMeetingsResponse | ApiErrorResponse>,
+		res: Response<JoinableMeetingsResponse | ApiErrorResponse>,
+	): Promise<void> => {
+		if (req.user === undefined) {
+			res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+				success: false,
+				error: "Authentication required",
+			});
+			return;
+		}
+
+		try {
+			const meetings = await getUpcomingMeetingsForWatcher(req.user.id);
+
+			res.json({
+				success: true,
+				data: meetings,
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR).json({
+				success: false,
+				error: `Failed to get upcoming meetings: ${message}`,
 			});
 		}
 	},

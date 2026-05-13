@@ -186,6 +186,45 @@ export async function getJoinableMeetingsForVoter(
 }
 
 /**
+ * Get upcoming meetings that a voter is eligible for
+ * Returns meetings where:
+ * - Meeting has not started yet (now < start_date)
+ * - User is in the meeting's quorum_voting_pool
+ * These are displayed for information only - user cannot join them yet
+ */
+export async function getUpcomingMeetingsForVoter(
+	userId: string,
+): Promise<JoinableMeeting[]> {
+	const result = await db.query<{
+		id: number;
+		name: string;
+		description: string | null;
+		start_date: Date;
+		end_date: Date;
+		pool_name: string;
+	}>(
+		`SELECT DISTINCT m.id, m.name, m.description, m.start_date, m.end_date, p.pool_name
+		 FROM meetings m
+		 INNER JOIN pools p ON m.quorum_voting_pool_id = p.id
+		 INNER JOIN user_pools up ON up.pool_id = m.quorum_voting_pool_id
+		 WHERE up.user_id = :userId
+		   AND NOW() < m.start_date
+		 ORDER BY m.start_date ASC`,
+		{ userId },
+	);
+
+	return result.rows.map((row) => ({
+		id: row.id,
+		name: row.name,
+		description: row.description,
+		startDate: row.start_date,
+		endDate: row.end_date,
+		quorumVotingPoolName: row.pool_name,
+		role: ParticipantRole.Voter,
+	}));
+}
+
+/**
  * Join a meeting as a voter.
  *
  * Validation (meeting is active, user is in the quorum pool) runs outside the
@@ -432,6 +471,46 @@ export async function getJoinableMeetingsForWatcher(
 		 WHERE up.user_id = :userId
 		   AND NOW() >= m.start_date
 		   AND NOW() <= m.end_date
+		   AND m.watcher_pool_id IS NOT NULL
+		 ORDER BY m.start_date ASC`,
+		{ userId },
+	);
+
+	return result.rows.map((row) => ({
+		id: row.id,
+		name: row.name,
+		description: row.description,
+		startDate: row.start_date,
+		endDate: row.end_date,
+		quorumVotingPoolName: row.pool_name,
+		role: ParticipantRole.Watcher,
+	}));
+}
+
+/**
+ * Get upcoming meetings that a watcher is eligible for
+ * Returns meetings where:
+ * - Meeting has not started yet (now < start_date)
+ * - User is in the meeting's watcher_pool
+ * These are displayed for information only - user cannot join them yet
+ */
+export async function getUpcomingMeetingsForWatcher(
+	userId: string,
+): Promise<JoinableMeeting[]> {
+	const result = await db.query<{
+		id: number;
+		name: string;
+		description: string | null;
+		start_date: Date;
+		end_date: Date;
+		pool_name: string;
+	}>(
+		`SELECT DISTINCT m.id, m.name, m.description, m.start_date, m.end_date, p.pool_name
+		 FROM meetings m
+		 INNER JOIN pools p ON m.watcher_pool_id = p.id
+		 INNER JOIN user_pools up ON up.pool_id = m.watcher_pool_id
+		 WHERE up.user_id = :userId
+		   AND NOW() < m.start_date
 		   AND m.watcher_pool_id IS NOT NULL
 		 ORDER BY m.start_date ASC`,
 		{ userId },

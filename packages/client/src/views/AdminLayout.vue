@@ -139,6 +139,11 @@ onMounted(() => {
 						Leave Meeting
 					</a>
 				</NavDropdown>
+				<NavDropdown v-if="isAdmin" label="System">
+					<RouterLink to="/admin/system" class="dropdown-link">
+						User Guide
+					</RouterLink>
+				</NavDropdown>
 			</nav>
 		</header>
 
@@ -255,6 +260,18 @@ onMounted(() => {
 					>
 						Leave Meeting
 					</a>
+				</div>
+
+				<!-- System section (global admins only) -->
+				<div v-if="isAdmin" class="mobile-nav-section">
+					<div class="mobile-nav-section-title">System</div>
+					<RouterLink
+						to="/admin/system"
+						class="mobile-nav-link"
+						@click="closeNav"
+					>
+						User Guide
+					</RouterLink>
 				</div>
 
 				<button class="mobile-logout-btn" @click="logout">Logout</button>

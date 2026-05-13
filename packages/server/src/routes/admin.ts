@@ -5,6 +5,7 @@ import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { HTTP_STATUS } from "@pdc/http-status-codes";
 import {
+	DocumentCategory,
 	ParticipantRole,
 	PoolType,
 	type CreateUserRequest,
@@ -32,6 +33,7 @@ import {
 	type ReorderChoicesRequest,
 	type ChoiceListResponse,
 	type CSVValidationResult,
+	type LinkDocumentRequest,
 } from "@mcdc-convention-voting/shared";
 import {
 	createUser,
@@ -96,6 +98,18 @@ import {
 	callQuorum,
 	getActiveVotersForQuorum,
 } from "../services/quorum-service.js";
+import {
+	uploadMeetingDocument,
+	uploadUserGuide,
+	getDocumentsForMeeting,
+	getUserGuide,
+	deleteDocument,
+	getDocumentById,
+	canManageMeetingDocuments,
+	getLinkableDocuments,
+	linkDocumentToMeeting,
+	unlinkDocumentFromMeeting,
+} from "../services/document-service.js";
 import {
 	listPendingPoolKeys,
 	resolvePendingByCreatingPool,
@@ -2384,6 +2398,364 @@ adminRouter.get(
 			res
 				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
 				.json({ error: `Failed to get active voters: ${message}` });
+		}
+	},
+);
+
+/**
+ * Document Management Routes
+ */
+
+/**
+ * Array of valid document category values for validation
+ */
+const VALID_DOCUMENT_CATEGORIES: string[] = Object.values(DocumentCategory);
+
+/**
+ * Helper function to validate DocumentCategory
+ */
+function isValidDocumentCategory(
+	category: unknown,
+): category is DocumentCategory {
+	if (typeof category !== "string") {
+		return false;
+	}
+	return VALID_DOCUMENT_CATEGORIES.includes(category);
+}
+
+/**
+ * POST /api/admin/meetings/:id/documents
+ * Upload a document for a meeting
+ */
+adminRouter.post(
+	"/meetings/:id/documents",
+	requireMeetingAdmin("id"),
+	upload.single("file"),
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/prefer-destructuring -- Express req.body is any
+			const { category } = req.body;
+
+			if (!isValidDocumentCategory(category)) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "Invalid or missing category",
+				});
+				return;
+			}
+
+			// User Guide cannot be uploaded via this endpoint
+			if (category === DocumentCategory.UserGuide) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "User Guide must be uploaded via /api/admin/system/user-guide",
+				});
+				return;
+			}
+
+			if (req.file === undefined) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "No file uploaded",
+				});
+				return;
+			}
+
+			const userId = req.user?.id;
+			if (userId === undefined) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+					error: "User not authenticated",
+				});
+				return;
+			}
+
+			const document = await uploadMeetingDocument(
+				meetingId,
+				category,
+				req.file,
+				userId,
+			);
+
+			res.status(HTTP_STATUS.SUCCESSFUL.CREATED).json({
+				success: true,
+				data: document,
+			});
+		} catch (error) {
+			sendServiceError(res, error, "Failed to upload document");
+		}
+	},
+);
+
+/**
+ * GET /api/admin/meetings/:id/documents
+ * List all documents for a meeting
+ */
+adminRouter.get(
+	"/meetings/:id/documents",
+	requireMeetingAdmin("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			const documents = await getDocumentsForMeeting(meetingId);
+
+			res.json({ success: true, data: documents });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to list documents: ${message}` });
+		}
+	},
+);
+
+/**
+ * Check if user can delete a document
+ * Returns null if allowed, error message if not
+ */
+async function checkDocumentDeletePermission(
+	document: Awaited<ReturnType<typeof getDocumentById>>,
+	userId: string,
+	isAdmin: boolean,
+): Promise<string | null> {
+	if (document === null) {
+		return "not_found";
+	}
+
+	// System documents (User Guide) require global admin
+	if (document.meetingId === null) {
+		return isAdmin ? null : "admin_required";
+	}
+
+	// For meeting documents, verify user can manage this meeting's documents
+	const canManage = await canManageMeetingDocuments(userId, document.meetingId);
+	return canManage ? null : "not_authorized";
+}
+
+/**
+ * DELETE /api/admin/documents/:id
+ * Delete a document
+ */
+adminRouter.delete(
+	"/documents/:id",
+	requireAdminOrMeetingAdmin,
+	async (req: Request, res: Response) => {
+		try {
+			const documentId = parseInt(req.params.id, DECIMAL_RADIX);
+			const userId = req.user?.id;
+
+			if (userId === undefined) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+					error: "User not authenticated",
+				});
+				return;
+			}
+
+			const document = await getDocumentById(documentId);
+			const permissionError = await checkDocumentDeletePermission(
+				document,
+				userId,
+				req.user?.isAdmin === true,
+			);
+
+			if (permissionError === "not_found") {
+				res.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND).json({
+					error: "Document not found",
+				});
+				return;
+			}
+
+			if (permissionError === "admin_required") {
+				res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
+					error: "Only administrators can delete system documents",
+				});
+				return;
+			}
+
+			if (permissionError === "not_authorized") {
+				res.status(HTTP_STATUS.CLIENT_ERROR.FORBIDDEN).json({
+					error: "Not authorized to manage this meeting's documents",
+				});
+				return;
+			}
+
+			await deleteDocument(documentId);
+
+			res.json({ success: true, message: "Document deleted successfully" });
+		} catch (error) {
+			sendServiceError(res, error, "Failed to delete document");
+		}
+	},
+);
+
+/**
+ * POST /api/admin/system/user-guide
+ * Upload or replace the system User Guide
+ */
+adminRouter.post(
+	"/system/user-guide",
+	requireAdmin,
+	upload.single("file"),
+	async (req: Request, res: Response) => {
+		try {
+			if (req.file === undefined) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "No file uploaded",
+				});
+				return;
+			}
+
+			const userId = req.user?.id;
+			if (userId === undefined) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+					error: "User not authenticated",
+				});
+				return;
+			}
+
+			const document = await uploadUserGuide(req.file, userId);
+
+			res.status(HTTP_STATUS.SUCCESSFUL.CREATED).json({
+				success: true,
+				data: document,
+			});
+		} catch (error) {
+			sendServiceError(res, error, "Failed to upload user guide");
+		}
+	},
+);
+
+/**
+ * GET /api/admin/system/user-guide
+ * Get the system User Guide info
+ */
+adminRouter.get(
+	"/system/user-guide",
+	requireAdmin,
+	async (_req: Request, res: Response) => {
+		try {
+			const guide = await getUserGuide();
+
+			if (guide === null) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.NOT_FOUND).json({
+					error: "User guide not found",
+				});
+				return;
+			}
+
+			res.json({ success: true, data: guide });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get user guide: ${message}` });
+		}
+	},
+);
+
+/**
+ * Document Linking Routes
+ * Allow admins to link documents from other meetings to a meeting
+ */
+
+/**
+ * GET /api/admin/meetings/:id/documents/linkable
+ * Get documents from other meetings that can be linked to this meeting
+ * Query params: category (required) - document category to filter by
+ */
+adminRouter.get(
+	"/meetings/:id/documents/linkable",
+	requireMeetingAdmin("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			// eslint-disable-next-line @typescript-eslint/prefer-destructuring -- Need intermediate variable for type checking
+			const categoryParam = req.query.category;
+
+			if (!isValidDocumentCategory(categoryParam)) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "Invalid or missing category parameter",
+				});
+				return;
+			}
+
+			const documents = await getLinkableDocuments(meetingId, categoryParam);
+			res.json({ success: true, data: documents });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			res
+				.status(HTTP_STATUS.SERVER_ERROR.INTERNAL_SERVER_ERROR)
+				.json({ error: `Failed to get linkable documents: ${message}` });
+		}
+	},
+);
+
+/**
+ * POST /api/admin/meetings/:id/documents/link
+ * Link an existing document to this meeting
+ * Body: { documentId: number }
+ */
+adminRouter.post(
+	"/meetings/:id/documents/link",
+	requireMeetingAdmin("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Express req.body is any
+			const body: LinkDocumentRequest = req.body;
+
+			if (typeof body.documentId !== "number") {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "Missing required field: documentId",
+				});
+				return;
+			}
+
+			const userId = req.user?.id;
+			if (userId === undefined) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.UNAUTHORIZED).json({
+					error: "User not authenticated",
+				});
+				return;
+			}
+
+			const document = await linkDocumentToMeeting(
+				body.documentId,
+				meetingId,
+				userId,
+			);
+
+			res.status(HTTP_STATUS.SUCCESSFUL.CREATED).json({
+				success: true,
+				data: document,
+			});
+		} catch (error) {
+			sendServiceError(res, error, "Failed to link document");
+		}
+	},
+);
+
+/**
+ * DELETE /api/admin/meetings/:id/documents/:documentId/link
+ * Unlink a document from this meeting (does not delete the original document)
+ */
+adminRouter.delete(
+	"/meetings/:id/documents/:documentId/link",
+	requireMeetingAdmin("id"),
+	async (req: Request, res: Response) => {
+		try {
+			const meetingId = parseInt(req.params.id, DECIMAL_RADIX);
+			const documentId = parseInt(req.params.documentId, DECIMAL_RADIX);
+
+			if (Number.isNaN(documentId)) {
+				res.status(HTTP_STATUS.CLIENT_ERROR.BAD_REQUEST).json({
+					error: "Invalid document ID",
+				});
+				return;
+			}
+
+			await unlinkDocumentFromMeeting(documentId, meetingId);
+
+			res.json({ success: true });
+		} catch (error) {
+			sendServiceError(res, error, "Failed to unlink document");
 		}
 	},
 );

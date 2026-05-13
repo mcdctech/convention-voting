@@ -82,15 +82,20 @@ async function checkMeetingParticipation(): Promise<void> {
 			const currentMeeting = response.data;
 			if (currentMeeting === null) {
 				// User has no active meeting, redirect to meeting selection
+				// Must await to prevent race condition with child component redirects
 				const kioskQuery = getKioskModeQueryParam();
-				void router.push({ path: "/meetings", query: kioskQuery });
+				await router.push({ path: "/meetings", query: kioskQuery });
+				// Set meetingCheckComplete after navigation since layout stays mounted
+				meetingCheckComplete.value = true;
+				return;
 			}
 		}
+		meetingCheckComplete.value = true;
 	} catch {
 		// On error, redirect to meeting selection
 		const kioskQuery = getKioskModeQueryParam();
-		void router.push({ path: "/meetings", query: kioskQuery });
-	} finally {
+		await router.push({ path: "/meetings", query: kioskQuery });
+		// Set meetingCheckComplete after navigation since layout stays mounted
 		meetingCheckComplete.value = true;
 	}
 }
