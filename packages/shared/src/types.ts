@@ -1193,6 +1193,183 @@ export interface WatcherMotionDetail {
 }
 
 /**
+ * Meeting Document Types
+ */
+
+/**
+ * Document category enum
+ * Categories for organizing meeting documents
+ *
+ * Database enum (document_category):
+ * - 'invitation': Meeting invitation letter
+ * - 'agenda': Meeting agenda
+ * - 'reports': Reports and summaries
+ * - 'previous_meeting_issues': Issues from previous meetings
+ * - 'proposals': Proposals to be discussed
+ * - 'rules': Rules and procedures
+ * - 'user_guide': System user guide (system-wide, not meeting-specific)
+ *
+ * IMPORTANT: Keep this enum in sync with database migrations
+ */
+export enum DocumentCategory {
+	Invitation = "invitation",
+	Agenda = "agenda",
+	Reports = "reports",
+	PreviousMeetingIssues = "previous_meeting_issues",
+	Proposals = "proposals",
+	Rules = "rules",
+	UserGuide = "user_guide",
+}
+
+/**
+ * Human-readable labels for document categories
+ */
+export const DOCUMENT_CATEGORY_LABELS: Record<DocumentCategory, string> = {
+	[DocumentCategory.Invitation]: "Invitation",
+	[DocumentCategory.Agenda]: "Agenda",
+	[DocumentCategory.Reports]: "Reports",
+	[DocumentCategory.PreviousMeetingIssues]: "Previous Meeting Minutes",
+	[DocumentCategory.Proposals]: "Proposals",
+	[DocumentCategory.Rules]: "Rules",
+	[DocumentCategory.UserGuide]: "User Guide",
+};
+
+/**
+ * Meeting document interface
+ *
+ * Database schema (meeting_documents table):
+ * - id: SERIAL PRIMARY KEY
+ * - meeting_id: INTEGER REFERENCES meetings(id) ON DELETE CASCADE (nullable for system docs)
+ * - category: document_category NOT NULL
+ * - filename: VARCHAR(255) NOT NULL (stored filename, UUID-based)
+ * - original_filename: VARCHAR(255) NOT NULL
+ * - file_size: INTEGER NOT NULL
+ * - mime_type: VARCHAR(100) NOT NULL DEFAULT 'application/pdf'
+ * - uploaded_at: TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+ * - uploaded_by_user_id: UUID NOT NULL REFERENCES users(id)
+ *
+ * Constraint: meeting_id is NULL only for system-wide documents (user_guide)
+ *
+ * Linked documents:
+ * Documents can be linked from other meetings via document_meeting_links table.
+ * When a document is linked (not the original), isLinked=true and sourceMeetingId/Name are set.
+ *
+ * IMPORTANT: Keep this type in sync with database migrations
+ */
+export interface MeetingDocument {
+	id: number;
+	meetingId: number | null;
+	category: DocumentCategory;
+	filename: string;
+	originalFilename: string;
+	fileSize: number;
+	mimeType: string;
+	uploadedAt: Date;
+	uploadedByUserId: string;
+	// Linking fields (populated when document is linked from another meeting)
+	isLinked?: boolean;
+	sourceMeetingId?: number;
+	sourceMeetingName?: string;
+}
+
+/**
+ * Document available to be linked to a meeting
+ * Used in the admin UI to show documents from other meetings that can be linked
+ *
+ * Database source: meeting_documents table joined with meetings for meeting name
+ */
+export interface LinkableDocument {
+	id: number;
+	category: DocumentCategory;
+	originalFilename: string;
+	meetingId: number;
+	meetingName: string;
+	uploadedAt: Date;
+}
+
+/**
+ * Meeting with documents for voter/watcher view
+ */
+export interface JoinableMeetingWithDocuments extends JoinableMeeting {
+	documents: MeetingDocument[];
+}
+
+/**
+ * Response for meeting documents list
+ */
+export interface MeetingDocumentsResponse {
+	success: true;
+	data: MeetingDocument[];
+}
+
+/**
+ * Response for document upload
+ */
+export interface DocumentUploadResponse {
+	success: true;
+	data: MeetingDocument;
+}
+
+/**
+ * Response for system document (user guide)
+ */
+export interface SystemDocumentResponse {
+	success: true;
+	data: MeetingDocument | null;
+}
+
+/**
+ * Document link interface
+ *
+ * Database schema (document_meeting_links table):
+ * - id: SERIAL PRIMARY KEY
+ * - document_id: INTEGER NOT NULL REFERENCES meeting_documents(id) ON DELETE CASCADE
+ * - meeting_id: INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE
+ * - linked_at: TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+ * - linked_by_user_id: UUID NOT NULL REFERENCES users(id)
+ * - UNIQUE (document_id, meeting_id)
+ *
+ * IMPORTANT: Keep this type in sync with database migrations
+ */
+export interface DocumentLink {
+	id: number;
+	documentId: number;
+	meetingId: number;
+	linkedAt: Date;
+	linkedByUserId: string;
+}
+
+/**
+ * Request to link a document to a meeting
+ */
+export interface LinkDocumentRequest {
+	documentId: number;
+}
+
+/**
+ * Response for linkable documents list
+ */
+export interface LinkableDocumentsResponse {
+	success: true;
+	data: LinkableDocument[];
+}
+
+/**
+ * Response for document link operation
+ */
+export interface LinkDocumentResponse {
+	success: true;
+	data: MeetingDocument;
+}
+
+/**
+ * Response for document unlink operation
+ */
+export interface UnlinkDocumentResponse {
+	success: true;
+}
+
+/**
  * Service Error Types
  * Used for structured error handling with proper HTTP status code mapping
  */

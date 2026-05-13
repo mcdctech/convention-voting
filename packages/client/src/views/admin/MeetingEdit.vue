@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
 import { useRouter } from "vue-router";
-import { PoolType } from "@mcdc-convention-voting/shared";
+import {
+	DocumentCategory,
+	DOCUMENT_CATEGORY_LABELS,
+	PoolType,
+	type LinkableDocument,
+	type MeetingDocument,
+	type Pool,
+} from "@mcdc-convention-voting/shared";
 import {
 	getMeeting,
 	updateMeeting,
@@ -9,9 +16,15 @@ import {
 	getMeetingVoterPools,
 	updateMeetingVoterPools,
 	createPool,
+	getAdminMeetingDocuments,
+	uploadMeetingDocument,
+	deleteDocument,
+	getDocumentDownloadUrl,
+	getLinkableDocuments,
+	linkDocumentToMeeting,
+	unlinkDocumentFromMeeting,
 } from "../../services/api";
 import { useAuth } from "../../composables/useAuth";
-import type { Pool } from "@mcdc-convention-voting/shared";
 
 const props = defineProps<{
 	id: string;
@@ -80,6 +93,31 @@ const createPoolName = ref(EMPTY_STRING);
 const createPoolKey = ref(EMPTY_STRING);
 const createPoolDescription = ref(EMPTY_STRING);
 const createPoolLoading = ref(false);
+
+// Document management state
+const documents = ref<MeetingDocument[]>([]);
+const loadingDocuments = ref(false);
+const uploadingCategory = ref<DocumentCategory | null>(null);
+const deletingDocumentId = ref<number | null>(null);
+const documentError = ref<string | null>(null);
+
+// Document linking modal state
+const showLinkDocumentModal = ref(false);
+const linkingCategory = ref<DocumentCategory | null>(null);
+const linkableDocuments = ref<LinkableDocument[]>([]);
+const loadingLinkableDocuments = ref(false);
+const linkingDocumentId = ref<number | null>(null);
+const unlinkingDocumentId = ref<number | null>(null);
+
+// Meeting-specific document categories (excludes UserGuide which is system-wide)
+const meetingDocumentCategories: DocumentCategory[] = [
+	DocumentCategory.Invitation,
+	DocumentCategory.Agenda,
+	DocumentCategory.Reports,
+	DocumentCategory.PreviousMeetingIssues,
+	DocumentCategory.Proposals,
+	DocumentCategory.Rules,
+];
 
 // Check if a pool is the quorum pool (always checked/disabled)
 const isQuorumPool = computed(() => (poolId: number): boolean => {
@@ -269,6 +307,162 @@ async function handleCreatePool(): Promise<void> {
 	}
 }
 
+// Document management functions
+async function loadDocuments(): Promise<void> {
+	const meetingId = Number.parseInt(props.id, DECIMAL_RADIX);
+	if (Number.isNaN(meetingId)) return;
+
+	loadingDocuments.value = true;
+	documentError.value = null;
+	try {
+		const response = await getAdminMeetingDocuments(meetingId);
+		if (response.success && response.data !== undefined) {
+			documents.value = response.data;
+		}
+	} catch (err) {
+		documentError.value =
+			err instanceof Error ? err.message : "Failed to load documents";
+	} finally {
+		loadingDocuments.value = false;
+	}
+}
+
+function getDocumentForCategory(
+	category: DocumentCategory,
+): MeetingDocument | undefined {
+	return documents.value.find((doc) => doc.category === category);
+}
+
+function getCategoryLabel(category: DocumentCategory): string {
+	return DOCUMENT_CATEGORY_LABELS[category];
+}
+
+async function handleDocumentUpload(
+	event: Event,
+	category: DocumentCategory,
+): Promise<void> {
+	if (!(event.target instanceof HTMLInputElement)) {
+		return;
+	}
+	const inputElement = event.target;
+	const { files } = inputElement;
+	const NO_FILES = 0;
+	if (files === null || files.length === NO_FILES) {
+		return;
+	}
+	const [file] = files;
+
+	const meetingId = Number.parseInt(props.id, DECIMAL_RADIX);
+	if (Number.isNaN(meetingId)) return;
+
+	uploadingCategory.value = category;
+	documentError.value = null;
+
+	try {
+		const response = await uploadMeetingDocument(meetingId, category, file);
+		if (response.success && response.data !== undefined) {
+			// Reload documents to get the updated list
+			await loadDocuments();
+		}
+	} catch (err) {
+		documentError.value =
+			err instanceof Error ? err.message : "Failed to upload document";
+	} finally {
+		uploadingCategory.value = null;
+		// Reset the file input
+		inputElement.value = EMPTY_STRING;
+	}
+}
+
+async function handleDeleteDocument(documentId: number): Promise<void> {
+	deletingDocumentId.value = documentId;
+	documentError.value = null;
+
+	try {
+		await deleteDocument(documentId);
+		// Reload documents to get the updated list
+		await loadDocuments();
+	} catch (err) {
+		documentError.value =
+			err instanceof Error ? err.message : "Failed to delete document";
+	} finally {
+		deletingDocumentId.value = null;
+	}
+}
+
+function handleDownloadDocument(documentId: number): void {
+	window.open(getDocumentDownloadUrl(documentId), "_blank");
+}
+
+// Document linking functions
+async function openLinkDocumentModal(
+	category: DocumentCategory,
+): Promise<void> {
+	const meetingId = Number.parseInt(props.id, DECIMAL_RADIX);
+	if (Number.isNaN(meetingId)) return;
+
+	linkingCategory.value = category;
+	showLinkDocumentModal.value = true;
+	loadingLinkableDocuments.value = true;
+	documentError.value = null;
+	linkableDocuments.value = [];
+
+	try {
+		const response = await getLinkableDocuments(meetingId, category);
+		if (response.success && response.data !== undefined) {
+			linkableDocuments.value = response.data;
+		}
+	} catch (err) {
+		documentError.value =
+			err instanceof Error ? err.message : "Failed to load linkable documents";
+	} finally {
+		loadingLinkableDocuments.value = false;
+	}
+}
+
+function closeLinkDocumentModal(): void {
+	showLinkDocumentModal.value = false;
+	linkingCategory.value = null;
+	linkableDocuments.value = [];
+}
+
+async function handleLinkDocument(documentId: number): Promise<void> {
+	const meetingId = Number.parseInt(props.id, DECIMAL_RADIX);
+	if (Number.isNaN(meetingId)) return;
+
+	linkingDocumentId.value = documentId;
+	documentError.value = null;
+
+	try {
+		await linkDocumentToMeeting(meetingId, documentId);
+		closeLinkDocumentModal();
+		await loadDocuments();
+	} catch (err) {
+		documentError.value =
+			err instanceof Error ? err.message : "Failed to link document";
+	} finally {
+		linkingDocumentId.value = null;
+	}
+}
+
+async function handleUnlinkDocument(documentId: number): Promise<void> {
+	const meetingId = Number.parseInt(props.id, DECIMAL_RADIX);
+	if (Number.isNaN(meetingId)) return;
+
+	unlinkingDocumentId.value = documentId;
+	documentError.value = null;
+
+	try {
+		await unlinkDocumentFromMeeting(meetingId, documentId);
+		await loadDocuments();
+	} catch (err) {
+		documentError.value =
+			err instanceof Error ? err.message : "Failed to unlink document";
+	} finally {
+		unlinkingDocumentId.value = null;
+	}
+}
+
 interface FormDataType {
 	name: string;
 	description: string;
@@ -362,6 +556,7 @@ onMounted(() => {
 	void loadPools();
 	void loadMeeting();
 	void loadVoterPools();
+	void loadDocuments();
 });
 </script>
 
@@ -551,6 +746,161 @@ onMounted(() => {
 			</div>
 		</form>
 
+		<!-- Documents Section -->
+		<div class="documents-section">
+			<h3>Meeting Documents</h3>
+			<p class="section-description">
+				Upload PDF documents for this meeting, or link documents from other
+				meetings. Each category can have one document.
+			</p>
+
+			<div v-if="documentError" class="error document-error">
+				{{ documentError }}
+			</div>
+
+			<div v-if="loadingDocuments" class="loading-inline">
+				Loading documents...
+			</div>
+
+			<div v-else class="documents-grid">
+				<div
+					v-for="category in meetingDocumentCategories"
+					:key="category"
+					class="document-card"
+				>
+					<div class="document-header">
+						<span class="document-category">{{
+							getCategoryLabel(category)
+						}}</span>
+					</div>
+
+					<div class="document-content">
+						<!-- Existing document (uploaded or linked) -->
+						<div
+							v-if="getDocumentForCategory(category)"
+							class="document-existing"
+							:class="{
+								'document-linked': getDocumentForCategory(category)?.isLinked,
+							}"
+						>
+							<span class="document-filename">
+								{{ getDocumentForCategory(category)?.originalFilename }}
+							</span>
+							<span
+								v-if="getDocumentForCategory(category)?.isLinked"
+								class="linked-from"
+							>
+								Linked from:
+								{{ getDocumentForCategory(category)?.sourceMeetingName }}
+							</span>
+							<div class="document-actions">
+								<button
+									class="btn btn-small btn-link"
+									@click="
+										handleDownloadDocument(
+											getDocumentForCategory(category)?.id ?? 0,
+										)
+									"
+								>
+									Download
+								</button>
+								<!-- Unlink button for linked documents -->
+								<button
+									v-if="getDocumentForCategory(category)?.isLinked"
+									class="btn btn-small btn-warning"
+									:disabled="
+										unlinkingDocumentId === getDocumentForCategory(category)?.id
+									"
+									@click="
+										handleUnlinkDocument(
+											getDocumentForCategory(category)?.id ?? 0,
+										)
+									"
+								>
+									{{
+										unlinkingDocumentId === getDocumentForCategory(category)?.id
+											? "Unlinking..."
+											: "Unlink"
+									}}
+								</button>
+								<!-- Delete button for uploaded documents -->
+								<button
+									v-else
+									class="btn btn-small btn-danger"
+									:disabled="
+										deletingDocumentId === getDocumentForCategory(category)?.id
+									"
+									@click="
+										handleDeleteDocument(
+											getDocumentForCategory(category)?.id ?? 0,
+										)
+									"
+								>
+									{{
+										deletingDocumentId === getDocumentForCategory(category)?.id
+											? "Deleting..."
+											: "Delete"
+									}}
+								</button>
+							</div>
+						</div>
+
+						<!-- Document actions (upload or link) -->
+						<div
+							v-if="!getDocumentForCategory(category)"
+							class="document-options"
+						>
+							<!-- Upload input when no document exists -->
+							<div class="document-upload">
+								<label :for="`doc-${category}`" class="upload-label">
+									<span v-if="uploadingCategory === category"
+										>Uploading...</span
+									>
+									<span v-else>Upload PDF</span>
+								</label>
+								<input
+									:id="`doc-${category}`"
+									type="file"
+									accept=".pdf,application/pdf"
+									:disabled="uploadingCategory !== null"
+									@change="handleDocumentUpload($event, category)"
+								/>
+							</div>
+
+							<span class="or-divider">or</span>
+
+							<!-- Link existing document button -->
+							<button
+								type="button"
+								class="btn btn-small btn-outline"
+								@click="openLinkDocumentModal(category)"
+							>
+								Link Existing
+							</button>
+						</div>
+
+						<!-- Replace document when one already exists (not linked) -->
+						<div
+							v-else-if="!getDocumentForCategory(category)?.isLinked"
+							class="document-upload"
+						>
+							<label :for="`doc-${category}`" class="upload-label">
+								<span v-if="uploadingCategory === category">Uploading...</span>
+								<span v-else>Replace Document</span>
+							</label>
+							<input
+								:id="`doc-${category}`"
+								type="file"
+								accept=".pdf,application/pdf"
+								:disabled="uploadingCategory !== null"
+								@change="handleDocumentUpload($event, category)"
+							/>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
 		<!-- Create Pool Modal -->
 		<div v-if="showCreatePoolModal" class="modal" @click="closeCreatePoolModal">
 			<div class="modal-content" @click.stop>
@@ -603,6 +953,62 @@ onMounted(() => {
 						{{ createPoolLoading ? "Creating..." : "Create Pool" }}
 					</button>
 					<button class="btn btn-secondary" @click="closeCreatePoolModal">
+						Cancel
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Link Document Modal -->
+		<div
+			v-if="showLinkDocumentModal"
+			class="modal"
+			@click="closeLinkDocumentModal"
+		>
+			<div class="modal-content link-modal-content" @click.stop>
+				<h3>Link Existing Document</h3>
+				<p v-if="linkingCategory">
+					Select a {{ getCategoryLabel(linkingCategory) }} document from another
+					meeting to link to this meeting.
+				</p>
+
+				<div v-if="loadingLinkableDocuments" class="loading-inline">
+					Loading documents...
+				</div>
+
+				<div v-else-if="linkableDocuments.length === 0" class="no-documents">
+					<p>No documents available to link for this category.</p>
+					<p class="hint">
+						Documents must be uploaded to other meetings first.
+					</p>
+				</div>
+
+				<div v-else class="linkable-documents-list">
+					<div
+						v-for="doc in linkableDocuments"
+						:key="doc.id"
+						class="linkable-document-item"
+					>
+						<div class="linkable-document-info">
+							<span class="linkable-document-name">{{
+								doc.originalFilename
+							}}</span>
+							<span class="linkable-document-meeting"
+								>From: {{ doc.meetingName }}</span
+							>
+						</div>
+						<button
+							class="btn btn-small btn-primary"
+							:disabled="linkingDocumentId === doc.id"
+							@click="handleLinkDocument(doc.id)"
+						>
+							{{ linkingDocumentId === doc.id ? "Linking..." : "Link" }}
+						</button>
+					</div>
+				</div>
+
+				<div class="modal-actions">
+					<button class="btn btn-secondary" @click="closeLinkDocumentModal">
 						Cancel
 					</button>
 				</div>
@@ -842,5 +1248,217 @@ h2 {
 	gap: 1rem;
 	justify-content: flex-end;
 	margin-top: 1.5rem;
+}
+
+/* Documents section styles */
+.documents-section {
+	background: white;
+	border-radius: 8px;
+	padding: 2rem;
+	margin-top: 2rem;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.documents-section h3 {
+	margin: 0 0 0.5rem 0;
+	color: #2c3e50;
+	font-size: 1.25rem;
+}
+
+.section-description {
+	margin: 0 0 1.5rem 0;
+	color: #666;
+	font-size: 0.9rem;
+}
+
+.document-error {
+	margin-bottom: 1rem;
+}
+
+.documents-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+	gap: 1rem;
+}
+
+.document-card {
+	border: 1px solid #e0e0e0;
+	border-radius: 8px;
+	padding: 1rem;
+	background: #fafafa;
+}
+
+.document-header {
+	margin-bottom: 0.75rem;
+	padding-bottom: 0.5rem;
+	border-bottom: 1px solid #e0e0e0;
+}
+
+.document-category {
+	font-weight: 600;
+	color: #2c3e50;
+}
+
+.document-content {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
+.document-existing {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	padding: 0.5rem;
+	background: #e8f5e9;
+	border-radius: 4px;
+}
+
+.document-filename {
+	font-size: 0.875rem;
+	color: #2e7d32;
+	word-break: break-all;
+}
+
+.document-actions {
+	display: flex;
+	gap: 0.5rem;
+}
+
+.document-upload {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+
+.document-upload input[type="file"] {
+	font-size: 0.875rem;
+}
+
+.upload-label {
+	font-size: 0.8rem;
+	color: #666;
+	font-weight: 500;
+}
+
+.btn-danger {
+	background-color: #dc3545;
+	color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+	background-color: #c82333;
+}
+
+.btn-danger:disabled {
+	background-color: #e57373;
+}
+
+.btn-link {
+	background: none;
+	color: #1976d2;
+	padding: 0.375rem 0.5rem;
+}
+
+.btn-link:hover {
+	text-decoration: underline;
+	background: #e3f2fd;
+}
+
+/* Document linking styles */
+.document-linked {
+	background: #e3f2fd;
+	border-left: 3px solid #1976d2;
+}
+
+.linked-from {
+	display: block;
+	font-size: 0.75rem;
+	color: #1976d2;
+	font-style: italic;
+	margin-top: 0.25rem;
+}
+
+.document-options {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.or-divider {
+	color: #999;
+	font-size: 0.875rem;
+}
+
+.btn-warning {
+	background-color: #ff9800;
+	color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+	background-color: #f57c00;
+}
+
+.btn-warning:disabled {
+	background-color: #ffcc80;
+}
+
+/* Link document modal styles */
+.link-modal-content {
+	max-width: 600px;
+	max-height: 80vh;
+	overflow-y: auto;
+}
+
+.no-documents {
+	text-align: center;
+	padding: 2rem;
+	color: #666;
+}
+
+.no-documents .hint {
+	font-size: 0.875rem;
+	color: #999;
+}
+
+.linkable-documents-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	max-height: 400px;
+	overflow-y: auto;
+	padding: 0.5rem;
+	background: #f8f9fa;
+	border-radius: 4px;
+}
+
+.linkable-document-item {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 0.75rem;
+	background: white;
+	border: 1px solid #e0e0e0;
+	border-radius: 4px;
+}
+
+.linkable-document-info {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	flex: 1;
+	min-width: 0;
+}
+
+.linkable-document-name {
+	font-weight: 500;
+	color: #2c3e50;
+	word-break: break-all;
+}
+
+.linkable-document-meeting {
+	font-size: 0.875rem;
+	color: #666;
 }
 </style>

@@ -15,10 +15,13 @@ import type {
 	CSVImportResult,
 	CSVValidationResult,
 	CurrentMeetingInfo,
+	DocumentCategory,
 	GeneratePasswordsRequest,
 	JoinableMeeting,
+	LinkableDocument,
 	LoginRequest,
 	LoginResponse,
+	MeetingDocument,
 	MeetingParticipant,
 	MeetingWithPool,
 	MotionDetailedResults,
@@ -1134,6 +1137,17 @@ export async function getJoinableMeetings(): Promise<
 }
 
 /**
+ * Get list of upcoming meetings the user is eligible for (not yet started)
+ */
+export async function getUpcomingMeetings(): Promise<
+	ApiResult<JoinableMeeting[]>
+> {
+	return await apiRequest<ApiResult<JoinableMeeting[]>>(
+		`${API_PREFIX}/voter/meetings/upcoming`,
+	);
+}
+
+/**
  * Get the user's current active meeting
  */
 export async function getCurrentMeeting(): Promise<
@@ -1306,6 +1320,17 @@ export async function getJoinableMeetingsForWatcher(): Promise<
 > {
 	return await apiRequest<ApiResult<JoinableMeeting[]>>(
 		`${API_PREFIX}/watcher/meetings/joinable`,
+	);
+}
+
+/**
+ * Get list of upcoming meetings the watcher is eligible for (not yet started)
+ */
+export async function getUpcomingMeetingsForWatcher(): Promise<
+	ApiResult<JoinableMeeting[]>
+> {
+	return await apiRequest<ApiResult<JoinableMeeting[]>>(
+		`${API_PREFIX}/watcher/meetings/upcoming`,
 	);
 }
 
@@ -1529,6 +1554,226 @@ export async function deletePendingPoolKey(
 ): Promise<ApiResult<{ deletedCount: number }>> {
 	return await apiRequest<ApiResult<{ deletedCount: number }>>(
 		`${API_PREFIX}/admin/pools/pending/${encodeURIComponent(poolKey)}`,
+		{
+			method: "DELETE",
+		},
+	);
+}
+
+/**
+ * Document Management API Functions
+ */
+
+/**
+ * Upload a document for a meeting (admin only)
+ */
+export async function uploadMeetingDocument(
+	meetingId: number,
+	category: DocumentCategory,
+	file: File,
+): Promise<ApiResult<MeetingDocument>> {
+	const formData = new FormData();
+	formData.append("file", file);
+	formData.append("category", category);
+
+	// Build headers with auth token (don't set Content-Type for FormData)
+	const requestHeaders = new Headers();
+	const token = getAuthToken();
+	if (token !== null) {
+		requestHeaders.set("Authorization", `Bearer ${token}`);
+	}
+
+	const response = await fetch(
+		`${API_BASE_URL}${API_PREFIX}/admin/meetings/${meetingId}/documents`,
+		{
+			method: "POST",
+			headers: requestHeaders,
+			body: formData,
+		},
+	);
+
+	if (!response.ok) {
+		const errorJson: unknown = await response.json().catch(() => ({
+			message: response.statusText,
+		}));
+		const errorData: ErrorResponse = isErrorResponse(errorJson)
+			? errorJson
+			: { message: response.statusText };
+		const errorMessage =
+			errorData.error ?? errorData.message ?? `HTTP ${response.status}`;
+		throw new Error(errorMessage);
+	}
+
+	return await parseJsonResponse<ApiResult<MeetingDocument>>(response);
+}
+
+/**
+ * Get documents for a meeting (admin)
+ */
+export async function getAdminMeetingDocuments(
+	meetingId: number,
+): Promise<ApiResult<MeetingDocument[]>> {
+	return await apiRequest<ApiResult<MeetingDocument[]>>(
+		`${API_PREFIX}/admin/meetings/${meetingId}/documents`,
+	);
+}
+
+/**
+ * Delete a document (admin only)
+ */
+export async function deleteDocument(
+	documentId: number,
+): Promise<ApiResult<void>> {
+	return await apiRequest<ApiResult<void>>(
+		`${API_PREFIX}/admin/documents/${documentId}`,
+		{
+			method: "DELETE",
+		},
+	);
+}
+
+/**
+ * Upload the system user guide (admin only)
+ */
+export async function uploadUserGuide(
+	file: File,
+): Promise<ApiResult<MeetingDocument>> {
+	const formData = new FormData();
+	formData.append("file", file);
+
+	// Build headers with auth token (don't set Content-Type for FormData)
+	const requestHeaders = new Headers();
+	const token = getAuthToken();
+	if (token !== null) {
+		requestHeaders.set("Authorization", `Bearer ${token}`);
+	}
+
+	const response = await fetch(
+		`${API_BASE_URL}${API_PREFIX}/admin/system/user-guide`,
+		{
+			method: "POST",
+			headers: requestHeaders,
+			body: formData,
+		},
+	);
+
+	if (!response.ok) {
+		const errorJson: unknown = await response.json().catch(() => ({
+			message: response.statusText,
+		}));
+		const errorData: ErrorResponse = isErrorResponse(errorJson)
+			? errorJson
+			: { message: response.statusText };
+		const errorMessage =
+			errorData.error ?? errorData.message ?? `HTTP ${response.status}`;
+		throw new Error(errorMessage);
+	}
+
+	return await parseJsonResponse<ApiResult<MeetingDocument>>(response);
+}
+
+/**
+ * Get the system user guide info (admin)
+ */
+export async function getAdminUserGuide(): Promise<
+	ApiResult<MeetingDocument | null>
+> {
+	return await apiRequest<ApiResult<MeetingDocument | null>>(
+		`${API_PREFIX}/admin/system/user-guide`,
+	);
+}
+
+/**
+ * Public Document API Functions (for voters/watchers)
+ */
+
+/**
+ * Get documents for a meeting (public, requires meeting access)
+ */
+export async function getMeetingDocuments(
+	meetingId: number,
+): Promise<ApiResult<MeetingDocument[]>> {
+	return await apiRequest<ApiResult<MeetingDocument[]>>(
+		`${API_PREFIX}/documents/meeting/${meetingId}`,
+	);
+}
+
+/**
+ * Get the system user guide info (public)
+ */
+export async function getUserGuide(): Promise<
+	ApiResult<MeetingDocument | null>
+> {
+	return await apiRequest<ApiResult<MeetingDocument | null>>(
+		`${API_PREFIX}/documents/user-guide`,
+	);
+}
+
+/**
+ * Get the download URL for a document
+ */
+export function getDocumentDownloadUrl(documentId: number): string {
+	const token = getAuthToken();
+	const tokenParam = token === null ? "" : `?token=${token}`;
+	return `${API_BASE_URL}${API_PREFIX}/documents/${documentId}/download${tokenParam}`;
+}
+
+/**
+ * Get the download URL for the user guide
+ */
+export function getUserGuideDownloadUrl(): string {
+	const token = getAuthToken();
+	const tokenParam = token === null ? "" : `?token=${token}`;
+	return `${API_BASE_URL}${API_PREFIX}/documents/user-guide/download${tokenParam}`;
+}
+
+/**
+ * Document Linking API Functions
+ */
+
+/**
+ * Get documents from other meetings that can be linked to this meeting
+ * @param meetingId - The meeting to link documents to
+ * @param category - The document category to filter by (same category only)
+ */
+export async function getLinkableDocuments(
+	meetingId: number,
+	category: DocumentCategory,
+): Promise<ApiResult<LinkableDocument[]>> {
+	return await apiRequest<ApiResult<LinkableDocument[]>>(
+		`${API_PREFIX}/admin/meetings/${meetingId}/documents/linkable?category=${category}`,
+	);
+}
+
+/**
+ * Link an existing document to a meeting
+ * @param meetingId - The meeting to link the document to
+ * @param documentId - The document to link
+ */
+export async function linkDocumentToMeeting(
+	meetingId: number,
+	documentId: number,
+): Promise<ApiResult<MeetingDocument>> {
+	return await apiRequest<ApiResult<MeetingDocument>>(
+		`${API_PREFIX}/admin/meetings/${meetingId}/documents/link`,
+		{
+			method: "POST",
+			body: JSON.stringify({ documentId }),
+		},
+	);
+}
+
+/**
+ * Unlink a document from a meeting (does not delete the original document)
+ * @param meetingId - The meeting to unlink from
+ * @param documentId - The document to unlink
+ */
+export async function unlinkDocumentFromMeeting(
+	meetingId: number,
+	documentId: number,
+): Promise<ApiResult<void>> {
+	return await apiRequest<ApiResult<void>>(
+		`${API_PREFIX}/admin/meetings/${meetingId}/documents/${documentId}/link`,
 		{
 			method: "DELETE",
 		},

@@ -27,6 +27,7 @@ import MeetingAdminSelection from "../views/admin/MeetingAdminSelection.vue";
 import MotionList from "../views/admin/MotionList.vue";
 import MotionCreate from "../views/admin/MotionCreate.vue";
 import AdminMotionDetail from "../views/admin/MotionDetail.vue";
+import SystemSettings from "../views/admin/SystemSettings.vue";
 import VoterDashboard from "../views/voter/VoterDashboard.vue";
 import VoterMotionDetail from "../views/voter/MotionDetail.vue";
 import MyPools from "../views/voter/MyPools.vue";
@@ -201,6 +202,11 @@ export const router = createRouter({
 					name: "AdminMotionDetail",
 					component: AdminMotionDetail,
 					props: true,
+				},
+				{
+					path: "system",
+					name: "SystemSettings",
+					component: SystemSettings,
 				},
 			],
 		},

@@ -8,6 +8,7 @@ import { HTTP_STATUS } from "@pdc/http-status-codes";
 import { router } from "./routes/index.js";
 import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
+import { documentsRouter } from "./routes/documents.js";
 import { voterRouter } from "./routes/voter.js";
 import { watcherRouter } from "./routes/watcher.js";
 import { requireAuth, requireWatcher } from "./middleware/auth-middleware.js";
@@ -80,6 +81,7 @@ export function createApp(): Express {
 	// API routes
 	app.use(API_PREFIX, router);
 	app.use(`${API_PREFIX}/auth`, authRouter);
+	app.use(`${API_PREFIX}/documents`, requireAuth, documentsRouter);
 	app.use(`${API_PREFIX}/voter`, requireAuth, activityLogger, voterRouter);
 	app.use(
 		`${API_PREFIX}/admin`,
