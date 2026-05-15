@@ -22,12 +22,15 @@ const quorumEligiblePools = computed(() =>
 	),
 );
 
+const DEFAULT_QUORUM_PERCENTAGE = 50;
+
 const formData = ref({
 	name: EMPTY_STRING,
 	description: EMPTY_STRING,
 	startDate: EMPTY_STRING,
 	endDate: EMPTY_STRING,
 	quorumVotingPoolId: EMPTY_STRING,
+	quorumPercentage: DEFAULT_QUORUM_PERCENTAGE,
 });
 
 const saving = ref(false);
@@ -55,6 +58,7 @@ interface FormDataType {
 	startDate: string;
 	endDate: string;
 	quorumVotingPoolId: string;
+	quorumPercentage: number;
 }
 
 function validateFormData(data: FormDataType): string | null {
@@ -101,6 +105,7 @@ async function handleSubmit(): Promise<void> {
 				formData.value.quorumVotingPoolId,
 				10,
 			),
+			quorumPercentage: formData.value.quorumPercentage,
 			...(formData.value.description.trim() !== EMPTY_STRING && {
 				description: formData.value.description.trim(),
 			}),
@@ -197,6 +202,25 @@ onMounted(() => {
 				<p class="field-description">
 					The pool used to determine quorum for this meeting. Only pools with
 					"Voter" type or unspecified type can be used as quorum pools.
+				</p>
+			</div>
+
+			<div class="form-group">
+				<label for="quorumPercentage">
+					Quorum Percentage <span class="required">*</span>
+				</label>
+				<input
+					id="quorumPercentage"
+					v-model.number="formData.quorumPercentage"
+					type="number"
+					min="0"
+					max="100"
+					step="1"
+					required
+				/>
+				<p class="field-description">
+					Percentage of eligible voters required to establish quorum (0-100).
+					Default is 50%.
 				</p>
 			</div>
 

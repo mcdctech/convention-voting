@@ -212,7 +212,6 @@ onMounted((): void => {
 							{{ meeting.description }}
 						</p>
 						<div class="meeting-meta">
-							<span class="pool-badge">{{ meeting.quorumVotingPoolName }}</span>
 							<span class="date-range">
 								{{ formatDate(meeting.startDate) }} -
 								{{ formatDate(meeting.endDate) }}
@@ -267,9 +266,6 @@ onMounted((): void => {
 						<p v-if="meeting.description" class="description">
 							{{ meeting.description }}
 						</p>
-						<div class="meeting-meta">
-							<span class="pool-badge">{{ meeting.quorumVotingPoolName }}</span>
-						</div>
 						<div class="upcoming-schedule">
 							<div class="schedule-row">
 								<span class="schedule-label">Starts:</span>

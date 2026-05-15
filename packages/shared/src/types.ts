@@ -487,6 +487,8 @@ export interface Meeting {
 	startDate: Date;
 	endDate: Date;
 	quorumVotingPoolId: number;
+	quorumPercentage: number; // 0-100, percentage required for quorum
+	quorumEligibleSnapshot: number | null; // Snapshot of eligible count when quorum was called
 	watcherPoolId: number | null;
 	meetingAdminPoolId: number | null;
 	quorumCalledAt: Date | null;
@@ -685,6 +687,7 @@ export interface CreateMeetingRequest {
 	startDate: string; // ISO 8601 string
 	endDate: string; // ISO 8601 string
 	quorumVotingPoolId: number;
+	quorumPercentage?: number; // 0-100, defaults to 50 if not provided
 	voterPoolIds?: number[]; // Additional voter pools (quorum pool always included)
 	watcherPoolId?: number | null; // Auto-created if not provided
 	meetingAdminPoolId?: number | null; // Auto-created if not provided
@@ -699,6 +702,7 @@ export interface UpdateMeetingRequest {
 	startDate?: string; // ISO 8601 string
 	endDate?: string; // ISO 8601 string
 	quorumVotingPoolId?: number;
+	quorumPercentage?: number; // 0-100, percentage required for quorum
 	voterPoolIds?: number[]; // Replace all voter pools
 	watcherPoolId?: number | null;
 	meetingAdminPoolId?: number | null;
@@ -1041,6 +1045,10 @@ export interface QuorumReport {
 	totalEligibleVoters: number;
 	activeVoterCount: number;
 	activeVoterPercentage: number;
+	quorumPercentage: number; // Required percentage for quorum (0-100)
+	votersNeededForQuorum: number; // Calculated: round(totalEligible * percentage / 100)
+	hasQuorum: boolean; // Whether quorum is achieved
+	isSnapshotted: boolean; // True if using frozen snapshot (quorum was called)
 	quorumCalledAt: Date | null;
 	calculatedAsOf: Date;
 	meetingStartDate: Date;

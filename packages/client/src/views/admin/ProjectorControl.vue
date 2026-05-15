@@ -768,18 +768,22 @@ onUnmounted(() => {
 							<h4>{{ selectedMeeting.name }}</h4>
 							<div
 								class="quorum-status"
-								:class="{ achieved: quorum.activeVoterPercentage >= 50 }"
+								:class="{ achieved: quorum.hasQuorum }"
 							>
 								{{
-									quorum.activeVoterPercentage >= 50
-										? "Quorum Achieved"
-										: "Quorum Not Reached"
+									quorum.hasQuorum ? "Quorum Achieved" : "Quorum Not Reached"
 								}}
 							</div>
 							<div class="quorum-numbers">
 								<div class="stat">
 									<span class="value">{{ quorum.activeVoterCount }}</span>
 									<span class="label">Present</span>
+								</div>
+								<div class="stat">
+									<span class="value">{{ quorum.votersNeededForQuorum }}</span>
+									<span class="label"
+										>Required ({{ quorum.quorumPercentage }}%)</span
+									>
 								</div>
 								<div class="stat">
 									<span class="value">{{ quorum.totalEligibleVoters }}</span>
