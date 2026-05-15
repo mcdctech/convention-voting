@@ -285,15 +285,8 @@ onUnmounted(() => {
 			<div v-if="meeting !== null && quorum !== null" class="quorum-content">
 				<h1>{{ meeting.name }}</h1>
 				<div class="quorum-display">
-					<div
-						class="quorum-status"
-						:class="{ achieved: quorum.activeVoterPercentage >= 50 }"
-					>
-						{{
-							quorum.activeVoterPercentage >= 50
-								? "Quorum Achieved"
-								: "Quorum Not Reached"
-						}}
+					<div class="quorum-status" :class="{ achieved: quorum.hasQuorum }">
+						{{ quorum.hasQuorum ? "Quorum Achieved" : "Quorum Not Reached" }}
 					</div>
 					<div class="quorum-numbers">
 						<div class="stat">
@@ -301,10 +294,10 @@ onUnmounted(() => {
 							<span class="label">Present</span>
 						</div>
 						<div class="stat">
-							<span class="value">{{
-								Math.ceil(quorum.totalEligibleVoters / 2 + 1)
-							}}</span>
-							<span class="label">Required</span>
+							<span class="value">{{ quorum.votersNeededForQuorum }}</span>
+							<span class="label"
+								>Required ({{ quorum.quorumPercentage }}%)</span
+							>
 						</div>
 						<div class="stat">
 							<span class="value">{{ quorum.totalEligibleVoters }}</span>

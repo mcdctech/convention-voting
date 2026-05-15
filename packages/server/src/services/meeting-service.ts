@@ -48,6 +48,9 @@ const ZERO_VOTES = 0;
 const PERCENTAGE_MULTIPLIER = 100;
 const NO_CUTOFF = -1;
 
+// Quorum defaults
+const DEFAULT_QUORUM_PERCENTAGE = 50;
+
 // Status transitions (forward-only)
 const VALID_STATUS_TRANSITIONS: Record<MotionStatus, MotionStatus[]> = {
 	[MotionStatus.NotYetStarted]: [MotionStatus.VotingActive],
@@ -129,13 +132,23 @@ async function autoCreateMeetingPools(meetingName: string): Promise<{
 export async function createMeeting(
 	request: CreateMeetingRequest,
 ): Promise<Meeting> {
-	const { name, description, startDate, endDate, quorumVotingPoolId } = request;
+	const {
+		name,
+		description,
+		startDate,
+		endDate,
+		quorumVotingPoolId,
+		quorumPercentage,
+	} = request;
 
 	// Verify quorum pool exists
 	await verifyPoolExists(quorumVotingPoolId, "Pool");
 
 	// Auto-create watcher and meeting admin pools
 	const { watcherPool, meetingAdminPool } = await autoCreateMeetingPools(name);
+
+	// Use provided quorum percentage or default to 50%
+	const finalQuorumPercentage = quorumPercentage ?? DEFAULT_QUORUM_PERCENTAGE;
 
 	const result = await db.query<{
 		id: number;
@@ -144,14 +157,16 @@ export async function createMeeting(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_percentage: string;
+		quorum_eligible_snapshot: number | null;
 		watcher_pool_id: number | null;
 		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
 		created_at: Date;
 		updated_at: Date;
 	}>(
-		`INSERT INTO meetings (name, description, start_date, end_date, quorum_voting_pool_id, watcher_pool_id, meeting_admin_pool_id)
-		 VALUES (:name, :description, :startDate, :endDate, :quorumVotingPoolId, :watcherPoolId, :meetingAdminPoolId)
+		`INSERT INTO meetings (name, description, start_date, end_date, quorum_voting_pool_id, quorum_percentage, watcher_pool_id, meeting_admin_pool_id)
+		 VALUES (:name, :description, :startDate, :endDate, :quorumVotingPoolId, :quorumPercentage, :watcherPoolId, :meetingAdminPoolId)
 		 RETURNING *`,
 		{
 			name,
@@ -159,6 +174,7 @@ export async function createMeeting(
 			startDate,
 			endDate,
 			quorumVotingPoolId,
+			quorumPercentage: finalQuorumPercentage,
 			watcherPoolId: watcherPool.id,
 			meetingAdminPoolId: meetingAdminPool.id,
 		},
@@ -182,6 +198,8 @@ export async function createMeeting(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		quorumPercentage: parseFloat(row.quorum_percentage),
+		quorumEligibleSnapshot: row.quorum_eligible_snapshot,
 		watcherPoolId: row.watcher_pool_id,
 		meetingAdminPoolId: row.meeting_admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
@@ -204,6 +222,8 @@ export async function getMeetingById(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_percentage: string;
+		quorum_eligible_snapshot: number | null;
 		watcher_pool_id: number | null;
 		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
@@ -243,6 +263,8 @@ export async function getMeetingById(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		quorumPercentage: parseFloat(row.quorum_percentage),
+		quorumEligibleSnapshot: row.quorum_eligible_snapshot,
 		watcherPoolId: row.watcher_pool_id,
 		meetingAdminPoolId: row.meeting_admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
@@ -278,6 +300,8 @@ export async function listMeetings(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_percentage: string;
+		quorum_eligible_snapshot: number | null;
 		watcher_pool_id: number | null;
 		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
@@ -307,6 +331,8 @@ export async function listMeetings(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		quorumPercentage: parseFloat(row.quorum_percentage),
+		quorumEligibleSnapshot: row.quorum_eligible_snapshot,
 		watcherPoolId: row.watcher_pool_id,
 		meetingAdminPoolId: row.meeting_admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
@@ -348,6 +374,8 @@ export async function listMeetingsForMeetingAdmin(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_percentage: string;
+		quorum_eligible_snapshot: number | null;
 		watcher_pool_id: number | null;
 		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
@@ -379,6 +407,8 @@ export async function listMeetingsForMeetingAdmin(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		quorumPercentage: parseFloat(row.quorum_percentage),
+		quorumEligibleSnapshot: row.quorum_eligible_snapshot,
 		watcherPoolId: row.watcher_pool_id,
 		meetingAdminPoolId: row.meeting_admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
@@ -395,6 +425,7 @@ export async function listMeetingsForMeetingAdmin(
 /**
  * Build update clauses for meeting updates
  */
+// eslint-disable-next-line complexity -- Necessary for dynamic update handling
 async function buildMeetingUpdateClauses(
 	updates: UpdateMeetingRequest,
 ): Promise<{ setClauses: string[]; values: Record<string, unknown> }> {
@@ -404,6 +435,7 @@ async function buildMeetingUpdateClauses(
 		startDate,
 		endDate,
 		quorumVotingPoolId,
+		quorumPercentage,
 		watcherPoolId,
 		meetingAdminPoolId,
 	} = updates;
@@ -435,6 +467,11 @@ async function buildMeetingUpdateClauses(
 		await verifyPoolExists(quorumVotingPoolId, "Pool");
 		setClauses.push(`quorum_voting_pool_id = :quorumVotingPoolId`);
 		values.quorumVotingPoolId = quorumVotingPoolId;
+	}
+
+	if (quorumPercentage !== undefined) {
+		setClauses.push(`quorum_percentage = :quorumPercentage`);
+		values.quorumPercentage = quorumPercentage;
 	}
 
 	if (watcherPoolId !== undefined) {
@@ -483,6 +520,8 @@ export async function updateMeeting(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_percentage: string;
+		quorum_eligible_snapshot: number | null;
 		watcher_pool_id: number | null;
 		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
@@ -513,6 +552,8 @@ export async function updateMeeting(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		quorumPercentage: parseFloat(row.quorum_percentage),
+		quorumEligibleSnapshot: row.quorum_eligible_snapshot,
 		watcherPoolId: row.watcher_pool_id,
 		meetingAdminPoolId: row.meeting_admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,

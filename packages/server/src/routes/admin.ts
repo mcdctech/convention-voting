@@ -1553,6 +1553,7 @@ adminRouter.post(
 				startDate: request.startDate,
 				endDate: request.endDate,
 				quorumVotingPoolId: request.quorumVotingPoolId,
+				quorumPercentage: request.quorumPercentage,
 				watcherPoolId: request.watcherPoolId,
 				meetingAdminPoolId: request.meetingAdminPoolId,
 				description: request.description,

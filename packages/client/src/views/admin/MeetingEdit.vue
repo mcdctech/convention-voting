@@ -69,12 +69,15 @@ const meetingAdminEligiblePools = computed(() =>
 	pools.value.filter((pool) => pool.poolType === PoolType.MeetingAdmin),
 );
 
+const DEFAULT_QUORUM_PERCENTAGE = 50;
+
 const formData = ref({
 	name: EMPTY_STRING,
 	description: EMPTY_STRING,
 	startDate: EMPTY_STRING,
 	endDate: EMPTY_STRING,
 	quorumVotingPoolId: EMPTY_STRING,
+	quorumPercentage: DEFAULT_QUORUM_PERCENTAGE,
 	watcherPoolId: EMPTY_STRING,
 	meetingAdminPoolId: EMPTY_STRING,
 });
@@ -191,6 +194,7 @@ async function loadMeeting(): Promise<void> {
 				startDate: formatDateForInput(meeting.startDate),
 				endDate: formatDateForInput(meeting.endDate),
 				quorumVotingPoolId: String(meeting.quorumVotingPoolId),
+				quorumPercentage: meeting.quorumPercentage,
 				watcherPoolId:
 					meeting.watcherPoolId === null
 						? EMPTY_STRING
@@ -469,6 +473,7 @@ interface FormDataType {
 	startDate: string;
 	endDate: string;
 	quorumVotingPoolId: string;
+	quorumPercentage: number;
 	watcherPoolId: string;
 	meetingAdminPoolId: string;
 }
@@ -519,6 +524,7 @@ async function handleSubmit(): Promise<void> {
 				formData.value.quorumVotingPoolId,
 				DECIMAL_RADIX,
 			),
+			quorumPercentage: formData.value.quorumPercentage,
 			description:
 				trimmedDescription === EMPTY_STRING ? undefined : trimmedDescription,
 			watcherPoolId:
@@ -630,6 +636,24 @@ onMounted(() => {
 				<p class="field-description">
 					Only pools with "Voter" type or unspecified type can be used as quorum
 					pools.
+				</p>
+			</div>
+
+			<div class="form-group">
+				<label for="quorumPercentage">
+					Quorum Percentage <span class="required">*</span>
+				</label>
+				<input
+					id="quorumPercentage"
+					v-model.number="formData.quorumPercentage"
+					type="number"
+					min="0"
+					max="100"
+					step="1"
+					required
+				/>
+				<p class="field-description">
+					Percentage of eligible voters required to establish quorum (0-100).
 				</p>
 			</div>
 

@@ -27,6 +27,8 @@ const ZERO_COUNT = 0;
  * - Counts voters who have explicitly joined the meeting and were counted for quorum
  * - quorum_counted_at is set when a voter joins before quorum is called
  * - Once quorum is called, new joiners are not counted toward quorum
+ * - Uses quorum_eligible_snapshot if set (quorum was called), otherwise live count
+ * - Calculates votersNeededForQuorum = Math.round(totalEligible * percentage / 100)
  */
 export async function getQuorumReport(
 	meetingId: number,
@@ -39,10 +41,13 @@ export async function getQuorumReport(
 		end_date: Date;
 		quorum_voting_pool_id: number;
 		quorum_called_at: Date | null;
+		quorum_percentage: string;
+		quorum_eligible_snapshot: number | null;
 		pool_name: string;
 	}>(
 		`SELECT m.id, m.name, m.start_date, m.end_date,
 		        m.quorum_voting_pool_id, m.quorum_called_at,
+		        m.quorum_percentage, m.quorum_eligible_snapshot,
 		        p.pool_name
 		 FROM meetings m
 		 INNER JOIN pools p ON m.quorum_voting_pool_id = p.id
@@ -58,17 +63,31 @@ export async function getQuorumReport(
 		rows: [meeting],
 	} = meetingResult;
 
-	// Get total eligible voters from quorum pool
-	const eligibleResult = await db.query<{ count: string }>(
-		`SELECT COUNT(DISTINCT user_id) as count
-		 FROM user_pools
-		 WHERE pool_id = :poolId`,
-		{ poolId: meeting.quorum_voting_pool_id },
-	);
-	const totalEligibleVoters = parseInt(
-		eligibleResult.rows[FIRST_ROW].count,
-		DECIMAL_RADIX,
-	);
+	// Parse quorum percentage (stored as DECIMAL in database)
+	const quorumPercentage = parseFloat(meeting.quorum_percentage);
+
+	// Determine total eligible voters:
+	// - Use snapshot if quorum was called (frozen value)
+	// - Otherwise use live count from quorum pool
+	const { quorum_eligible_snapshot: snapshot } = meeting;
+	const isSnapshotted = snapshot !== null;
+
+	const totalEligibleVoters = isSnapshotted
+		? snapshot
+		: await (async (): Promise<number> => {
+				// Count only actual voters (exclude admin/watcher/meeting_admin)
+				const eligibleResult = await db.query<{ count: string }>(
+					`SELECT COUNT(DISTINCT up.user_id) as count
+					 FROM user_pools up
+					 INNER JOIN users u ON up.user_id = u.id
+					 WHERE up.pool_id = :poolId
+					   AND u.is_admin = FALSE
+					   AND u.is_watcher = FALSE
+					   AND u.is_meeting_admin = FALSE`,
+					{ poolId: meeting.quorum_voting_pool_id },
+				);
+				return parseInt(eligibleResult.rows[FIRST_ROW].count, DECIMAL_RADIX);
+			})();
 
 	// Get count of voters who have been counted for quorum (quorum_counted_at IS NOT NULL)
 	const activeResult = await db.query<{ count: string }>(
@@ -84,11 +103,19 @@ export async function getQuorumReport(
 		DECIMAL_RADIX,
 	);
 
-	// Calculate percentage
+	// Calculate percentage of eligible voters present
 	const activeVoterPercentage =
 		totalEligibleVoters > ZERO_COUNT
 			? (activeVoterCount / totalEligibleVoters) * PERCENTAGE_MULTIPLIER
 			: ZERO_COUNT;
+
+	// Calculate voters needed for quorum (round to nearest integer)
+	const votersNeededForQuorum = Math.round(
+		(totalEligibleVoters * quorumPercentage) / PERCENTAGE_MULTIPLIER,
+	);
+
+	// Determine if quorum is achieved
+	const hasQuorum = activeVoterCount >= votersNeededForQuorum;
 
 	// Calculate as of time - use quorum_called_at if set, otherwise now
 	const calculatedAsOf = meeting.quorum_called_at ?? new Date();
@@ -104,11 +131,22 @@ export async function getQuorumReport(
 		meetingStartDate: meeting.start_date,
 		meetingEndDate: meeting.end_date,
 		quorumPoolName: meeting.pool_name,
+		quorumPercentage,
+		votersNeededForQuorum,
+		hasQuorum,
+		isSnapshotted,
 	};
 }
 
 /**
  * Call quorum for a meeting (set the quorum_called_at timestamp)
+ *
+ * When calling quorum (setting timestamp):
+ * - Snapshots the current eligible voter count from the quorum pool
+ * - This ensures quorum reports don't change if pool membership changes later
+ *
+ * When uncalling quorum (setting to null):
+ * - Clears the snapshot so live count is used again
  *
  * @param meetingId - The meeting ID
  * @param quorumCalledAt - The timestamp when quorum was called, or null to clear
@@ -117,12 +155,66 @@ export async function callQuorum(
 	meetingId: number,
 	quorumCalledAt: Date | null,
 ): Promise<void> {
+	// Uncalling quorum - clear both timestamp and snapshot
+	if (quorumCalledAt === null) {
+		const result = await db.query(
+			`UPDATE meetings
+			 SET quorum_called_at = NULL,
+			     quorum_eligible_snapshot = NULL,
+			     updated_at = NOW()
+			 WHERE id = :meetingId
+			 RETURNING id`,
+			{ meetingId },
+		);
+
+		if (result.rows.length === EMPTY_ARRAY_LENGTH) {
+			throw new Error(`Meeting with ID ${String(meetingId)} not found`);
+		}
+		return;
+	}
+
+	// Calling quorum - snapshot the eligible voter count
+	// First, get the quorum pool ID for this meeting
+	const meetingResult = await db.query<{
+		quorum_voting_pool_id: number;
+	}>(`SELECT quorum_voting_pool_id FROM meetings WHERE id = :meetingId`, {
+		meetingId,
+	});
+
+	if (meetingResult.rows.length === EMPTY_ARRAY_LENGTH) {
+		throw new Error(`Meeting with ID ${String(meetingId)} not found`);
+	}
+
+	const {
+		rows: [{ quorum_voting_pool_id: poolId }],
+	} = meetingResult;
+
+	// Get current eligible voter count from the pool
+	// Count only actual voters (exclude admin/watcher/meeting_admin)
+	const eligibleResult = await db.query<{ count: string }>(
+		`SELECT COUNT(DISTINCT up.user_id) as count
+		 FROM user_pools up
+		 INNER JOIN users u ON up.user_id = u.id
+		 WHERE up.pool_id = :poolId
+		   AND u.is_admin = FALSE
+		   AND u.is_watcher = FALSE
+		   AND u.is_meeting_admin = FALSE`,
+		{ poolId },
+	);
+	const eligibleSnapshot = parseInt(
+		eligibleResult.rows[FIRST_ROW].count,
+		DECIMAL_RADIX,
+	);
+
+	// Update meeting with both timestamp and snapshot
 	const result = await db.query(
 		`UPDATE meetings
-		 SET quorum_called_at = :quorumCalledAt, updated_at = NOW()
+		 SET quorum_called_at = :quorumCalledAt,
+		     quorum_eligible_snapshot = :eligibleSnapshot,
+		     updated_at = NOW()
 		 WHERE id = :meetingId
 		 RETURNING id`,
-		{ meetingId, quorumCalledAt },
+		{ meetingId, quorumCalledAt, eligibleSnapshot },
 	);
 
 	if (result.rows.length === EMPTY_ARRAY_LENGTH) {

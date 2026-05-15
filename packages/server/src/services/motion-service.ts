@@ -27,13 +27,15 @@ interface OpenMotionRow {
 }
 
 /**
- * Get open motions for a specific user based on their pool memberships
+ * Get open motions for a specific user based on their current meeting participation
  *
  * Business Logic:
  * 1. Motion status must be 'voting_active'
- * 2. User must belong to the motion's voting pool (via user_pools)
- * 3. If motion has no voting_pool_id, fall back to meeting's quorum_voting_pool_id
- * 4. User must not have already voted on the motion
+ * 2. User must have joined the meeting as a voter (via meeting_participants)
+ * 3. User must still be active in the meeting (left_at IS NULL)
+ * 4. User must belong to the motion's voting pool (via user_pools)
+ * 5. If motion has no voting_pool_id, fall back to meeting's quorum_voting_pool_id
+ * 6. User must not have already voted on the motion
  *
  * Returns motions sorted by when voting started (oldest first)
  */
@@ -54,6 +56,10 @@ export async function getOpenMotionsForUser(
 			m.voting_started_at
 		 FROM motions m
 		 INNER JOIN meetings mt ON m.meeting_id = mt.id
+		 INNER JOIN meeting_participants mp ON mp.meeting_id = mt.id
+		   AND mp.user_id = :userId
+		   AND mp.role = 'voter'
+		   AND mp.left_at IS NULL
 		 LEFT JOIN pools p ON m.voting_pool_id = p.id
 		 LEFT JOIN pools qp ON mt.quorum_voting_pool_id = qp.id
 		 INNER JOIN user_pools up ON up.pool_id = COALESCE(m.voting_pool_id, mt.quorum_voting_pool_id)

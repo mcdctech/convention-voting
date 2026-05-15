@@ -36,6 +36,8 @@ let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 const isQuorumCalled = computed(() => report.value?.quorumCalledAt !== null);
 
+const hasQuorum = computed(() => report.value?.hasQuorum ?? false);
+
 const formattedPercentage = computed(() => {
 	if (report.value === null) return "0.0";
 	return report.value.activeVoterPercentage.toFixed(PERCENTAGE_PRECISION);
@@ -195,6 +197,12 @@ onUnmounted(() => {
 			<div class="meeting-info">
 				<h3>{{ report.meetingName }}</h3>
 				<p class="pool-info">Quorum Pool: {{ report.quorumPoolName }}</p>
+				<p class="quorum-requirement">
+					Quorum Requirement: {{ report.quorumPercentage }}% ({{
+						report.votersNeededForQuorum
+					}}
+					voters needed)
+				</p>
 			</div>
 
 			<div class="quorum-stats">
@@ -211,6 +219,23 @@ onUnmounted(() => {
 				<div class="stat-card percentage">
 					<div class="stat-value">{{ formattedPercentage }}%</div>
 					<div class="stat-label">Participation</div>
+				</div>
+			</div>
+
+			<!-- Quorum Achievement Indicator -->
+			<div class="quorum-achievement" :class="{ achieved: hasQuorum }">
+				<div v-if="hasQuorum" class="achievement-content achieved">
+					<span class="achievement-icon">&#10003;</span>
+					<span class="achievement-text">Quorum Achieved</span>
+					<span class="achievement-detail">Voting on motions may proceed</span>
+				</div>
+				<div v-else class="achievement-content not-achieved">
+					<span class="achievement-icon">&#10007;</span>
+					<span class="achievement-text">Quorum Not Met</span>
+					<span class="achievement-detail"
+						>{{ report.votersNeededForQuorum - report.activeVoterCount }} more
+						voter(s) needed</span
+					>
 				</div>
 			</div>
 
@@ -328,8 +353,14 @@ h2 {
 }
 
 .pool-info {
-	margin: 0;
+	margin: 0 0 0.25rem 0;
 	color: #666;
+}
+
+.quorum-requirement {
+	margin: 0;
+	color: #1976d2;
+	font-weight: 500;
 }
 
 .quorum-stats {
@@ -337,6 +368,61 @@ h2 {
 	grid-template-columns: repeat(3, 1fr);
 	gap: 1rem;
 	margin-bottom: 1.5rem;
+}
+
+.quorum-achievement {
+	border-radius: 8px;
+	padding: 1.25rem;
+	margin-bottom: 1.5rem;
+	text-align: center;
+}
+
+.quorum-achievement.achieved {
+	background: #e8f5e9;
+	border: 2px solid #4caf50;
+}
+
+.quorum-achievement:not(.achieved) {
+	background: #fff3e0;
+	border: 2px solid #ff9800;
+}
+
+.achievement-content {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.achievement-icon {
+	font-size: 2rem;
+	font-weight: bold;
+}
+
+.achievement-content.achieved .achievement-icon {
+	color: #2e7d32;
+}
+
+.achievement-content.not-achieved .achievement-icon {
+	color: #e65100;
+}
+
+.achievement-text {
+	font-size: 1.25rem;
+	font-weight: 600;
+}
+
+.achievement-content.achieved .achievement-text {
+	color: #2e7d32;
+}
+
+.achievement-content.not-achieved .achievement-text {
+	color: #e65100;
+}
+
+.achievement-detail {
+	font-size: 0.875rem;
+	color: #666;
 }
 
 .stat-card {

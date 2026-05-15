@@ -94,6 +94,8 @@ export async function getCurrentMeetingInfo(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_percentage: string;
+		quorum_eligible_snapshot: number | null;
 		watcher_pool_id: number | null;
 		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
@@ -129,6 +131,8 @@ export async function getCurrentMeetingInfo(
 		startDate: row.start_date,
 		endDate: row.end_date,
 		quorumVotingPoolId: row.quorum_voting_pool_id,
+		quorumPercentage: parseFloat(row.quorum_percentage),
+		quorumEligibleSnapshot: row.quorum_eligible_snapshot,
 		watcherPoolId: row.watcher_pool_id,
 		meetingAdminPoolId: row.meeting_admin_pool_id,
 		quorumCalledAt: row.quorum_called_at,
@@ -248,6 +252,8 @@ export async function joinMeetingAsVoter(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_percentage: string;
+		quorum_eligible_snapshot: number | null;
 		watcher_pool_id: number | null;
 		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
@@ -342,6 +348,8 @@ export async function joinMeetingAsVoter(
 		startDate: meetingRow.start_date,
 		endDate: meetingRow.end_date,
 		quorumVotingPoolId: meetingRow.quorum_voting_pool_id,
+		quorumPercentage: parseFloat(meetingRow.quorum_percentage),
+		quorumEligibleSnapshot: meetingRow.quorum_eligible_snapshot,
 		watcherPoolId: meetingRow.watcher_pool_id,
 		meetingAdminPoolId: meetingRow.meeting_admin_pool_id,
 		quorumCalledAt: meetingRow.quorum_called_at,
@@ -544,6 +552,8 @@ export async function joinMeetingAsWatcher(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_percentage: string;
+		quorum_eligible_snapshot: number | null;
 		watcher_pool_id: number | null;
 		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
@@ -620,6 +630,8 @@ export async function joinMeetingAsWatcher(
 		startDate: meetingRow.start_date,
 		endDate: meetingRow.end_date,
 		quorumVotingPoolId: meetingRow.quorum_voting_pool_id,
+		quorumPercentage: parseFloat(meetingRow.quorum_percentage),
+		quorumEligibleSnapshot: meetingRow.quorum_eligible_snapshot,
 		watcherPoolId: meetingRow.watcher_pool_id,
 		meetingAdminPoolId: meetingRow.meeting_admin_pool_id,
 		quorumCalledAt: meetingRow.quorum_called_at,
@@ -750,6 +762,8 @@ export async function joinMeetingAsAdmin(
 		start_date: Date;
 		end_date: Date;
 		quorum_voting_pool_id: number;
+		quorum_percentage: string;
+		quorum_eligible_snapshot: number | null;
 		watcher_pool_id: number | null;
 		meeting_admin_pool_id: number | null;
 		quorum_called_at: Date | null;
@@ -818,6 +832,8 @@ export async function joinMeetingAsAdmin(
 		startDate: meetingRow.start_date,
 		endDate: meetingRow.end_date,
 		quorumVotingPoolId: meetingRow.quorum_voting_pool_id,
+		quorumPercentage: parseFloat(meetingRow.quorum_percentage),
+		quorumEligibleSnapshot: meetingRow.quorum_eligible_snapshot,
 		watcherPoolId: meetingRow.watcher_pool_id,
 		meetingAdminPoolId: meetingRow.meeting_admin_pool_id,
 		quorumCalledAt: meetingRow.quorum_called_at,
