@@ -62,6 +62,8 @@ export function useProjectorControl(): {
 	isDisplayConnected: Ref<boolean>;
 	currentState: Ref<ProjectorState>;
 	openDisplayWindow: () => void;
+	focusDisplayWindow: () => void;
+	closeDisplayWindow: () => void;
 	sendState: (state: ProjectorState) => void;
 	updateMode: (mode: ProjectorDisplayMode) => void;
 	updateMeetingId: (meetingId: number | null) => void;
@@ -75,6 +77,7 @@ export function useProjectorControl(): {
 	const currentState = ref<ProjectorState>(createDefaultState());
 	let channel: BroadcastChannelType | null = null;
 	let pingInterval: ReturnType<typeof setInterval> | null = null;
+	let displayWindow: ReturnType<typeof window.open> = null;
 
 	// Initialize BroadcastChannel
 	function initChannel(): void {
@@ -117,6 +120,8 @@ export function useProjectorControl(): {
 
 	function sendPing(): void {
 		if (channel === null) return;
+		// Set to false before ping - will be set to true if display responds
+		isDisplayConnected.value = false;
 		const message: ProjectorMessage = {
 			type: "ping",
 			timestamp: Date.now(),
@@ -128,7 +133,7 @@ export function useProjectorControl(): {
 	 * Open the projector display window
 	 */
 	function openDisplayWindow(): void {
-		window.open(
+		displayWindow = window.open(
 			PROJECTOR_DISPLAY_PATH,
 			"projector-display",
 			"width=1920,height=1080",
@@ -143,6 +148,29 @@ export function useProjectorControl(): {
 		setTimeout(() => {
 			sendState(currentState.value);
 		}, DISPLAY_INIT_DELAY_MS);
+	}
+
+	/**
+	 * Focus the existing projector display window (bring to front)
+	 */
+	function focusDisplayWindow(): void {
+		if (displayWindow !== null && !displayWindow.closed) {
+			displayWindow.focus();
+		} else {
+			// Window was closed or never opened, open a new one
+			openDisplayWindow();
+		}
+	}
+
+	/**
+	 * Close the projector display window
+	 */
+	function closeDisplayWindow(): void {
+		if (displayWindow !== null && !displayWindow.closed) {
+			displayWindow.close();
+			displayWindow = null;
+			isDisplayConnected.value = false;
+		}
 	}
 
 	/**
@@ -257,6 +285,8 @@ export function useProjectorControl(): {
 		isDisplayConnected,
 		currentState,
 		openDisplayWindow,
+		focusDisplayWindow,
+		closeDisplayWindow,
 		sendState,
 		updateMode,
 		updateMeetingId,

@@ -13,6 +13,7 @@ import {
 	type QuorumReport,
 } from "@mcdc-convention-voting/shared";
 import QrcodeVue from "qrcode.vue";
+import { useAdminMeeting } from "../../composables/useAdminMeeting";
 import { useCountdownTimer } from "../../composables/useCountdownTimer";
 import { useProjectorControl } from "../../composables/useProjector";
 import {
@@ -39,8 +40,21 @@ const MS_PER_SECOND = 1000;
 const SECONDS_PER_MINUTE = 60;
 
 // Projector control composable
-const { isDisplayConnected, currentState, openDisplayWindow, sendState } =
-	useProjectorControl();
+const {
+	isDisplayConnected,
+	currentState,
+	openDisplayWindow,
+	focusDisplayWindow,
+	closeDisplayWindow,
+	sendState,
+} = useProjectorControl();
+
+// Admin meeting focus composable
+const {
+	isJoined,
+	joinedMeetingId,
+	currentMeeting: adminCurrentMeeting,
+} = useAdminMeeting();
 
 // Data
 const meetings = ref<MeetingWithPool[]>([]);
@@ -144,6 +158,20 @@ const selectedMeeting = computed(() => {
 	if (previewState.value.meetingId === null) return null;
 	return meetings.value.find((m) => m.id === previewState.value.meetingId);
 });
+
+// Whether meeting selection is locked to focused meeting
+const isMeetingLocked = computed(() => isJoined.value);
+
+// Check if focused meeting is available in the meetings list
+const focusedMeetingAvailable = computed(() => {
+	if (!isJoined.value || joinedMeetingId.value === null) return true;
+	return meetings.value.some((m) => m.id === joinedMeetingId.value);
+});
+
+// Whether projector controls should be disabled (focused but meeting not available)
+const isProjectorDisabled = computed(
+	() => isJoined.value && !focusedMeetingAvailable.value,
+);
 
 const requiresMeeting = computed(() => {
 	const mode = previewState.value.mode;
@@ -489,6 +517,23 @@ watch(
 	},
 );
 
+// Watch for admin meeting focus changes to auto-select meeting
+watch(
+	[isJoined, joinedMeetingId],
+	([joined, meetingId]) => {
+		if (joined && meetingId !== null) {
+			// Auto-select focused meeting
+			previewState.value = {
+				...previewState.value,
+				meetingId,
+				motionId: null,
+			};
+			void loadMotions(meetingId);
+		}
+	},
+	{ immediate: true },
+);
+
 // Initialize
 onMounted(() => {
 	void loadMeetings();
@@ -513,9 +558,29 @@ onUnmounted(() => {
 				<span v-else class="connection-status disconnected">
 					Display Not Connected
 				</span>
-				<button class="btn btn-primary" @click="handleOpenDisplay">
-					Open Display Window
-				</button>
+				<div class="display-buttons">
+					<button
+						v-if="isDisplayConnected"
+						class="btn btn-primary"
+						@click="focusDisplayWindow"
+					>
+						Focus Display
+					</button>
+					<button
+						v-if="isDisplayConnected"
+						class="btn btn-secondary"
+						@click="closeDisplayWindow"
+					>
+						Close Display
+					</button>
+					<button
+						v-if="!isDisplayConnected"
+						class="btn btn-primary"
+						@click="handleOpenDisplay"
+					>
+						Open Display Window
+					</button>
+				</div>
 			</div>
 		</div>
 
@@ -523,22 +588,39 @@ onUnmounted(() => {
 			<!-- Meeting Selection -->
 			<div class="section">
 				<h3>Meeting</h3>
+				<div
+					v-if="isMeetingLocked && !focusedMeetingAvailable"
+					class="alert alert-warning"
+				>
+					The focused meeting is not available. Please leave the meeting focus
+					or select a different meeting.
+				</div>
 				<select
 					:value="previewState.meetingId ?? ''"
-					:disabled="loadingMeetings"
+					:disabled="loadingMeetings || isMeetingLocked || isProjectorDisabled"
 					@change="handleMeetingChange"
 				>
-					<option value="">
+					<option
+						v-if="isMeetingLocked && focusedMeetingAvailable"
+						:value="joinedMeetingId"
+					>
+						{{ adminCurrentMeeting?.meeting.name }} (Focused)
+					</option>
+					<option v-else-if="!isMeetingLocked" value="">
 						{{ loadingMeetings ? "Loading..." : "Select a meeting..." }}
 					</option>
 					<option
 						v-for="meeting in meetings"
 						:key="meeting.id"
 						:value="meeting.id"
+						:hidden="isMeetingLocked"
 					>
 						{{ meeting.name }}
 					</option>
 				</select>
+				<p v-if="isMeetingLocked" class="locked-note">
+					Meeting selection is locked to your focused meeting.
+				</p>
 			</div>
 
 			<!-- Motion Selection (when required) -->
@@ -1007,15 +1089,17 @@ onUnmounted(() => {
 			<div class="section actions-section">
 				<button
 					class="btn btn-success btn-large"
-					:disabled="!canProject || !isPreviewDifferent"
+					:disabled="!canProject || !isPreviewDifferent || isProjectorDisabled"
 					@click="projectNow"
 				>
 					{{
-						!isPreviewDifferent
-							? "Already Projected"
-							: canProject
-								? "Project Now"
-								: "Complete Settings to Project"
+						isProjectorDisabled
+							? "Focused Meeting Not Available"
+							: !isPreviewDifferent
+								? "Already Projected"
+								: canProject
+									? "Project Now"
+									: "Complete Settings to Project"
 					}}
 				</button>
 			</div>
@@ -1046,6 +1130,11 @@ onUnmounted(() => {
 	display: flex;
 	align-items: center;
 	gap: 1rem;
+}
+
+.display-buttons {
+	display: flex;
+	gap: 0.5rem;
 }
 
 .connection-status {
@@ -1085,6 +1174,26 @@ onUnmounted(() => {
 	font-size: 1rem;
 	font-weight: 600;
 	color: #2c3e50;
+}
+
+.alert {
+	padding: 0.75rem 1rem;
+	border-radius: 4px;
+	margin-bottom: 0.75rem;
+	font-size: 0.875rem;
+}
+
+.alert-warning {
+	background-color: #fff3cd;
+	color: #856404;
+	border: 1px solid #ffc107;
+}
+
+.locked-note {
+	margin: 0.5rem 0 0 0;
+	font-size: 0.875rem;
+	color: #666;
+	font-style: italic;
 }
 
 select,
@@ -1660,6 +1769,15 @@ textarea:disabled {
 
 .btn-primary:hover:not(:disabled) {
 	background-color: #1565c0;
+}
+
+.btn-secondary {
+	background-color: #6c757d;
+	color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+	background-color: #5a6268;
 }
 
 .btn-success {
