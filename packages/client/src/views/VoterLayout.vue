@@ -13,7 +13,7 @@ import MobileNavOverlay from "../components/MobileNavOverlay.vue";
 
 const router = useRouter();
 const route = useRoute();
-const { currentUser, isAdmin, logout } = useAuth();
+const { currentUser, logout } = useAuth();
 const { isKioskMode, getKioskModeQueryParam } = useKioskMode();
 const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 const {
@@ -37,19 +37,19 @@ function handleInactivityLogout(): void {
 }
 
 /**
- * Start or stop activity tracking based on kiosk mode and admin status
+ * Start or stop activity tracking based on kiosk mode
+ * All users (including admins) are subject to inactivity timeout in kiosk mode
  */
 function updateActivityTracking(): void {
-	// Only track activity for non-admin users in kiosk mode
-	if (isKioskMode.value && !isAdmin.value) {
+	if (isKioskMode.value) {
 		startTracking(handleInactivityLogout);
 	} else {
 		stopTracking();
 	}
 }
 
-// Watch for changes in kiosk mode or admin status
-watch([isKioskMode, isAdmin], updateActivityTracking);
+// Watch for changes in kiosk mode
+watch(isKioskMode, updateActivityTracking);
 
 // Re-check meeting participation on every navigation so a user who is kicked
 // mid-session is redirected to meeting selection on the next route change.

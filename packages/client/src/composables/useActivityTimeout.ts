@@ -27,7 +27,7 @@ interface ActivityTimeoutState {
 	showWarning: typeof showWarning;
 	warningSecondsLeft: typeof warningSecondsLeft;
 	confirmActivity: () => void;
-	startTracking: () => void;
+	startTracking: (logoutCallback: () => void) => void;
 	stopTracking: () => void;
 }
 

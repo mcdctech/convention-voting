@@ -1,18 +1,70 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed, onMounted, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { useAuth } from "../composables/useAuth";
 import { useKioskMode } from "../composables/useKioskMode";
 import KioskModeIndicator from "../components/KioskModeIndicator.vue";
 
 const router = useRouter();
-const { login, isLoading } = useAuth();
+const { login, logout, currentUser, isLoading } = useAuth();
 const { isKioskMode } = useKioskMode();
 
 const username = ref("");
 const password = ref("");
 const showPassword = ref(false);
 const error = ref<string | null>(null);
+
+// Delay in ms before clearing auto-filled fields (allows browser to auto-fill first)
+const AUTO_FILL_CLEAR_DELAY_MS = 100;
+
+// Delay in ms before resetting the form after a kiosk login rejection
+const KIOSK_ERROR_RESET_DELAY_MS = 10000;
+
+// Computed properties for autocomplete - disabled in kiosk mode to prevent auto-fill
+const usernameAutocomplete = computed(() =>
+	isKioskMode.value ? "off" : "username",
+);
+const passwordAutocomplete = computed(() =>
+	isKioskMode.value ? "off" : "current-password",
+);
+
+// Disable "Show password" checkbox in kiosk mode until user types something
+// This prevents the browser from auto-filling credentials when the checkbox is clicked
+const showPasswordDisabled = computed(
+	() => isKioskMode.value && password.value === "",
+);
+
+/**
+ * Clear any auto-filled credentials in kiosk mode
+ * Browsers often ignore autocomplete="off", so we clear fields after mount
+ */
+function clearAutoFilledFields(): void {
+	if (isKioskMode.value) {
+		username.value = "";
+		password.value = "";
+	}
+}
+
+/**
+ * Reset the login form for kiosk mode
+ * Clears username, password, error message, and show password state
+ */
+function resetFormForKiosk(): void {
+	username.value = "";
+	password.value = "";
+	error.value = null;
+	showPassword.value = false;
+}
+
+// In kiosk mode, clear any auto-filled fields after component mounts
+// Use delay to allow browser auto-fill to complete first, then clear it
+onMounted(() => {
+	if (isKioskMode.value) {
+		void nextTick(() => {
+			setTimeout(clearAutoFilledFields, AUTO_FILL_CLEAR_DELAY_MS);
+		});
+	}
+});
 
 async function handleSubmit(): Promise<void> {
 	error.value = null;
@@ -24,6 +76,27 @@ async function handleSubmit(): Promise<void> {
 
 	try {
 		await login(username.value, password.value);
+
+		// In kiosk mode, restrict login to voters and global admins only
+		// Block watchers and meeting admins (they should use regular login)
+		if (isKioskMode.value) {
+			const user = currentUser.value;
+			if (
+				user !== null &&
+				!user.isAdmin &&
+				(user.isWatcher || user.isMeetingAdmin)
+			) {
+				// Clear auth and show error
+				logout();
+				password.value = "";
+				error.value =
+					"Kiosk mode is for voters only. Please use a different login method.";
+				// Auto-reset form after delay so kiosk is ready for next user
+				setTimeout(resetFormForKiosk, KIOSK_ERROR_RESET_DELAY_MS);
+				return;
+			}
+		}
+
 		void router.push("/");
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Login failed";
@@ -50,7 +123,7 @@ async function handleSubmit(): Promise<void> {
 						type="text"
 						placeholder="Enter your username"
 						:disabled="isLoading"
-						autocomplete="username"
+						:autocomplete="usernameAutocomplete"
 					/>
 				</div>
 
@@ -62,7 +135,7 @@ async function handleSubmit(): Promise<void> {
 						:type="showPassword ? 'text' : 'password'"
 						placeholder="Enter your password"
 						:disabled="isLoading"
-						autocomplete="current-password"
+						:autocomplete="passwordAutocomplete"
 					/>
 				</div>
 
@@ -71,7 +144,7 @@ async function handleSubmit(): Promise<void> {
 						<input
 							v-model="showPassword"
 							type="checkbox"
-							:disabled="isLoading"
+							:disabled="isLoading || showPasswordDisabled"
 						/>
 						Show password
 					</label>
