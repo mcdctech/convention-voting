@@ -19,21 +19,33 @@ const isInitialized = ref(false);
 /**
  * Initialize kiosk mode from URL query parameter
  * Should be called on app startup
+ *
+ * Kiosk mode can be controlled via URL:
+ * - ?KioskMode=true  → enables kiosk mode
+ * - ?KioskMode=false → disables kiosk mode and clears storage
+ * - No param         → preserves current state from sessionStorage
  */
 export function initKioskMode(searchParams: URLSearchParams): void {
 	const kioskParam = searchParams.get(KIOSK_QUERY_PARAM);
 
 	if (kioskParam === null) {
-		// Check sessionStorage for persisted value
+		// No param: check sessionStorage for persisted value
 		const storedValue = sessionStorage.getItem(KIOSK_STORAGE_KEY);
 		if (storedValue !== null) {
 			kioskModeEnabled.value = storedValue === "true";
 		}
 	} else {
+		// Param present: set based on value (supports both true and false)
 		const enabled = kioskParam.toLowerCase() === "true";
 		kioskModeEnabled.value = enabled;
-		// Store in sessionStorage to persist across page navigations
-		sessionStorage.setItem(KIOSK_STORAGE_KEY, String(enabled));
+
+		if (enabled) {
+			// Store in sessionStorage to persist across page navigations
+			sessionStorage.setItem(KIOSK_STORAGE_KEY, String(enabled));
+		} else {
+			// Explicitly disabled: clear sessionStorage
+			sessionStorage.removeItem(KIOSK_STORAGE_KEY);
+		}
 	}
 
 	isInitialized.value = true;

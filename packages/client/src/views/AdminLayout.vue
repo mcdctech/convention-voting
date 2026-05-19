@@ -1,18 +1,30 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, onUnmounted, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { useAuth } from "../composables/useAuth";
 import { useAdminMeeting } from "../composables/useAdminMeeting";
 import { useMobileNav } from "../composables/useMobileNav";
+import { useKioskMode } from "../composables/useKioskMode";
+import { useActivityTimeout } from "../composables/useActivityTimeout";
 import NavDropdown from "../components/NavDropdown.vue";
 import NavHamburger from "../components/NavHamburger.vue";
 import MobileNavOverlay from "../components/MobileNavOverlay.vue";
+import KioskModeIndicator from "../components/KioskModeIndicator.vue";
+import InactivityWarningModal from "../components/InactivityWarningModal.vue";
 
 const router = useRouter();
 const { currentUser, isAdmin, isMeetingAdmin, logout } = useAuth();
+const { isKioskMode, getKioskModeQueryParam } = useKioskMode();
 const { isJoined, currentMeeting, loadCurrentMeeting, leaveMeeting } =
 	useAdminMeeting();
 const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
+const {
+	showWarning,
+	warningSecondsLeft,
+	confirmActivity,
+	startTracking,
+	stopTracking,
+} = useActivityTimeout();
 
 // Determine the admin role label for the header
 const adminRoleLabel = computed(() => {
@@ -47,9 +59,39 @@ async function handleLeaveMeetingMobile(): Promise<void> {
 	void router.push("/admin/meetings/select");
 }
 
-// Load current meeting state on mount
+/**
+ * Handle inactivity logout - called when countdown expires
+ */
+function handleInactivityLogout(): void {
+	logout();
+	// Redirect to login with kiosk param preserved
+	const kioskQuery = getKioskModeQueryParam();
+	void router.push({ path: "/login", query: kioskQuery });
+}
+
+/**
+ * Start or stop activity tracking based on kiosk mode
+ * All users (including admins) are subject to inactivity timeout in kiosk mode
+ */
+function updateActivityTracking(): void {
+	if (isKioskMode.value) {
+		startTracking(handleInactivityLogout);
+	} else {
+		stopTracking();
+	}
+}
+
+// Watch for changes in kiosk mode
+watch(isKioskMode, updateActivityTracking);
+
+// Load current meeting state on mount and start activity tracking
 onMounted(() => {
 	void loadCurrentMeeting();
+	updateActivityTracking();
+});
+
+onUnmounted(() => {
+	stopTracking();
 });
 </script>
 
@@ -291,6 +333,16 @@ onMounted(() => {
 		<main class="admin-content">
 			<router-view />
 		</main>
+
+		<!-- Kiosk mode indicator for global admins -->
+		<KioskModeIndicator v-if="isKioskMode" />
+
+		<!-- Inactivity warning modal for kiosk mode -->
+		<InactivityWarningModal
+			v-if="showWarning"
+			:seconds-left="warningSecondsLeft"
+			@confirm="confirmActivity"
+		/>
 	</div>
 </template>
 
