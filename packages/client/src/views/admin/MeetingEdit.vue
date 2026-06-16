@@ -86,6 +86,9 @@ const loading = ref(false);
 const saving = ref(false);
 const error = ref<string | null>(null);
 
+// Track original end date to detect changes
+const originalEndDate = ref<string>(EMPTY_STRING);
+
 // Voter pools state
 const selectedVoterPoolIds = ref<Set<number>>(new Set());
 const loadingVoterPools = ref(false);
@@ -188,11 +191,12 @@ async function loadMeeting(): Promise<void> {
 		const response = await getMeeting(meetingId);
 		if (response.data !== undefined) {
 			const { data: meeting } = response;
+			const endDateForInput = formatDateForInput(meeting.endDate);
 			formData.value = {
 				name: meeting.name,
 				description: meeting.description ?? EMPTY_STRING,
 				startDate: formatDateForInput(meeting.startDate),
-				endDate: formatDateForInput(meeting.endDate),
+				endDate: endDateForInput,
 				quorumVotingPoolId: String(meeting.quorumVotingPoolId),
 				quorumPercentage: meeting.quorumPercentage,
 				watcherPoolId:
@@ -204,6 +208,8 @@ async function loadMeeting(): Promise<void> {
 						? EMPTY_STRING
 						: String(meeting.meetingAdminPoolId),
 			};
+			// Store original end date to detect changes
+			originalEndDate.value = endDateForInput;
 		}
 	} catch (err) {
 		error.value = err instanceof Error ? err.message : "Failed to load meeting";
@@ -495,6 +501,11 @@ function validateFormData(data: FormDataType): string | null {
 	const endDate = new Date(data.endDate);
 	if (endDate <= startDate) {
 		return "End date must be after start date.";
+	}
+	// Only check "not in past" if end date was changed
+	const endDateWasChanged = data.endDate !== originalEndDate.value;
+	if (endDateWasChanged && endDate < new Date()) {
+		return "End date cannot be set to a time in the past.";
 	}
 	return null;
 }
