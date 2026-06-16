@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, watch } from "vue";
 import { RouterLink, useRouter, useRoute } from "vue-router";
 import { useAuth } from "../composables/useAuth";
 import { useKioskMode } from "../composables/useKioskMode";
 import { useMobileNav } from "../composables/useMobileNav";
-import { getCurrentMeetingForWatcher } from "../services/api";
+import {
+	getCurrentMeetingForWatcher,
+	leaveMeetingAsWatcher,
+} from "../services/api";
 import NavHamburger from "../components/NavHamburger.vue";
 import MobileNavOverlay from "../components/MobileNavOverlay.vue";
+import type { CurrentMeetingInfo } from "@mcdc-convention-voting/shared";
 
 const router = useRouter();
 const route = useRoute();
@@ -15,6 +19,46 @@ const { getKioskModeQueryParam } = useKioskMode();
 const { isOpen: isMobileNavOpen, toggleNav, closeNav } = useMobileNav();
 
 const meetingCheckComplete = ref(false);
+const currentMeetingInfo = ref<CurrentMeetingInfo | null>(null);
+const isLeavingMeeting = ref(false);
+
+// Re-check meeting participation on route changes
+// This ensures the meeting indicator updates after joining a meeting
+watch(
+	() => route.path,
+	(newPath, oldPath) => {
+		if (newPath === oldPath) {
+			return;
+		}
+		void checkMeetingParticipation();
+	},
+);
+
+/**
+ * Leave current meeting and return to meeting selection
+ */
+async function handleLeaveMeeting(): Promise<void> {
+	isLeavingMeeting.value = true;
+	try {
+		await leaveMeetingAsWatcher();
+		currentMeetingInfo.value = null;
+		closeNav();
+		const kioskQuery = getKioskModeQueryParam();
+		await router.push({
+			path: "/watcher/meeting-selection",
+			query: kioskQuery,
+		});
+	} catch {
+		// Still redirect on error - meeting may already be left
+		const kioskQuery = getKioskModeQueryParam();
+		await router.push({
+			path: "/watcher/meeting-selection",
+			query: kioskQuery,
+		});
+	} finally {
+		isLeavingMeeting.value = false;
+	}
+}
 
 /**
  * Check if watcher has an active meeting participation
@@ -34,6 +78,7 @@ async function checkMeetingParticipation(): Promise<void> {
 			if (currentMeeting === null) {
 				// Watcher has no active meeting, redirect to meeting selection
 				// Must await to prevent race condition with child component redirects
+				currentMeetingInfo.value = null;
 				const kioskQuery = getKioskModeQueryParam();
 				await router.push({
 					path: "/watcher/meeting-selection",
@@ -43,10 +88,13 @@ async function checkMeetingParticipation(): Promise<void> {
 				meetingCheckComplete.value = true;
 				return;
 			}
+			// Store the current meeting info for display
+			currentMeetingInfo.value = currentMeeting;
 		}
 		meetingCheckComplete.value = true;
 	} catch {
 		// On error, redirect to meeting selection
+		currentMeetingInfo.value = null;
 		const kioskQuery = getKioskModeQueryParam();
 		await router.push({
 			path: "/watcher/meeting-selection",
@@ -67,7 +115,7 @@ onMounted(() => {
 		<header class="watcher-header">
 			<div class="header-top">
 				<RouterLink to="/watcher" class="logo-link">
-					<h1>MCDC Convention Voting - Observer</h1>
+					<h1>MCDC Convention Voting - Watcher</h1>
 				</RouterLink>
 				<div class="user-info desktop-nav">
 					<span v-if="currentUser">{{ currentUser.username }}</span>
@@ -79,10 +127,22 @@ onMounted(() => {
 					@toggle="toggleNav"
 				/>
 			</div>
-			<nav class="watcher-nav desktop-nav">
+			<!-- Meeting indicator -->
+			<div v-if="currentMeetingInfo !== null" class="meeting-indicator">
+				<span class="meeting-label">Observing:</span>
+				<span class="meeting-name">{{ currentMeetingInfo.meeting.name }}</span>
+			</div>
+			<nav v-if="currentMeetingInfo !== null" class="watcher-nav desktop-nav">
 				<router-link to="/watcher/meetings" class="nav-link">
-					Meetings
+					Current Meeting
 				</router-link>
+				<button
+					class="nav-link change-meeting-btn"
+					:disabled="isLeavingMeeting"
+					@click="handleLeaveMeeting"
+				>
+					{{ isLeavingMeeting ? "Leaving..." : "Change Meeting" }}
+				</button>
 			</nav>
 		</header>
 
@@ -92,13 +152,28 @@ onMounted(() => {
 				<div v-if="currentUser" class="mobile-user-name">
 					{{ currentUser.username }}
 				</div>
+				<div v-if="currentMeetingInfo !== null" class="mobile-meeting-info">
+					<span class="mobile-meeting-label">Observing:</span>
+					<span class="mobile-meeting-name">{{
+						currentMeetingInfo.meeting.name
+					}}</span>
+				</div>
 				<RouterLink
+					v-if="currentMeetingInfo !== null"
 					to="/watcher/meetings"
 					class="mobile-nav-link"
 					@click="closeNav"
 				>
-					Meetings
+					Current Meeting
 				</RouterLink>
+				<button
+					v-if="currentMeetingInfo !== null"
+					class="mobile-nav-link change-meeting-mobile"
+					:disabled="isLeavingMeeting"
+					@click="handleLeaveMeeting"
+				>
+					{{ isLeavingMeeting ? "Leaving..." : "Change Meeting" }}
+				</button>
 				<button class="mobile-logout-btn" @click="logout">Logout</button>
 			</div>
 		</MobileNavOverlay>
@@ -127,7 +202,28 @@ onMounted(() => {
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
-	margin-bottom: 1rem;
+	margin-bottom: 0.5rem;
+}
+
+.meeting-indicator {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem 0.75rem;
+	background-color: rgba(255, 255, 255, 0.15);
+	border-radius: 4px;
+	margin-bottom: 0.75rem;
+	font-size: 0.9rem;
+}
+
+.meeting-label {
+	color: rgba(255, 255, 255, 0.8);
+	font-weight: 500;
+}
+
+.meeting-name {
+	color: white;
+	font-weight: 600;
 }
 
 .watcher-header h1 {
@@ -181,6 +277,24 @@ onMounted(() => {
 	background-color: rgba(255, 255, 255, 0.2);
 }
 
+.change-meeting-btn {
+	background: transparent;
+	border: 1px solid rgba(255, 255, 255, 0.5);
+	cursor: pointer;
+	font-size: inherit;
+	font-family: inherit;
+}
+
+.change-meeting-btn:hover:not(:disabled) {
+	background-color: rgba(255, 255, 255, 0.2);
+	border-color: rgba(255, 255, 255, 0.8);
+}
+
+.change-meeting-btn:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
 .watcher-content {
 	flex: 1;
 	padding: 2rem;
@@ -206,6 +320,40 @@ onMounted(() => {
 	color: white;
 	border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 	margin-bottom: 0.5rem;
+}
+
+.mobile-meeting-info {
+	padding: 0.75rem 1rem;
+	background-color: rgba(255, 255, 255, 0.1);
+	border-radius: 4px;
+	margin: 0 0.5rem 0.5rem 0.5rem;
+}
+
+.mobile-meeting-label {
+	display: block;
+	font-size: 0.75rem;
+	color: rgba(255, 255, 255, 0.7);
+	margin-bottom: 0.25rem;
+}
+
+.mobile-meeting-name {
+	display: block;
+	font-size: 0.9rem;
+	color: white;
+	font-weight: 600;
+}
+
+.change-meeting-mobile {
+	background: transparent;
+	border: none;
+	text-align: left;
+	cursor: pointer;
+	font-family: inherit;
+}
+
+.change-meeting-mobile:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
 }
 
 .mobile-nav-link {

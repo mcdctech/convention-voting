@@ -1,149 +1,190 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { getWatcherMeetings } from "../../services/api";
-import TablePagination from "../../components/TablePagination.vue";
-import type { WatcherMeetingReport } from "@mcdc-convention-voting/shared";
+import {
+	getCurrentMeetingForWatcher,
+	getWatcherMeetingReport,
+	leaveMeetingAsWatcher,
+} from "../../services/api";
+import { useKioskMode } from "../../composables/useKioskMode";
+import type {
+	CurrentMeetingInfo,
+	WatcherMeetingReport,
+} from "@mcdc-convention-voting/shared";
 
 const router = useRouter();
+const { getKioskModeQueryParam } = useKioskMode();
 
-const MEETINGS_PER_PAGE = 50;
-const INITIAL_PAGE = 1;
-const INITIAL_TOTAL = 0;
-
-const meetings = ref<WatcherMeetingReport[]>([]);
+const currentMeetingInfo = ref<CurrentMeetingInfo | null>(null);
+const meetingReport = ref<WatcherMeetingReport | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
-const currentPage = ref(INITIAL_PAGE);
-const totalMeetings = ref(INITIAL_TOTAL);
+const isLeavingMeeting = ref(false);
 
-const totalPages = computed(() =>
-	Math.ceil(totalMeetings.value / MEETINGS_PER_PAGE),
-);
-
-async function loadMeetings(): Promise<void> {
+/**
+ * Load the current meeting the watcher has joined
+ */
+async function loadCurrentMeeting(): Promise<void> {
 	loading.value = true;
 	error.value = null;
 
 	try {
-		const response = await getWatcherMeetings(
-			currentPage.value,
-			MEETINGS_PER_PAGE,
+		// First get the current meeting info
+		const currentResponse = await getCurrentMeetingForWatcher();
+		if (
+			!currentResponse.success ||
+			currentResponse.data === undefined ||
+			currentResponse.data === null
+		) {
+			// No meeting joined - layout will handle redirect
+			currentMeetingInfo.value = null;
+			return;
+		}
+
+		currentMeetingInfo.value = currentResponse.data;
+
+		// Now load the detailed meeting report for this meeting
+		const reportResponse = await getWatcherMeetingReport(
+			currentResponse.data.meeting.id,
 		);
-		meetings.value = response.data;
-		totalMeetings.value = response.pagination.total;
+		if (reportResponse.success && reportResponse.data !== undefined) {
+			meetingReport.value = reportResponse.data;
+		}
 	} catch (err) {
-		error.value =
-			err instanceof Error ? err.message : "Failed to load meetings";
+		error.value = err instanceof Error ? err.message : "Failed to load meeting";
 	} finally {
 		loading.value = false;
 	}
 }
 
-function viewMeeting(meetingId: number): void {
-	void router.push(`/watcher/meetings/${meetingId}`);
+/**
+ * Leave current meeting and return to meeting selection
+ */
+async function handleChangeMeeting(): Promise<void> {
+	isLeavingMeeting.value = true;
+	try {
+		await leaveMeetingAsWatcher();
+		const kioskQuery = getKioskModeQueryParam();
+		await router.push({
+			path: "/watcher/meeting-selection",
+			query: kioskQuery,
+		});
+	} catch {
+		// Still redirect on error
+		const kioskQuery = getKioskModeQueryParam();
+		await router.push({
+			path: "/watcher/meeting-selection",
+			query: kioskQuery,
+		});
+	} finally {
+		isLeavingMeeting.value = false;
+	}
 }
 
-function viewQuorum(meetingId: number): void {
-	void router.push(`/watcher/meetings/${meetingId}/quorum`);
+function viewMeetingDetails(): void {
+	if (currentMeetingInfo.value === null) return;
+	void router.push(`/watcher/meetings/${currentMeetingInfo.value.meeting.id}`);
+}
+
+function viewQuorum(): void {
+	if (currentMeetingInfo.value === null) return;
+	void router.push(
+		`/watcher/meetings/${currentMeetingInfo.value.meeting.id}/quorum`,
+	);
 }
 
 function formatDate(date: Date | string): string {
 	return new Date(date).toLocaleString();
 }
 
-function goToPage(page: number): void {
-	currentPage.value = page;
-	void loadMeetings();
-}
-
 onMounted(() => {
-	void loadMeetings();
+	void loadCurrentMeeting();
 });
 </script>
 
 <template>
 	<div class="meeting-list">
 		<div class="header">
-			<h2>Meetings</h2>
+			<h2>Current Meeting</h2>
+			<button
+				class="btn btn-change"
+				:disabled="isLeavingMeeting"
+				@click="handleChangeMeeting"
+			>
+				{{ isLeavingMeeting ? "Leaving..." : "Change Meeting" }}
+			</button>
 		</div>
 
-		<div v-if="error" class="error">
+		<div v-if="error !== null" class="error">
 			{{ error }}
 		</div>
 
-		<div v-if="loading" class="loading">Loading meetings...</div>
+		<div v-if="loading" class="loading">Loading meeting...</div>
 
-		<div v-else-if="meetings.length === 0" class="empty">
-			No meetings found.
+		<div v-else-if="meetingReport === null" class="empty">
+			No meeting selected. Please select a meeting to observe.
 		</div>
 
-		<div v-else class="table-container">
-			<table class="meetings-table">
-				<thead>
-					<tr>
-						<th>Name</th>
-						<th>Description</th>
-						<th>Start Date</th>
-						<th>End Date</th>
-						<th>Quorum Pool</th>
-						<th>Quorum Status</th>
-						<th>Motions</th>
-						<th>Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					<tr v-for="meeting in meetings" :key="meeting.meetingId">
-						<td class="meeting-name">
-							{{ meeting.meetingName }}
-						</td>
-						<td class="description">
-							{{ meeting.description || "—" }}
-						</td>
-						<td>{{ formatDate(meeting.startDate) }}</td>
-						<td>{{ formatDate(meeting.endDate) }}</td>
-						<td>{{ meeting.quorumPoolName }}</td>
-						<td>
-							<span
-								v-if="meeting.quorumCalledAt !== null"
-								class="status-badge called"
-							>
-								Called
-							</span>
-							<span v-else class="status-badge not-called"> Not Called </span>
-						</td>
-						<td>{{ meeting.motionSummaries.length }}</td>
-						<td class="actions-cell">
-							<button
-								class="btn btn-small"
-								@click="viewMeeting(meeting.meetingId)"
-							>
-								View Details
-							</button>
-							<button
-								class="btn btn-small"
-								@click="viewQuorum(meeting.meetingId)"
-							>
-								Quorum
-							</button>
-						</td>
-					</tr>
-				</tbody>
-			</table>
+		<div v-else class="meeting-card">
+			<div class="meeting-header">
+				<h3>{{ meetingReport.meetingName }}</h3>
+				<p v-if="meetingReport.description" class="description">
+					{{ meetingReport.description }}
+				</p>
+			</div>
 
-			<TablePagination
-				:current-page="currentPage"
-				:total-pages="totalPages"
-				:total-items="totalMeetings"
-				@page-change="goToPage"
-			/>
+			<div class="meeting-details">
+				<div class="detail-row">
+					<span class="detail-label">Start Date:</span>
+					<span class="detail-value">{{
+						formatDate(meetingReport.startDate)
+					}}</span>
+				</div>
+				<div class="detail-row">
+					<span class="detail-label">End Date:</span>
+					<span class="detail-value">{{
+						formatDate(meetingReport.endDate)
+					}}</span>
+				</div>
+				<div class="detail-row">
+					<span class="detail-label">Quorum Pool:</span>
+					<span class="detail-value">{{ meetingReport.quorumPoolName }}</span>
+				</div>
+				<div class="detail-row">
+					<span class="detail-label">Quorum Status:</span>
+					<span class="detail-value">
+						<span
+							v-if="meetingReport.quorumCalledAt !== null"
+							class="status-badge called"
+						>
+							Called
+						</span>
+						<span v-else class="status-badge not-called">Not Called</span>
+					</span>
+				</div>
+				<div class="detail-row">
+					<span class="detail-label">Motions:</span>
+					<span class="detail-value">{{
+						meetingReport.motionSummaries.length
+					}}</span>
+				</div>
+			</div>
+
+			<div class="meeting-actions">
+				<button class="btn btn-primary" @click="viewMeetingDetails">
+					View Details
+				</button>
+				<button class="btn btn-secondary" @click="viewQuorum">
+					View Quorum
+				</button>
+			</div>
 		</div>
 	</div>
 </template>
 
 <style scoped>
 .meeting-list {
-	max-width: 1400px;
+	max-width: 800px;
 	margin: 0 auto;
 }
 
@@ -151,7 +192,7 @@ onMounted(() => {
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
-	margin-bottom: 2rem;
+	margin-bottom: 1.5rem;
 }
 
 .header h2 {
@@ -182,46 +223,53 @@ onMounted(() => {
 	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.table-container {
+.meeting-card {
 	background-color: white;
 	border-radius: 8px;
 	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-	overflow: hidden;
+	padding: 1.5rem;
 }
 
-.meetings-table {
-	width: 100%;
-	border-collapse: collapse;
+.meeting-header {
+	border-bottom: 1px solid #e0e0e0;
+	padding-bottom: 1rem;
+	margin-bottom: 1rem;
 }
 
-.meetings-table th {
-	background-color: #f8f9fa;
-	padding: 1rem;
-	text-align: left;
-	font-weight: 600;
+.meeting-header h3 {
+	margin: 0 0 0.5rem 0;
 	color: #2c3e50;
-	border-bottom: 2px solid #dee2e6;
+	font-size: 1.25rem;
 }
 
-.meetings-table td {
-	padding: 1rem;
-	border-bottom: 1px solid #dee2e6;
+.meeting-header .description {
+	margin: 0;
+	color: #666;
+	font-size: 0.9rem;
 }
 
-.meetings-table tbody tr:hover {
-	background-color: #f8f9fa;
+.meeting-details {
+	margin-bottom: 1.5rem;
 }
 
-.meeting-name {
+.detail-row {
+	display: flex;
+	padding: 0.5rem 0;
+	border-bottom: 1px solid #f0f0f0;
+}
+
+.detail-row:last-child {
+	border-bottom: none;
+}
+
+.detail-label {
 	font-weight: 500;
-	color: #2c3e50;
+	color: #666;
+	min-width: 120px;
 }
 
-.description {
-	max-width: 200px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+.detail-value {
+	color: #2c3e50;
 }
 
 .status-badge {
@@ -242,15 +290,14 @@ onMounted(() => {
 	color: #ef6c00;
 }
 
-.actions-cell {
+.meeting-actions {
 	display: flex;
-	gap: 0.5rem;
+	gap: 0.75rem;
 	flex-wrap: wrap;
-	align-items: center;
 }
 
 .btn {
-	padding: 0.5rem 1rem;
+	padding: 0.625rem 1.25rem;
 	border: none;
 	border-radius: 4px;
 	cursor: pointer;
@@ -259,21 +306,65 @@ onMounted(() => {
 	text-decoration: none;
 	display: inline-block;
 	transition: all 0.2s;
+}
+
+.btn-primary {
 	background-color: #34495e;
 	color: white;
 }
 
-.btn:hover {
+.btn-primary:hover {
 	background-color: #2c3e50;
 }
 
-.btn-small {
-	padding: 0.25rem 0.75rem;
-	font-size: 0.8125rem;
+.btn-secondary {
+	background-color: #6c757d;
+	color: white;
+}
+
+.btn-secondary:hover {
+	background-color: #5a6268;
+}
+
+.btn-change {
+	background-color: transparent;
+	color: #34495e;
+	border: 1px solid #34495e;
+}
+
+.btn-change:hover:not(:disabled) {
+	background-color: #34495e;
+	color: white;
 }
 
 .btn:disabled {
 	opacity: 0.5;
 	cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+	.header {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 1rem;
+	}
+
+	.detail-row {
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.detail-label {
+		min-width: auto;
+	}
+
+	.meeting-actions {
+		flex-direction: column;
+	}
+
+	.meeting-actions .btn {
+		width: 100%;
+		text-align: center;
+	}
 }
 </style>
