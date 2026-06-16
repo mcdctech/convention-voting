@@ -63,6 +63,33 @@ const VALID_STATUS_TRANSITIONS: Record<MotionStatus, MotionStatus[]> = {
 // ============================================================================
 
 /**
+ * Validate meeting date constraints
+ * - Start date must be before end date
+ * - End date cannot be set to a time in the past
+ */
+function validateMeetingDates(
+	startDate: Date,
+	endDate: Date,
+	isEndDateBeingUpdated = true,
+): void {
+	// Start date must be before end date
+	if (endDate <= startDate) {
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
+			"End date must be after start date.",
+		);
+	}
+
+	// End date cannot be set to a time in the past
+	if (isEndDateBeingUpdated && endDate < new Date()) {
+		throw new ServiceError(
+			ServiceErrorCode.INVALID_INPUT,
+			"End date cannot be set to a time in the past.",
+		);
+	}
+}
+
+/**
  * Verify a pool exists, throw error if not
  */
 async function verifyPoolExists(
@@ -140,6 +167,9 @@ export async function createMeeting(
 		quorumVotingPoolId,
 		quorumPercentage,
 	} = request;
+
+	// Validate meeting dates
+	validateMeetingDates(new Date(startDate), new Date(endDate));
 
 	// Verify quorum pool exists
 	await verifyPoolExists(quorumVotingPoolId, "Pool");
@@ -508,6 +538,30 @@ export async function updateMeeting(
 			ServiceErrorCode.INVALID_INPUT,
 			"No fields to update",
 		);
+	}
+
+	// Validate dates if either is being updated
+	if (updates.startDate !== undefined || updates.endDate !== undefined) {
+		// Get current meeting to compare dates
+		const currentMeeting = await getMeetingById(meetingId);
+		if (currentMeeting === null) {
+			throw new ServiceError(
+				ServiceErrorCode.MEETING_NOT_FOUND,
+				`Meeting with ID ${String(meetingId)} not found`,
+			);
+		}
+
+		const newStartDate =
+			updates.startDate === undefined
+				? currentMeeting.startDate
+				: new Date(updates.startDate);
+		const newEndDate =
+			updates.endDate === undefined
+				? currentMeeting.endDate
+				: new Date(updates.endDate);
+		const isEndDateBeingUpdated = updates.endDate !== undefined;
+
+		validateMeetingDates(newStartDate, newEndDate, isEndDateBeingUpdated);
 	}
 
 	// Add updated_at

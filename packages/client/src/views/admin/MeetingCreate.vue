@@ -79,6 +79,9 @@ function validateFormData(data: FormDataType): string | null {
 	if (endDate <= startDate) {
 		return "End date must be after start date.";
 	}
+	if (endDate < new Date()) {
+		return "End date cannot be in the past.";
+	}
 	return null;
 }
 
