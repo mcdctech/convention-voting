@@ -180,6 +180,13 @@ onUnmounted(() => {
 					>
 						Leave Meeting
 					</a>
+					<RouterLink
+						v-if="isMeetingAdmin && isJoined"
+						to="/admin/projector"
+						class="dropdown-link"
+					>
+						Projector Control
+					</RouterLink>
 				</NavDropdown>
 				<NavDropdown v-if="isAdmin" label="System">
 					<RouterLink to="/admin/system" class="dropdown-link">
@@ -305,6 +312,14 @@ onUnmounted(() => {
 					>
 						Leave Meeting
 					</a>
+					<RouterLink
+						v-if="isMeetingAdmin && isJoined"
+						to="/admin/projector"
+						class="mobile-nav-link"
+						@click="closeNav"
+					>
+						Projector Control
+					</RouterLink>
 				</div>
 
 				<!-- System section (global admins only) -->
