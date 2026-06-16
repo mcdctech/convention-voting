@@ -928,11 +928,11 @@ onUnmounted(() => {
 							</p>
 							<div v-if="motionChoices.length > 0" class="motion-choices">
 								<div
-									v-for="choice in motionChoices"
+									v-for="(choice, index) in motionChoices"
 									:key="choice.id"
 									class="motion-choice"
 								>
-									{{ choice.name }}
+									{{ index + 1 }}. {{ choice.name }}
 								</div>
 							</div>
 						</div>

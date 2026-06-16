@@ -350,8 +350,12 @@ onUnmounted(() => {
 					{{ motion.description }}
 				</p>
 				<div v-if="choices.length > 0" class="choices">
-					<div v-for="choice in choices" :key="choice.id" class="choice">
-						{{ choice.name }}
+					<div
+						v-for="(choice, index) in choices"
+						:key="choice.id"
+						class="choice"
+					>
+						{{ index + 1 }}. {{ choice.name }}
 					</div>
 				</div>
 			</div>
